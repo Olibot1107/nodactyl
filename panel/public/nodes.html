@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nodactyl — Nodes</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="layout" id="app"></div>
+
+<!-- Create Node Modal -->
+<div class="modal-overlay" id="createModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Add Node</h2>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="createError" class="login-error"></div>
+      <div class="form-group">
+        <label class="form-label">Node Name *</label>
+        <input type="text" class="form-input" id="n_name" placeholder="Node 1 — My VPS">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <input type="text" class="form-input" id="n_desc" placeholder="Optional">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Memory (GB)</label>
+          <input type="number" class="form-input" id="n_mem" value="8" min="1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">CPU Cores</label>
+          <input type="number" class="form-input" id="n_cpu" value="4" min="1">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" id="createBtn" onclick="createNode()">Add Node</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Token display Modal -->
+<div class="modal-overlay" id="tokenModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Node Token</h2>
+      <button class="modal-close" onclick="document.getElementById('tokenModal').classList.remove('open')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="text-muted text-sm mb-4">Copy this token into the daemon's <code>config.json</code>. It won't be shown again in full.</p>
+      <div class="token-box" id="tokenDisplay"></div>
+      <button class="btn btn-ghost btn-sm mt-4" onclick="copyText(document.getElementById('tokenDisplay').textContent, this)">Copy Token</button>
+      <div class="form-hint mt-4">config.json → <code>{ "panelUrl": "http://your-panel:3000", "token": "..." }</code></div>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/api.js"></script>
+<script>
+requireAuth();
+const user = getUser();
+if (user?.role !== 'admin') window.location.href = '/dashboard';
+
+let nodes = [];
+
+async function init() {
+  document.getElementById('app').innerHTML = `
+    ${renderSidebar('nodes')}
+    <div class="main">
+      <div class="topbar">
+        <div>
+          <div class="page-title">Nodes</div>
+          <div class="page-sub">Connected daemons that run your containers</div>
+        </div>
+        <button class="btn btn-primary" onclick="openCreate()">+ Add Node</button>
+      </div>
+      <div class="content">
+        <div class="grid-stats mb-6" id="statsRow"></div>
+        <div class="grid-2" id="nodeGrid">
+          <div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>
+        </div>
+      </div>
+    </div>`;
+
+  await loadData();
+
+  const socket = io({ auth: { token: getToken() } });
+  socket.on('node-status', ({ nodeId, status }) => {
+    const node = nodes.find(n => n.id === nodeId);
+    if (node) { node.online = status === 'online'; renderNodes(); renderStats(); }
+  });
+}
+
+async function loadData() {
+  nodes = await API.get('/nodes').catch(() => []);
+  renderStats();
+  renderNodes();
+}
+
+function renderStats() {
+  const online = nodes.filter(n => n.online).length;
+  document.getElementById('statsRow').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Total Nodes</div>
+      <div class="stat-value">${nodes.length}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Online</div>
+      <div class="stat-value" style="color:${online ? 'var(--success)' : 'var(--text-muted)'}">${online}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Offline</div>
+      <div class="stat-value" style="color:${nodes.length - online ? 'var(--danger)' : 'var(--text-muted)'}">${nodes.length - online}</div>
+    </div>`;
+}
+
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function renderNodes() {
+  const grid = document.getElementById('nodeGrid');
+  if (!nodes.length) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+      <div class="empty-icon">🖥️</div>
+      <p>No nodes yet. Click "+ Add Node" to register one, then run the daemon on your server.</p>
+    </div>`;
+    return;
+  }
+
+  grid.innerHTML = nodes.map(n => `
+    <div class="node-card">
+      <div class="node-header">
+        <div>
+          <div class="node-name">${esc(n.name)}</div>
+          ${n.description ? `<div class="node-meta">${esc(n.description)}</div>` : ''}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${badgeHtml(n.online ? 'online' : 'offline')}
+        </div>
+      </div>
+
+      <div class="node-meta">
+        💾 ${n.memory} GB RAM · ⚡ ${n.cpu} CPU cores
+      </div>
+      <div class="node-meta">Last seen: ${n.last_seen ? new Date(n.last_seen * 1000).toLocaleString() : 'Never'}</div>
+
+      <div class="node-token">
+        <span id="tok_${n.id}">${n.token.slice(0, 8)}••••••••••••••••••••••••••••••••••••••••••••••••••••••••••${n.token.slice(-4)}</span>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="showToken('${n.id}','${n.token}')">👁 Show Token</button>
+        <button class="btn btn-warning btn-sm" onclick="resetToken('${n.id}')">🔄 New Token</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteNode('${n.id}','${esc(n.name)}')">🗑 Delete</button>
+      </div>
+
+      <div class="node-meta" style="margin-top:8px;font-size:11px">
+        ID: <span class="chip">${n.id}</span>
+      </div>
+    </div>`).join('');
+}
+
+function showToken(id, token) {
+  document.getElementById('tokenDisplay').textContent = token;
+  document.getElementById('tokenModal').classList.add('open');
+}
+
+async function resetToken(id) {
+  if (!confirm('Generate a new token? The daemon will need to be reconfigured.')) return;
+  try {
+    const data = await API.post(`/nodes/${id}/reset-token`, {});
+    showToken(id, data.token);
+    await loadData();
+  } catch (e) { alert(e.message); }
+}
+
+async function deleteNode(id, name) {
+  if (!confirm(`Delete node "${name}"? This will fail if servers are assigned to it.`)) return;
+  try {
+    await API.delete(`/nodes/${id}`);
+    await loadData();
+  } catch (e) { alert(e.message); }
+}
+
+function openCreate() {
+  document.getElementById('n_name').value = '';
+  document.getElementById('n_desc').value = '';
+  document.getElementById('n_mem').value = 8;
+  document.getElementById('n_cpu').value = 4;
+  document.getElementById('createError').classList.remove('show');
+  document.getElementById('createModal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('createModal').classList.remove('open');
+}
+
+async function createNode() {
+  const btn = document.getElementById('createBtn');
+  const errEl = document.getElementById('createError');
+  errEl.classList.remove('show');
+  btn.innerHTML = '<span class="spinner"></span> Creating...';
+  btn.disabled = true;
+
+  try {
+    const node = await API.post('/nodes', {
+      name: document.getElementById('n_name').value,
+      description: document.getElementById('n_desc').value,
+      memory: parseInt(document.getElementById('n_mem').value) * 1024,
+      cpu: parseInt(document.getElementById('n_cpu').value),
+    });
+    closeModal();
+    await loadData();
+    // Show the token immediately
+    setTimeout(() => showToken(node.id, node.token), 100);
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.add('show');
+  } finally {
+    btn.innerHTML = 'Add Node';
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('createModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+document.getElementById('tokenModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+});
+
+init();
+</script>
+</body>
+</html>

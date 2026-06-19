@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  panel:
+    build: ./panel
+    ports:
+      - "3000:3000"
+    volumes:
+      - panel_data:/app/data
+    environment:
+      - PORT=3000
+      - JWT_SECRET=change-me-to-a-long-random-string
+    restart: unless-stopped
+
+  # Example daemon running on the same machine (for local dev / single-host setup)
+  # For a real multi-server setup, run the daemon separately on each machine.
+  daemon:
+    build: ./daemon
+    volumes:
+      - ./daemon/config.json:/app/config.json:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - panel
+    restart: unless-stopped
+
+volumes:
+  panel_data:

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nodactyl — Server</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="layout" id="app"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/api.js"></script>
+<script>
+requireAuth();
+const user = getUser();
+const serverId = location.pathname.split('/server/')[1];
+let server = null;
+let socket = null;
+let statsInterval = null;
+let logsSubscribed = false;
+
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function init() {
+  document.getElementById('app').innerHTML = `
+    ${renderSidebar('dashboard')}
+    <div class="main">
+      <div class="topbar" id="topbar">
+        <div><div class="page-title">Loading...</div></div>
+      </div>
+      <div class="content" id="content">
+        <div class="empty-state"><div class="empty-icon">⏳</div><p>Loading server...</p></div>
+      </div>
+    </div>`;
+
+  try {
+    server = await API.get(`/servers/${serverId}`);
+    render();
+    connectSocket();
+    startStats();
+  } catch (e) {
+    document.getElementById('content').innerHTML = `
+      <div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div>`;
+  }
+}
+
+function render() {
+  document.getElementById('topbar').innerHTML = `
+    <div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <a href="/dashboard" style="color:var(--text-muted);font-size:14px">← Back</a>
+        <span style="color:var(--border)">|</span>
+        <div class="page-title">${esc(server.name)}</div>
+        ${badgeHtml(server.status)}
+        ${!server.node_online ? '<span class="badge badge-offline">node offline</span>' : ''}
+      </div>
+      <div class="page-sub font-mono">${esc(server.image)} · Node: ${esc(server.node_name)}</div>
+    </div>`;
+
+  document.getElementById('content').innerHTML = `
+    <!-- Controls -->
+    <div class="card mb-6">
+      <div class="card-header">
+        <div class="card-title">Controls</div>
+        ${user?.role === 'admin' ? `<button class="btn btn-danger btn-sm" onclick="deleteServer()">🗑 Delete</button>` : ''}
+      </div>
+      <div class="control-strip" id="controls">
+        ${controlsHtml()}
+      </div>
+    </div>
+
+    <!-- Stats row -->
+    <div class="grid-stats mb-6" id="statsRow">
+      <div class="stat-card"><div class="stat-label">CPU</div><div class="stat-value" id="statCpu">—</div><div class="bar-wrap"><div class="bar-fill" id="cpuBar" style="width:0%"></div></div></div>
+      <div class="stat-card"><div class="stat-label">Memory</div><div class="stat-value" id="statMem">—</div><div class="bar-wrap"><div class="bar-fill" id="memBar" style="width:0%"></div></div></div>
+      <div class="stat-card"><div class="stat-label">Memory Limit</div><div class="stat-value">${server.memory_limit} <small style="font-size:14px">MB</small></div></div>
+      <div class="stat-card"><div class="stat-label">CPU Limit</div><div class="stat-value">${server.cpu_limit} <small style="font-size:14px">cores</small></div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 300px;gap:16px">
+      <!-- Console -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Console</div>
+          <button class="btn btn-ghost btn-sm" onclick="clearConsole()">Clear</button>
+        </div>
+        <div class="console-wrap" id="consoleOut"></div>
+        <div class="console-input-wrap">
+          <span class="console-prompt">$</span>
+          <input type="text" class="console-input" id="cmdInput" placeholder="Enter command..." ${server.status !== 'running' ? 'disabled' : ''}>
+          <button class="btn btn-primary btn-sm" onclick="sendCommand()">Send</button>
+        </div>
+      </div>
+
+      <!-- Info panel -->
+      <div>
+        <div class="card mb-4">
+          <div class="card-title mb-4">Details</div>
+          <div class="text-sm text-muted mb-4">Server ID</div>
+          <div class="chip mb-4">${server.id}</div>
+          ${server.description ? `<div class="text-sm text-muted mb-4">Description</div><div class="text-sm mb-4">${esc(server.description)}</div>` : ''}
+          <div class="text-sm text-muted mb-4">Status</div>
+          <div class="mb-4">${badgeHtml(server.status)}</div>
+          <div class="text-sm text-muted mb-4">Created</div>
+          <div class="text-sm">${new Date(server.created_at * 1000).toLocaleString()}</div>
+        </div>
+
+        ${server.port_mappings?.length ? `
+        <div class="card mb-4">
+          <div class="card-title mb-4">Port Mappings</div>
+          ${server.port_mappings.map(p => `
+            <div class="flex-center gap-2 mb-4" style="font-size:13px">
+              <span class="chip">${p.hostPort}</span>
+              <span class="text-muted">→</span>
+              <span class="chip">${p.containerPort}/${p.protocol}</span>
+            </div>`).join('')}
+        </div>` : ''}
+
+        ${server.env_vars?.length ? `
+        <div class="card">
+          <div class="card-title mb-4">Environment</div>
+          ${server.env_vars.map(e => `
+            <div style="font-size:12px;margin-bottom:6px">
+              <span style="color:var(--warning);font-family:monospace">${esc(e.key)}</span>
+              <span class="text-muted">=</span>
+              <span class="chip">${esc(e.value)}</span>
+            </div>`).join('')}
+        </div>` : ''}
+      </div>
+    </div>`;
+
+  document.getElementById('cmdInput')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') sendCommand();
+  });
+}
+
+function controlsHtml() {
+  const s = server.status;
+  const offline = !server.node_online;
+  return `
+    <button class="btn btn-success" onclick="doAction('start')" ${s === 'running' || offline ? 'disabled' : ''}>▶ Start</button>
+    <button class="btn btn-warning" onclick="doAction('restart')" ${s !== 'running' || offline ? 'disabled' : ''}>↺ Restart</button>
+    <button class="btn btn-ghost" onclick="doAction('stop')" ${s !== 'running' || offline ? 'disabled' : ''}>⏹ Stop</button>
+    <button class="btn btn-danger" onclick="doAction('kill')" ${s !== 'running' || offline ? 'disabled' : ''}>⚡ Kill</button>`;
+}
+
+function appendLog(text, isErr) {
+  const el = document.getElementById('consoleOut');
+  if (!el) return;
+  const line = document.createElement('div');
+  line.className = 'log-line' + (isErr ? ' stderr' : '');
+  line.textContent = text;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function clearConsole() {
+  const el = document.getElementById('consoleOut');
+  if (el) el.innerHTML = '';
+}
+
+function connectSocket() {
+  socket = io({ auth: { token: getToken() } });
+
+  socket.on('connect', () => {
+    if (server.status === 'running') subscribeToLogs();
+  });
+
+  socket.on('log', ({ serverId: sid, line }) => {
+    if (sid === serverId) appendLog(line);
+  });
+
+  socket.on('server-status', ({ serverId: sid, status }) => {
+    if (sid !== serverId) return;
+    server.status = status;
+    const badge = document.querySelector('.topbar .badge');
+    if (badge) badge.outerHTML = badgeHtml(status);
+    document.getElementById('controls').innerHTML = controlsHtml();
+    const inp = document.getElementById('cmdInput');
+    if (inp) inp.disabled = status !== 'running';
+
+    if (status === 'running' && !logsSubscribed) subscribeToLogs();
+    if (status !== 'running' && logsSubscribed) {
+      socket.emit('unsubscribe-logs', { serverId });
+      logsSubscribed = false;
+    }
+  });
+
+  socket.on('stats', (data) => {
+    if (data.serverId !== serverId) return;
+    updateStats(data);
+  });
+
+  socket.on('node-status', ({ nodeId, status }) => {
+    if (nodeId !== server.node_id) return;
+    server.node_online = status === 'online';
+    document.getElementById('controls').innerHTML = controlsHtml();
+  });
+}
+
+function subscribeToLogs() {
+  logsSubscribed = true;
+  socket.emit('subscribe-logs', { serverId });
+}
+
+function sendCommand() {
+  const inp = document.getElementById('cmdInput');
+  const cmd = inp?.value.trim();
+  if (!cmd || server.status !== 'running') return;
+  appendLog(`$ ${cmd}`);
+  socket.emit('send-command', { serverId, command: cmd });
+  inp.value = '';
+}
+
+async function doAction(action) {
+  const controls = document.getElementById('controls');
+  controls.innerHTML = `<span class="spinner"></span> <span class="text-muted">${action}ing...</span>`;
+  try {
+    const res = await API.post(`/servers/${serverId}/action`, { action });
+    server.status = res.status;
+    controls.innerHTML = controlsHtml();
+    if (server.status === 'running') subscribeToLogs();
+  } catch (e) {
+    controls.innerHTML = controlsHtml();
+    appendLog(`[Error: ${e.message}]`, true);
+  }
+}
+
+async function deleteServer() {
+  if (!confirm(`Delete "${server.name}"? This will stop and remove the container.`)) return;
+  try {
+    await API.delete(`/servers/${serverId}`);
+    window.location.href = '/dashboard';
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function startStats() {
+  async function tick() {
+    if (server.status !== 'running' || !server.node_online) return;
+    try {
+      const stats = await API.get(`/servers/${serverId}/stats`);
+      updateStats(stats);
+    } catch {}
+  }
+  tick();
+  statsInterval = setInterval(tick, 5000);
+}
+
+function updateStats(stats) {
+  const cpuEl = document.getElementById('statCpu');
+  const memEl = document.getElementById('statMem');
+  const cpuBar = document.getElementById('cpuBar');
+  const memBar = document.getElementById('memBar');
+  if (!cpuEl) return;
+
+  const cpu = parseFloat(stats.cpu || 0);
+  const mem = parseFloat(stats.memory || 0);
+  const memLimit = parseFloat(stats.memoryLimit || server.memory_limit);
+  const memPct = memLimit > 0 ? (mem / memLimit) * 100 : 0;
+
+  cpuEl.textContent = cpu.toFixed(1) + '%';
+  memEl.textContent = mem.toFixed(0) + ' MB';
+
+  if (cpuBar) {
+    cpuBar.style.width = Math.min(cpu, 100) + '%';
+    cpuBar.className = `bar-fill${cpu > 80 ? ' danger' : cpu > 60 ? ' warn' : ''}`;
+  }
+  if (memBar) {
+    memBar.style.width = Math.min(memPct, 100) + '%';
+    memBar.className = `bar-fill${memPct > 80 ? ' danger' : memPct > 60 ? ' warn' : ''}`;
+  }
+}
+
+window.addEventListener('beforeunload', () => {
+  clearInterval(statsInterval);
+  if (socket && logsSubscribed) socket.emit('unsubscribe-logs', { serverId });
+});
+
+init();
+</script>
+</body>
+</html>

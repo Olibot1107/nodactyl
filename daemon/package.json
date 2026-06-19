@@ -1,0 +1,17 @@
+{
+  "name": "nodactyl-daemon",
+  "version": "1.0.0",
+  "description": "Nodactyl daemon — runs on nodes, connects to panel",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "dockerode": "^4.0.0",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  }
+}

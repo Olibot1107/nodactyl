@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nodactyl — Dashboard</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="layout" id="app"></div>
+
+<!-- Create Server Modal -->
+<div class="modal-overlay" id="createModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Create Server</h2>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="createError" class="login-error"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Server Name *</label>
+          <input type="text" class="form-input" id="c_name" placeholder="My Server">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Docker Image *</label>
+          <input type="text" class="form-input" id="c_image" placeholder="nginx:latest">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <input type="text" class="form-input" id="c_desc" placeholder="Optional description">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Node *</label>
+        <select class="form-select" id="c_node"></select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Memory Limit (MB)</label>
+          <input type="number" class="form-input" id="c_memory" value="512" min="64">
+        </div>
+        <div class="form-group">
+          <label class="form-label">CPU Limit (cores)</label>
+          <input type="number" class="form-input" id="c_cpu" value="1" step="0.1" min="0.1">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Port Mappings</label>
+        <div id="portList"></div>
+        <button class="btn btn-ghost btn-sm mt-4" onclick="addPort()" type="button">+ Add Port</button>
+        <div class="form-hint">host:container (e.g. 8080:80)</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Environment Variables</label>
+        <div id="envList"></div>
+        <button class="btn btn-ghost btn-sm mt-4" onclick="addEnv()" type="button">+ Add Variable</button>
+      </div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+        <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" id="createBtn" onclick="createServer()">Create Server</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+requireAuth();
+const user = getUser();
+let servers = [];
+let nodes = [];
+
+async function init() {
+  document.getElementById('app').innerHTML = `
+    ${renderSidebar('dashboard')}
+    <div class="main">
+      <div class="topbar">
+        <div>
+          <div class="page-title">Servers</div>
+          <div class="page-sub">Manage your Docker containers</div>
+        </div>
+        ${user?.role === 'admin' ? '<button class="btn btn-primary" onclick="openCreate()">+ New Server</button>' : ''}
+      </div>
+      <div class="content">
+        <div class="grid-stats mb-6" id="statsRow"></div>
+        <div class="grid-2" id="serverGrid">
+          <div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>
+        </div>
+      </div>
+    </div>`;
+
+  await loadData();
+}
+
+async function loadData() {
+  [servers, nodes] = await Promise.all([
+    API.get('/servers').catch(() => []),
+    user?.role === 'admin' ? API.get('/nodes').catch(() => []) : Promise.resolve([]),
+  ]);
+
+  renderStats();
+  renderServers();
+}
+
+function renderStats() {
+  const total = servers.length;
+  const running = servers.filter(s => s.status === 'running').length;
+  const nodesOnline = nodes.filter(n => n.online).length;
+
+  document.getElementById('statsRow').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Total Servers</div>
+      <div class="stat-value">${total}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Running</div>
+      <div class="stat-value" style="color:var(--success)">${running}</div>
+    </div>
+    ${user?.role === 'admin' ? `
+    <div class="stat-card">
+      <div class="stat-label">Nodes Online</div>
+      <div class="stat-value" style="color:${nodesOnline ? 'var(--success)' : 'var(--danger)'}">${nodesOnline}/${nodes.length}</div>
+    </div>` : ''}`;
+}
+
+function renderServers() {
+  const grid = document.getElementById('serverGrid');
+  if (!servers.length) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+      <div class="empty-icon">🦕</div>
+      <p>No servers yet. ${user?.role === 'admin' ? 'Click "+ New Server" to create one.' : 'Ask an admin to create a server for you.'}</p>
+    </div>`;
+    return;
+  }
+
+  grid.innerHTML = servers.map(s => `
+    <a href="/server/${s.id}" class="server-card">
+      <div class="server-card-top">
+        <div>
+          <div class="server-name">${esc(s.name)}</div>
+          <div class="server-image">${esc(s.image)}</div>
+        </div>
+        ${badgeHtml(s.status)}
+      </div>
+      <div class="server-node">
+        🖥️ ${esc(s.node_name || 'Unknown node')}
+        ${!s.node_online ? ' <span style="color:var(--danger);font-size:10px">OFFLINE</span>' : ''}
+      </div>
+      <div class="server-mini-stats">
+        <div class="server-mini-stat">Memory: <span>${s.memory_limit} MB</span></div>
+        <div class="server-mini-stat">CPU: <span>${s.cpu_limit} cores</span></div>
+        ${s.port_mappings?.length ? `<div class="server-mini-stat">Ports: <span>${s.port_mappings.length}</span></div>` : ''}
+      </div>
+    </a>`).join('');
+}
+
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ── Create modal ──────────────────────────────────────────────────────────────
+let portCount = 0, envCount = 0;
+
+function openCreate() {
+  document.getElementById('portList').innerHTML = '';
+  document.getElementById('envList').innerHTML = '';
+  document.getElementById('c_name').value = '';
+  document.getElementById('c_image').value = '';
+  document.getElementById('c_desc').value = '';
+  document.getElementById('c_memory').value = 512;
+  document.getElementById('c_cpu').value = 1;
+  portCount = 0; envCount = 0;
+
+  const onlineNodes = nodes.filter(n => n.online);
+  document.getElementById('c_node').innerHTML = onlineNodes.length
+    ? onlineNodes.map(n => `<option value="${n.id}">${esc(n.name)}</option>`).join('')
+    : '<option value="">— No nodes online —</option>';
+
+  document.getElementById('createError').classList.remove('show');
+  document.getElementById('createModal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('createModal').classList.remove('open');
+}
+
+function addPort() {
+  const id = ++portCount;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:8px';
+  div.innerHTML = `
+    <input type="number" class="form-input" id="ph_${id}" placeholder="Host port" style="flex:1">
+    <span style="color:var(--text-muted)">:</span>
+    <input type="number" class="form-input" id="pc_${id}" placeholder="Container port" style="flex:1">
+    <select class="form-select" id="pp_${id}" style="width:80px"><option>tcp</option><option>udp</option></select>
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0">✕</button>`;
+  document.getElementById('portList').appendChild(div);
+}
+
+function addEnv() {
+  const id = ++envCount;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:8px';
+  div.innerHTML = `
+    <input type="text" class="form-input" id="ek_${id}" placeholder="KEY" style="flex:1">
+    <span style="color:var(--text-muted)">=</span>
+    <input type="text" class="form-input" id="ev_${id}" placeholder="value" style="flex:2">
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0">✕</button>`;
+  document.getElementById('envList').appendChild(div);
+}
+
+function getPortMappings() {
+  const ports = [];
+  document.querySelectorAll('[id^="ph_"]').forEach(el => {
+    const id = el.id.slice(3);
+    const hostPort = parseInt(el.value);
+    const containerPort = parseInt(document.getElementById(`pc_${id}`).value);
+    const protocol = document.getElementById(`pp_${id}`).value;
+    if (hostPort && containerPort) ports.push({ hostPort, containerPort, protocol });
+  });
+  return ports;
+}
+
+function getEnvVars() {
+  const envs = [];
+  document.querySelectorAll('[id^="ek_"]').forEach(el => {
+    const id = el.id.slice(3);
+    const key = el.value.trim();
+    const value = document.getElementById(`ev_${id}`).value;
+    if (key) envs.push({ key, value });
+  });
+  return envs;
+}
+
+async function createServer() {
+  const errEl = document.getElementById('createError');
+  errEl.classList.remove('show');
+  const btn = document.getElementById('createBtn');
+  btn.innerHTML = '<span class="spinner"></span> Creating...';
+  btn.disabled = true;
+
+  try {
+    await API.post('/servers', {
+      name: document.getElementById('c_name').value,
+      description: document.getElementById('c_desc').value,
+      image: document.getElementById('c_image').value,
+      node_id: document.getElementById('c_node').value,
+      memory_limit: parseInt(document.getElementById('c_memory').value),
+      cpu_limit: parseFloat(document.getElementById('c_cpu').value),
+      port_mappings: getPortMappings(),
+      env_vars: getEnvVars(),
+    });
+    closeModal();
+    await loadData();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.add('show');
+  } finally {
+    btn.innerHTML = 'Create Server';
+    btn.disabled = false;
+  }
+}
+
+// close modal on overlay click
+document.getElementById('createModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+init();
+</script>
+</body>
+</html>
