@@ -20,12 +20,21 @@ function requireAdmin() {
 }
 
 async function api(method, path, body) {
-  const res = await fetch('/api' + path, {
-    method,
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch('/api' + path, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    throw new Error('Could not reach the server. Check your connection.');
+  }
   if (res.status === 401) { logout(); return; }
+  const ct = res.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) {
+    throw new Error(`Server returned an unexpected response (HTTP ${res.status}). The panel may be down.`);
+  }
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
@@ -44,8 +53,11 @@ let _panelSettings = { panel_name: 'Nodactyl', panel_logo: 'N' };
 
 async function loadPanelSettings() {
   try {
-    const s = await fetch('/api/settings/public').then(r => r.json());
-    if (s && typeof s === 'object') _panelSettings = { ..._panelSettings, ...s };
+    const r = await fetch('/api/settings/public');
+    if (r.ok && (r.headers.get('content-type') || '').includes('application/json')) {
+      const s = await r.json();
+      if (s && typeof s === 'object') _panelSettings = { ..._panelSettings, ...s };
+    }
   } catch {}
   return _panelSettings;
 }
