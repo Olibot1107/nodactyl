@@ -15,6 +15,9 @@
     .git-tab.active { color:var(--primary); border-bottom-color:var(--primary); }
     .upload-zone { border:2px dashed var(--border2,#3f3f46); border-radius:8px; padding:32px 16px; text-align:center; transition:border-color .15s,background .15s; }
     .upload-zone.drag-over { border-color:var(--primary,#6366f1); background:rgba(99,102,241,.05); }
+    .file-row.selected { background:rgba(99,102,241,.12); color:var(--text); border-color:rgba(99,102,241,.25); }
+    .file-row.selected:hover { background:rgba(99,102,241,.18); }
+    .selection-bar { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:5px 10px; border-top:1px solid var(--border); background:rgba(99,102,241,.08); flex-shrink:0; font-size:12px; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
 </head>
@@ -206,6 +209,28 @@
   </div>
 </div>
 
+<!-- Modal: bulk move -->
+<div class="modal-overlay" id="bulkMoveModal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <div class="modal-title" id="bulkMoveTitle">Move items</div>
+      <button class="modal-close" onclick="closeModal('bulkMoveModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group mb-2">
+        <label class="form-label">Destination directory</label>
+        <input class="form-input font-mono" id="bulkMoveInput" placeholder="/home/container/subdir" autocomplete="off">
+        <div class="form-hint mt-1">All selected items will be moved into this directory.</div>
+      </div>
+      <div id="bulkMoveError" class="alert alert-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('bulkMoveModal')">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="bulkMoveSubmit" onclick="submitBulkMove()">Move</button>
+    </div>
+  </div>
+</div>
+
 <script src="/js/api.js"></script>
 <script>
 requireAuth();
@@ -226,6 +251,8 @@ let renameTarget = null;
 let moveTarget = null;
 let monacoEditor = null;
 let monacoReady = false;
+// path → { path, isDir, name }
+let selectedItems = new Map();
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 const UI = {
@@ -402,6 +429,14 @@ function buildShell() {
 
           <div class="file-banner" id="fileBanner"></div>
           <div class="file-list" id="fileList"><div class="file-state"><span class="spinner"></span></div></div>
+          <div class="selection-bar" id="selectionBar" style="display:none">
+            <span id="selectionCount" style="color:var(--text-muted)"></span>
+            <div style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-xs" onclick="clearSelection()">Clear</button>
+              <button class="btn btn-ghost btn-xs" onclick="openBulkMoveModal()">Move</button>
+              <button class="btn btn-danger btn-xs" onclick="bulkDelete()">Delete</button>
+            </div>
+          </div>
           <div class="upload-progress" id="uploadProgress">
             <span id="uploadLabel" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Uploading...</span>
             <div class="upload-bar-outer" style="width:80px"><div class="upload-bar-inner" id="uploadBar" style="width:0%"></div></div>
@@ -475,7 +510,9 @@ function syncBanner() {
 
 // ── Directory listing ─────────────────────────────────────────────────────────
 async function listDir(dirPath) {
-  currentPath = normalizePath(dirPath);
+  const nextPath = normalizePath(dirPath);
+  if (nextPath !== currentPath) clearSelection();
+  currentPath = nextPath;
   // Clamp: never go above HOME
   if (!currentPath.startsWith(HOME)) currentPath = HOME;
   renderBreadcrumb(currentPath);
@@ -513,8 +550,10 @@ function renderFileList(files, dirPath) {
   for (const f of [...dirs, ...docs]) {
     const fullPath = joinPath(dirPath, f.name);
     const isDir = f.type === 'dir';
+    const isSelected = selectedItems.has(fullPath);
+    const isActive = openFile === fullPath;
     rows.push(`
-      <button class="file-row ${openFile === fullPath ? 'active' : ''}"
+      <button class="file-row${isActive ? ' active' : ''}${isSelected ? ' selected' : ''}"
         ${isDir ? `data-dir-path="${esc(fullPath)}"` : `data-file-path="${esc(fullPath)}"`}
         data-ctx-path="${esc(fullPath)}"
         data-ctx-isdir="${isDir}"
@@ -541,10 +580,22 @@ function renderFileList(files, dirPath) {
   document.getElementById('fileList').innerHTML = rows.join('');
 
   document.querySelectorAll('[data-dir-path]').forEach(el => {
-    el.addEventListener('click', e => { if (e.target.closest('.file-row-dots')) return; listDir(el.dataset.dirPath); });
+    el.addEventListener('click', e => {
+      if (e.target.closest('.file-row-dots')) return;
+      const path = el.dataset.dirPath;
+      const name = el.dataset.ctxName;
+      if ((e.ctrlKey || e.metaKey) && name) { e.preventDefault(); toggleSelect(path, true, name); return; }
+      listDir(path);
+    });
   });
   document.querySelectorAll('[data-file-path]').forEach(el => {
-    el.addEventListener('click', e => { if (e.target.closest('.file-row-dots')) return; openFileForEdit(el.dataset.filePath); });
+    el.addEventListener('click', e => {
+      if (e.target.closest('.file-row-dots')) return;
+      const path = el.dataset.filePath;
+      const name = el.dataset.ctxName;
+      if ((e.ctrlKey || e.metaKey) && name) { e.preventDefault(); toggleSelect(path, false, name); return; }
+      openFileForEdit(path);
+    });
   });
   document.querySelectorAll('[data-ctx-path]').forEach(el => {
     el.addEventListener('contextmenu', e => {
@@ -985,7 +1036,9 @@ function onKeyDown(e) {
   if ((e.ctrlKey || e.metaKey) && e.key === 's' && openFile) { e.preventDefault(); saveFile(); }
   if (e.key === 'Escape') {
     closeCtx();
-    document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+    const openModals = document.querySelectorAll('.modal-overlay.open');
+    openModals.forEach(m => m.classList.remove('open'));
+    if (!openModals.length) clearSelection();
   }
   if (e.key === 'Enter') {
     if (document.getElementById('newItemModal').classList.contains('open')) { e.preventDefault(); submitNewItem(); }
@@ -1181,6 +1234,102 @@ async function submitGitReset() {
     btn.disabled = false;
     setStatusState('Error');
   }
+}
+
+// ── Multi-select ──────────────────────────────────────────────────────────────
+function toggleSelect(path, isDir, name) {
+  if (selectedItems.has(path)) {
+    selectedItems.delete(path);
+    document.querySelectorAll(`[data-ctx-path]`).forEach(el => {
+      if (el.dataset.ctxPath === path) el.classList.remove('selected');
+    });
+  } else {
+    selectedItems.set(path, { path, isDir, name });
+    document.querySelectorAll(`[data-ctx-path]`).forEach(el => {
+      if (el.dataset.ctxPath === path) el.classList.add('selected');
+    });
+  }
+  updateSelectionBar();
+}
+
+function updateSelectionBar() {
+  const bar = document.getElementById('selectionBar');
+  const count = document.getElementById('selectionCount');
+  if (!bar) return;
+  if (selectedItems.size === 0) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = '';
+  const dirs = [...selectedItems.values()].filter(i => i.isDir).length;
+  const files = selectedItems.size - dirs;
+  const parts = [];
+  if (files) parts.push(`${files} file${files !== 1 ? 's' : ''}`);
+  if (dirs) parts.push(`${dirs} folder${dirs !== 1 ? 's' : ''}`);
+  count.textContent = parts.join(', ') + ' selected';
+}
+
+function clearSelection() {
+  selectedItems.clear();
+  document.querySelectorAll('.file-row.selected').forEach(el => el.classList.remove('selected'));
+  updateSelectionBar();
+}
+
+async function bulkDelete() {
+  if (!selectedItems.size) return;
+  const names = [...selectedItems.values()].map(i => i.name);
+  const preview = names.slice(0, 5).join('\n') + (names.length > 5 ? `\n…and ${names.length - 5} more` : '');
+  if (!confirm(`Delete ${selectedItems.size} item${selectedItems.size !== 1 ? 's' : ''}?\n\n${preview}\n\nThis cannot be undone.`)) return;
+  setStatusState('Deleting...');
+  const errors = [];
+  for (const { path } of selectedItems.values()) {
+    try {
+      await API.delete(`/servers/${serverId}/files?path=${encodeURIComponent(path)}`);
+      if (openFile === path || (openFile && openFile.startsWith(path + '/'))) closeFile();
+    } catch (e) {
+      errors.push(`${path}: ${e.message}`);
+    }
+  }
+  clearSelection();
+  await listDir(currentPath);
+  setStatusState('Ready');
+  if (errors.length) alert('Some deletes failed:\n' + errors.join('\n'));
+}
+
+function openBulkMoveModal() {
+  if (!selectedItems.size) return;
+  document.getElementById('bulkMoveTitle').textContent = `Move ${selectedItems.size} item${selectedItems.size !== 1 ? 's' : ''}`;
+  document.getElementById('bulkMoveInput').value = currentPath;
+  document.getElementById('bulkMoveError').classList.remove('show');
+  document.getElementById('bulkMoveSubmit').disabled = false;
+  document.getElementById('bulkMoveModal').classList.add('open');
+  setTimeout(() => { const el = document.getElementById('bulkMoveInput'); el.focus(); el.select(); }, 60);
+}
+
+async function submitBulkMove() {
+  let dest = document.getElementById('bulkMoveInput').value.trim();
+  const errEl = document.getElementById('bulkMoveError');
+  errEl.classList.remove('show');
+  if (!dest) { errEl.textContent = 'Destination is required'; errEl.classList.add('show'); return; }
+  if (dest.startsWith('~/')) dest = HOME + '/' + dest.slice(2);
+  else if (dest === '~') dest = HOME;
+  const btn = document.getElementById('bulkMoveSubmit');
+  btn.disabled = true;
+  const errors = [];
+  for (const { path, name } of selectedItems.values()) {
+    const newPath = joinPath(dest, name);
+    if (newPath === path) continue;
+    try {
+      await API.post(`/servers/${serverId}/files/rename`, { oldPath: path, newPath });
+      if (openFile === path) closeFile();
+    } catch (e) {
+      errors.push(`${name}: ${e.message}`);
+    }
+  }
+  closeModal('bulkMoveModal');
+  clearSelection();
+  await listDir(currentPath);
+  if (errors.length) alert('Some moves failed:\n' + errors.join('\n'));
 }
 
 init();
