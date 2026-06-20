@@ -363,6 +363,7 @@ async function init() {
       modified = true;
       document.getElementById('editorFilename').classList.add('modified');
       document.getElementById('saveBtn').disabled = false;
+      updateDirtyIndicator();
       updateStatusBar();
     });
     monacoReady = true;
@@ -637,6 +638,7 @@ async function openFileForEdit(filePath) {
     monaco.editor.setModelLanguage(monacoEditor.getModel(), lang);
     monacoEditor.setValue(content);
     modified = false; // setValue fires onDidChangeModelContent synchronously, so reset here
+    updateDirtyIndicator();
     monacoEditor.setScrollPosition({ scrollTop: 0 });
     // Force Monaco to recalculate its size now the div is visible
     requestAnimationFrame(() => { monacoEditor.layout(); monacoEditor.focus(); });
@@ -663,6 +665,7 @@ async function saveFile() {
     await API.put(`/servers/${serverId}/files/write`, { path: openFile, content: monacoEditor.getValue() });
     modified = false;
     document.getElementById('editorFilename').classList.remove('modified');
+    updateDirtyIndicator();
     setStatusState('Saved');
     setTimeout(() => { if (!modified) setStatusState('Ready'); }, 1500);
   } catch (e) {
@@ -677,6 +680,7 @@ function closeFile() {
   if (modified && !confirm('You have unsaved changes. Discard them?')) return;
   openFile = null;
   modified = false;
+  updateDirtyIndicator();
   setActiveRow(null);
   document.getElementById('editorFilename').textContent = 'No file open';
   document.getElementById('editorFilename').classList.remove('modified');
@@ -1245,6 +1249,15 @@ async function submitGitReset() {
     btn.textContent = 'Reset';
     btn.disabled = false;
     setStatusState('Error');
+  }
+}
+
+function updateDirtyIndicator() {
+  document.querySelectorAll('.file-row.dirty').forEach(el => el.classList.remove('dirty'));
+  if (modified && openFile) {
+    document.querySelectorAll('[data-file-path]').forEach(el => {
+      if (el.dataset.filePath === openFile) el.classList.add('dirty');
+    });
   }
 }
 

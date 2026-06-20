@@ -845,6 +845,8 @@ tbody tr:hover td { background: rgba(255,255,255,.015); color: var(--text); }
   white-space: nowrap;
 }
 .editor-filename.modified { color: var(--warning); }
+.editor-filename.modified::after { content: ' ●'; font-size: 8px; vertical-align: middle; opacity: .85; }
+.file-row.dirty .file-row-name::after { content: ' ●'; font-size: 7px; vertical-align: middle; color: var(--warning); opacity: .9; }
 .editor-subline {
   color: var(--text-muted);
   font-size: 11px;
