@@ -729,7 +729,7 @@ router.patch('/:id/members/:userId', (req, res) => {
   const validPerms = ['console', 'files', 'settings', 'power'];
   const perms = Array.isArray(req.body.permissions) ? req.body.permissions.filter(p => validPerms.includes(p)) : [];
   const result = db.prepare('UPDATE server_members SET permissions = ? WHERE server_id = ? AND user_id = ?')
-    .run(JSON.stringify(perms), req.params.id, Number(req.params.userId));
+    .run(JSON.stringify(perms), req.params.id, req.params.userId);
   if (!result.changes) return res.status(404).json({ error: 'Member not found' });
   res.json({ ok: true });
 });
@@ -738,7 +738,16 @@ router.delete('/:id/members/:userId', (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
-  db.prepare('DELETE FROM server_members WHERE server_id = ? AND user_id = ?').run(req.params.id, Number(req.params.userId));
+  db.prepare('DELETE FROM server_members WHERE server_id = ? AND user_id = ?').run(req.params.id, req.params.userId);
+  res.json({ ok: true });
+});
+
+router.post('/:id/leave', (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  const member = getMember(req.params.id, req.user.id);
+  if (!member) return res.status(403).json({ error: 'Not a member of this server' });
+  db.prepare('DELETE FROM server_members WHERE server_id = ? AND user_id = ?').run(req.params.id, req.user.id);
   res.json({ ok: true });
 });
 

@@ -274,15 +274,15 @@ async function loadMembers() {
             </label>`).join('')}
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
-          <button class="btn btn-primary btn-sm" style="font-size:11px" onclick="saveMemberPerms(${m.user_id})">Save</button>
-          <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--danger)" onclick="removeMember(${m.user_id})">Remove</button>
+          <button class="btn btn-primary btn-sm" style="font-size:11px" onclick="saveMemberPerms('${m.user_id}')">Save</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--danger)" onclick="removeMember('${m.user_id}')">Remove</button>
         </div>
       </div>`).join('');
   } catch (e) { el.innerHTML = `<div class="text-muted" style="font-size:13px">${esc(e.message)}</div>`; }
 }
 
 async function saveMemberPerms(userId) {
-  const checked = [...document.querySelectorAll(`.mperm-${userId}:checked`)].map(el => el.dataset.perm);
+  const checked = [...document.querySelectorAll(`[data-uid="${userId}"] [data-perm]:checked`)].map(el => el.dataset.perm);
   try {
     await API.patch(`/servers/${serverId}/members/${userId}`, { permissions: checked });
     const row = document.querySelector(`.member-row[data-uid="${userId}"]`);

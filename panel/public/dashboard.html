@@ -240,7 +240,11 @@ function renderPresets() {
 }
 
 function serverCard(s, showOwner = false) {
-  return `
+  let permsLine = '';
+  if (s.shared && s.member_permissions) {
+    try { const p = JSON.parse(s.member_permissions); if (p.length) permsLine = `<div style="font-size:10px;color:var(--text-dim);margin-top:2px">Access: ${p.join(', ')}</div>`; } catch {}
+  }
+  const inner = `
     <a href="/server/${s.id}" class="server-card">
       <div class="server-card-top">
         <div style="min-width:0;flex:1">
@@ -250,7 +254,7 @@ function serverCard(s, showOwner = false) {
           </div>
           <div class="server-image">${esc(s.image)}</div>
           ${showOwner ? `<div style="font-size:11px;color:var(--text-dim);margin-top:2px">Owner: ${esc(s.owner_name || 'Unknown')}</div>` : ''}
-          ${s.shared && s.member_permissions ? (() => { try { const p = JSON.parse(s.member_permissions); return p.length ? `<div style="font-size:10px;color:var(--text-dim);margin-top:2px">Access: ${p.join(', ')}</div>` : ''; } catch { return ''; } })() : ''}
+          ${permsLine}
         </div>
         ${badgeHtml(s.status)}
       </div>
@@ -265,6 +269,19 @@ function serverCard(s, showOwner = false) {
         ${s.port_mappings?.[0]?.hostPort ? `<div class="server-mini-stat">Port: <span>${s.port_mappings[0].hostPort}</span></div>` : ''}
       </div>
     </a>`;
+  if (!s.shared) return inner;
+  return `<div style="position:relative">${inner}<button class="btn btn-ghost btn-sm" style="position:absolute;top:8px;right:8px;font-size:11px;padding:2px 8px;z-index:1;opacity:.8" onclick="leaveServer('${s.id}',event)">Leave</button></div>`;
+}
+
+async function leaveServer(sid, e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!confirm('Leave this shared server? You will lose access immediately.')) return;
+  try {
+    await API.post(`/servers/${sid}/leave`, {});
+    servers = servers.filter(s => s.id !== sid);
+    renderServers();
+  } catch (err) { alert(err.message); }
 }
 
 function renderServers() {
