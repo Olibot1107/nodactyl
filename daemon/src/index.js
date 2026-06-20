@@ -100,6 +100,22 @@ function respond(requestId, data = {}, error = null) {
   send({ type: 'response', requestId, success: !error, data, error: error?.message || error });
 }
 
+// If /home/container/packages exists (populated by pip --target), inject PYTHONPATH so
+// installed packages are importable without any user-side configuration.
+function envWithPythonPath(serverId, envVars) {
+  if (!dataPath || !serverId) return envVars || [];
+  const packagesDir = nodePath.join(serverDataDir(serverId), 'packages');
+  if (!fs.existsSync(packagesDir)) return envVars || [];
+  const list = envVars || [];
+  const existing = list.find(e => e.key === 'PYTHONPATH');
+  if (existing) {
+    return list.map(e => e.key === 'PYTHONPATH'
+      ? { ...e, value: `/home/container/packages:${e.value}` }
+      : e);
+  }
+  return [...list, { key: 'PYTHONPATH', value: '/home/container/packages' }];
+}
+
 // ── Message handlers ──────────────────────────────────────────────────────────
 async function handleMessage(msg) {
   switch (msg.type) {
@@ -181,8 +197,9 @@ async function handleMessage(msg) {
         }
 
         const container = await docker.createContainer({
-          serverId, image, portMappings, envVars, memoryLimit, cpuLimit,
-          binds,
+          serverId, image, portMappings,
+          envVars: envWithPythonPath(serverId, envVars),
+          memoryLimit, cpuLimit, binds,
           startupCommand: startupCommand || '',
         });
         respond(requestId, { containerId: container.id });
@@ -217,7 +234,7 @@ async function handleMessage(msg) {
             serverId,
             image: serverConfig.image,
             portMappings: serverConfig.portMappings || [],
-            envVars: serverConfig.envVars || [],
+            envVars: envWithPythonPath(serverId, serverConfig.envVars || []),
             memoryLimit: serverConfig.memoryLimit || 512,
             cpuLimit: serverConfig.cpuLimit || 1.0,
             binds,
@@ -341,11 +358,13 @@ async function handleMessage(msg) {
       const { requestId, serverId, image, envVars, memoryLimit, manager, pkg } = msg;
       const isManifest = !pkg || pkg.trim() === '';
       // pkg='' → install from manifest file (package.json, requirements.txt, etc.)
+      // pip installs to --target so packages land in the bind-mounted /home/container/packages
+      // and survive container recreation. PYTHONPATH is injected automatically on server start.
       const CMDS = {
         npm:      isManifest ? 'npm install'                     : `npm install ${pkg}`,
         yarn:     isManifest ? 'yarn install'                    : `yarn add ${pkg}`,
-        pip:      isManifest ? 'pip install -r requirements.txt' : `pip install ${pkg}`,
-        pip3:     isManifest ? 'pip3 install -r requirements.txt': `pip3 install ${pkg}`,
+        pip:      isManifest ? 'pip install --target /home/container/packages -r requirements.txt'  : `pip install --target /home/container/packages ${pkg}`,
+        pip3:     isManifest ? 'pip3 install --target /home/container/packages -r requirements.txt' : `pip3 install --target /home/container/packages ${pkg}`,
         composer: isManifest ? 'composer install'                : `composer require ${pkg}`,
         gem:      isManifest ? null                              : `gem install ${pkg}`,
         cargo:    isManifest ? 'cargo build'                     : `cargo add ${pkg}`,
