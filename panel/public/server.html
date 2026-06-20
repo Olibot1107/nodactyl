@@ -353,7 +353,7 @@ function connectSocket() {
     if (status === 'running') {
       clearConsole();
       if (isTerminalMode) {
-        appendLog('\x1b[36m[Nodactyl] Terminal mode active — sh running as PID 1. cd persists. Ctrl+C interrupts.\x1b[0m');
+        appendLog('\x1b[36m[Nodactyl] Terminal mode active\x1b[0m');
         // Send a newline after sh has had time to start so the prompt appears immediately
         setTimeout(() => API.post(`/servers/${serverId}/stdin`, { data: '\n' }).catch(() => {}), 1200);
       }
