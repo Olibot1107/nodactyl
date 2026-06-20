@@ -34,6 +34,7 @@ const UI = {
   terminal: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>',
   clear: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>',
   termMode: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 9l4 3-4 3"/><path d="M13 15h4"/></svg>',
+  copy: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>',
 };
 
 async function init() {
@@ -135,14 +136,16 @@ function render() {
           <div class="card-title">${UI.terminal} Console <span id="termModeBadge" style="display:none;font-size:10px;font-weight:600;background:var(--primary);color:#fff;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle;letter-spacing:.04em">TERMINAL MODE</span></div>
           <div class="console-header-actions">
             <button class="btn btn-ghost btn-sm" id="terminalModeBtn" onclick="doTerminal()">${UI.termMode} Terminal</button>
+            <button class="btn btn-ghost btn-sm" onclick="copyConsole()" title="Copy all output">${UI.copy} Copy</button>
             <button class="btn btn-ghost btn-sm" onclick="clearConsole()">${UI.clear} Clear</button>
           </div>
         </div>
         <div class="console-wrap" id="consoleOut"></div>
         <div class="console-input-wrap">
-          <span class="console-prompt">$</span>
+          <span class="console-prompt" id="consolePrompt">$</span>
           <input type="text" class="console-input" id="cmdInput" placeholder="${server.status === 'running' ? 'Enter command...' : 'Start the server to send commands'}" ${server.status !== 'running' ? 'disabled' : ''}>
-          <button class="btn btn-primary btn-sm" onclick="sendCommand()" ${server.status !== 'running' ? 'disabled' : ''}>Send</button>
+          <button class="btn btn-ghost btn-sm" id="ctrlCBtn" onclick="sendSignal()" style="display:none" title="Send Ctrl+C (interrupt)">^C</button>
+          <button class="btn btn-primary btn-sm" id="sendBtn" onclick="sendCommand()" ${server.status !== 'running' ? 'disabled' : ''}>Send</button>
         </div>
       </div>
 
@@ -224,12 +227,19 @@ function updateLiveBits() {
   if (controls) controls.innerHTML = controlsHtml();
 
   const input = document.getElementById('cmdInput');
-  const sendBtn = input?.parentElement?.querySelector('button');
+  const sendBtn = document.getElementById('sendBtn');
+  const ctrlCBtn = document.getElementById('ctrlCBtn');
+  const prompt = document.getElementById('consolePrompt');
+  const running = server.status === 'running';
   if (input) {
-    input.disabled = server.status !== 'running';
-    input.placeholder = server.status === 'running' ? 'Enter command...' : 'Start the server to send commands';
+    input.disabled = !running;
+    input.placeholder = running
+      ? (isTerminalMode ? 'Enter command (cd persists, Ctrl+C interrupts)...' : 'Enter command...')
+      : 'Start the server to send commands';
   }
-  if (sendBtn) sendBtn.disabled = server.status !== 'running';
+  if (sendBtn) sendBtn.disabled = !running;
+  if (ctrlCBtn) ctrlCBtn.style.display = running && isTerminalMode ? '' : 'none';
+  if (prompt) prompt.textContent = isTerminalMode ? '>' : '$';
 
   if (server.status !== 'running') {
     updateStats({ cpu: 0, memory: 0, memoryLimit: server.memory_limit });
@@ -301,6 +311,12 @@ function _flushLogs() {
   if (_logQueue.length) { _logRafPending = true; requestAnimationFrame(_flushLogs); }
 }
 
+function copyConsole() {
+  const el = document.getElementById('consoleOut');
+  if (!el) return;
+  navigator.clipboard.writeText(el.innerText).catch(() => {});
+}
+
 function clearConsole() {
   _logQueue = [];
   const el = document.getElementById('consoleOut');
@@ -369,13 +385,20 @@ function subscribeToLogs() {
   socket.emit('subscribe-logs', { serverId, tail });
 }
 
-function sendCommand() {
+async function sendCommand() {
   const inp = document.getElementById('cmdInput');
   const cmd = inp?.value.trim();
   if (!cmd || server.status !== 'running') return;
-  appendLog(`$ ${cmd}`);
-  socket.emit('send-command', { serverId, command: cmd });
   inp.value = '';
+  if (isTerminalMode) {
+    // Send as raw stdin — bash (PID 1) receives it, echoes it, and executes it
+    // cd persists, running processes receive signals properly
+    try { await API.post(`/servers/${serverId}/stdin`, { data: cmd + '\n' }); }
+    catch (e) { appendLog(`[Error: ${e.message}]`, true); }
+  } else {
+    appendLog(`$ ${cmd}`);
+    socket.emit('send-command', { serverId, command: cmd });
+  }
 }
 
 async function sendSignal() {
