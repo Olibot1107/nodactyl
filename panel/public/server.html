@@ -195,18 +195,6 @@ function render() {
             </div>
           </div>
         </div>` : ''}
-
-        ${server.env_vars?.length ? `
-        <div class="card">
-          <div class="card-title mb-4">Environment</div>
-          <div class="detail-list">
-            ${server.env_vars.map(e => `
-              <div class="detail-row">
-                <div class="detail-label">${esc(e.key)}</div>
-                <div class="detail-value font-mono" style="word-break:break-all">${esc(e.value)}</div>
-              </div>`).join('')}
-          </div>
-        </div>` : ''}
       </aside>
     </div>`;
 
