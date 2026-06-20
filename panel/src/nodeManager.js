@@ -161,6 +161,9 @@ class NodeManager {
         // Scoped emit: only the server owner and admins receive the update
         if (this.io) {
           this.io.to(`user:${server.owner_id}`).to('admins').emit('server-status', { serverId: msg.serverId, status: msg.status });
+          // Also notify members who have console access
+          const members = db.prepare("SELECT user_id FROM server_members WHERE server_id = ? AND permissions LIKE '%console%'").all(msg.serverId);
+          members.forEach(m => { if (this.io) this.io.to(`user:${m.user_id}`).emit('server-status', { serverId: msg.serverId, status: msg.status }); });
         }
         sendDiscordWebhook(msg.serverId, msg.status);
         break;

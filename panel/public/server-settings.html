@@ -37,6 +37,7 @@ async function init() {
     document.getElementById('content').innerHTML = buildContent();
     populateForm();
     attachListeners();
+    if (getUser()?.role === 'admin' || server.owner_id === getUser()?.id) loadMembers();
   } catch (e) {
     document.getElementById('content').innerHTML = `<div class="empty-state"><p>${esc(e.message)}</p></div>`;
   }
@@ -105,6 +106,25 @@ function buildContent() {
         <button class="btn btn-ghost btn-sm mt-3" type="button" onclick="addEnvRow()">+ Add Variable</button>
         <div class="form-hint mt-2">Changes take effect after restarting the server.</div>
       </div>
+
+      ${(isAdmin || server.owner_id === getUser()?.id) ? `
+      <div class="card mb-4" id="membersCard">
+        <div class="card-title mb-4">Access &amp; Members</div>
+        <div id="membersList"><div class="text-muted" style="font-size:13px">Loading...</div></div>
+        <div class="mt-4" style="border-top:1px solid var(--border);padding-top:16px">
+          <div class="form-label mb-2">Add member</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+            <input class="form-input" id="addMemberUser" placeholder="username" style="width:160px">
+            <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" id="permConsole" checked style="accent-color:var(--primary)"> Console</label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" id="permFiles" style="accent-color:var(--primary)"> Files</label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" id="permSettings" style="accent-color:var(--primary)"> Settings</label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" id="permPower" style="accent-color:var(--primary)"> Power</label>
+            <button class="btn btn-primary btn-sm" onclick="addMember()">Add</button>
+          </div>
+          <div id="memberError" class="alert alert-error mt-2" style="display:none"></div>
+        </div>
+      </div>
+      ` : ''}
 
       <div class="card mb-4" id="notifCard">
         <div class="card-title mb-4">Notifications</div>
@@ -220,6 +240,43 @@ function attachListeners() {
   document.getElementById('fieldStartup')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); saveSettings(); }
   });
+}
+
+async function loadMembers() {
+  const el = document.getElementById('membersList');
+  if (!el) return;
+  try {
+    const members = await API.get(`/servers/${serverId}/members`);
+    if (!members.length) { el.innerHTML = '<div class="text-muted" style="font-size:13px">No members yet.</div>'; return; }
+    const PERM_LABELS = { console: 'Console', files: 'Files', settings: 'Settings', power: 'Power' };
+    el.innerHTML = members.map(m => `
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:13px;font-weight:500;min-width:120px">${esc(m.username)}</span>
+        <span style="flex:1;display:flex;gap:4px;flex-wrap:wrap">
+          ${m.permissions.map(p => `<span class="badge" style="font-size:10px;padding:1px 6px;background:var(--bg3)">${PERM_LABELS[p]||p}</span>`).join('')}
+        </span>
+        <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:11px" onclick="removeMember(${m.user_id})">Remove</button>
+      </div>`).join('');
+  } catch (e) { el.innerHTML = `<div class="text-muted" style="font-size:13px">${esc(e.message)}</div>`; }
+}
+
+async function addMember() {
+  const username = document.getElementById('addMemberUser').value.trim();
+  const errEl = document.getElementById('memberError');
+  errEl.style.display = 'none';
+  if (!username) { errEl.textContent = 'Enter a username.'; errEl.style.display = ''; return; }
+  const permissions = ['console','files','settings','power'].filter(p => document.getElementById('perm'+p[0].toUpperCase()+p.slice(1))?.checked);
+  try {
+    await API.post(`/servers/${serverId}/members`, { username, permissions });
+    document.getElementById('addMemberUser').value = '';
+    loadMembers();
+  } catch (e) { errEl.textContent = e.message; errEl.style.display = ''; }
+}
+
+async function removeMember(userId) {
+  if (!confirm('Remove this member?')) return;
+  try { await API.delete(`/servers/${serverId}/members/${userId}`); loadMembers(); }
+  catch (e) { alert(e.message); }
 }
 
 async function saveSettings() {

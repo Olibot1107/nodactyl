@@ -7,8 +7,20 @@ const nodeManager = require('../nodeManager');
 const router = express.Router();
 router.use(requireAuth);
 
+function getMember(serverId, userId) {
+  return db.prepare('SELECT permissions FROM server_members WHERE server_id = ? AND user_id = ?').get(serverId, userId);
+}
+
 function canAccess(server, user) {
-  return user.role === 'admin' || server.owner_id === user.id;
+  if (user.role === 'admin' || server.owner_id === user.id) return true;
+  return !!getMember(server.id, user.id);
+}
+
+function hasPerm(server, user, perm) {
+  if (user.role === 'admin' || server.owner_id === user.id) return true;
+  const member = getMember(server.id, user.id);
+  if (!member) return false;
+  try { return JSON.parse(member.permissions).includes(perm); } catch { return false; }
 }
 
 function suspendedBlock(server, user) {
@@ -117,7 +129,12 @@ function checkAccountLimits(userId, addMemoryMb, addDiskMb) {
 router.get('/', (req, res) => {
   const servers = req.user.role === 'admin'
     ? db.prepare('SELECT s.*, u.username as owner_name, n.name as node_name FROM servers s JOIN users u ON s.owner_id = u.id JOIN nodes n ON s.node_id = n.id ORDER BY s.created_at DESC').all()
-    : db.prepare('SELECT s.*, u.username as owner_name, n.name as node_name FROM servers s JOIN users u ON s.owner_id = u.id JOIN nodes n ON s.node_id = n.id WHERE s.owner_id = ? ORDER BY s.created_at DESC').all(req.user.id);
+    : db.prepare(`SELECT s.*, u.username as owner_name, n.name as node_name,
+    CASE WHEN s.owner_id = ? THEN 0 ELSE 1 END as shared,
+    (SELECT sm.permissions FROM server_members sm WHERE sm.server_id = s.id AND sm.user_id = ?) as member_permissions
+    FROM servers s JOIN users u ON s.owner_id = u.id JOIN nodes n ON s.node_id = n.id
+    WHERE s.owner_id = ? OR s.id IN (SELECT server_id FROM server_members WHERE user_id = ?)
+    ORDER BY s.created_at DESC`).all(req.user.id, req.user.id, req.user.id, req.user.id);
 
   res.json(servers.map(s => ({
     ...s,
@@ -125,6 +142,8 @@ router.get('/', (req, res) => {
     env_vars: JSON.parse(s.env_vars),
     discord_config: s.discord_config ? JSON.parse(s.discord_config) : null,
     node_online: nodeManager.isOnline(s.node_id),
+    shared: s.shared || 0,
+    member_permissions: s.member_permissions || null,
   })));
 });
 
@@ -281,7 +300,7 @@ router.post('/', requireAdmin, async (req, res) => {
 router.post('/:id/action', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
-  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (!hasPerm(server, req.user, 'power')) return res.status(403).json({ error: 'Forbidden' });
   if (!nodeManager.isOnline(server.node_id)) return res.status(503).json({ error: 'Node is offline' });
 
   const { action } = req.body;
@@ -350,7 +369,7 @@ function fileMsg(server, extra) {
 router.get('/:id/files', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
-  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
@@ -364,7 +383,7 @@ router.get('/:id/files', async (req, res) => {
 router.get('/:id/files/read', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
-  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
@@ -380,7 +399,7 @@ router.get('/:id/files/read', async (req, res) => {
 router.put('/:id/files/write', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
-  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
@@ -396,7 +415,7 @@ router.put('/:id/files/write', async (req, res) => {
 router.post('/:id/files/upload', express.raw({ type: '*/*', limit: '512mb' }), async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
-  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
@@ -413,7 +432,7 @@ router.post('/:id/files/upload', express.raw({ type: '*/*', limit: '512mb' }), a
 router.post('/:id/files/mkdir', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
-  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
@@ -429,7 +448,7 @@ router.post('/:id/files/mkdir', async (req, res) => {
 router.delete('/:id/files', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
-  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
@@ -445,7 +464,7 @@ router.delete('/:id/files', async (req, res) => {
 router.post('/:id/files/git', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
-  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
@@ -473,7 +492,7 @@ router.post('/:id/files/git', async (req, res) => {
 router.post('/:id/files/git-pull', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
-  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
@@ -493,7 +512,7 @@ router.post('/:id/files/git-pull', async (req, res) => {
 router.post('/:id/files/git-reset', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
-  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
@@ -513,7 +532,7 @@ router.post('/:id/files/git-reset', async (req, res) => {
 router.post('/:id/files/rename', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
-  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
@@ -529,7 +548,7 @@ router.post('/:id/files/rename', async (req, res) => {
 router.patch('/:id/settings', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
-  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (!hasPerm(server, req.user, 'settings')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr2 = suspendedBlock(server, req.user); if (suspErr2) return res.status(suspErr2.status).json({ error: suspErr2.error });
   const { name, description, startup_command, disk_limit, memory_limit, cpu_limit, discord_webhook, discord_config, env_vars } = req.body;
   const updates = [];
@@ -573,7 +592,7 @@ router.patch('/:id/settings', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
-  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
   const suspErr3 = suspendedBlock(server, req.user); if (suspErr3) return res.status(suspErr3.status).json({ error: suspErr3.error });
 
   if (nodeManager.isOnline(server.node_id) && server.container_id) {
@@ -591,7 +610,7 @@ router.delete('/:id', async (req, res) => {
 router.post('/:id/stdin', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
-  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (!hasPerm(server, req.user, 'console')) return res.status(403).json({ error: 'Forbidden' });
   if (!nodeManager.isOnline(server.node_id)) return res.status(503).json({ error: 'Node is offline' });
   if (server.status !== 'running') return res.status(400).json({ error: 'Server is not running' });
   const { data } = req.body;
@@ -609,7 +628,7 @@ router.post('/:id/stdin', async (req, res) => {
 router.post('/:id/packages', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
-  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user);
   if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   if (server.status !== 'stopped') return res.status(400).json({ error: 'Server must be stopped to install packages' });
@@ -652,7 +671,7 @@ router.post('/:id/packages', async (req, res) => {
 router.get('/:id/stats', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
-  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (!hasPerm(server, req.user, 'console')) return res.status(403).json({ error: 'Forbidden' });
   if (!nodeManager.isOnline(server.node_id)) return res.json({ cpu: 0, memory: 0, status: 'node_offline' });
   if (!server.container_id || server.status !== 'running') return res.json({ cpu: 0, memory: 0, status: server.status });
 
@@ -672,6 +691,55 @@ router.get('/:id/stats', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── Server members ─────────────────────────────────────────────────────────
+
+router.get('/:id/members', (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+  const members = db.prepare(`SELECT sm.user_id, sm.permissions, sm.created_at, u.username, u.email
+    FROM server_members sm JOIN users u ON sm.user_id = u.id
+    WHERE sm.server_id = ? ORDER BY sm.created_at ASC`).all(req.params.id);
+  res.json(members.map(m => ({ ...m, permissions: JSON.parse(m.permissions || '[]') })));
+});
+
+router.post('/:id/members', (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+  const { username, permissions } = req.body;
+  if (!username) return res.status(400).json({ error: 'Username required' });
+  const validPerms = ['console', 'files', 'settings', 'power'];
+  const perms = Array.isArray(permissions) ? permissions.filter(p => validPerms.includes(p)) : ['console'];
+  const target = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.id === server.owner_id) return res.status(400).json({ error: 'Cannot add server owner as member' });
+  db.prepare(`INSERT INTO server_members (server_id, user_id, permissions) VALUES (?, ?, ?)
+    ON CONFLICT(server_id, user_id) DO UPDATE SET permissions = excluded.permissions`)
+    .run(req.params.id, target.id, JSON.stringify(perms));
+  res.json({ ok: true });
+});
+
+router.patch('/:id/members/:userId', (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+  const validPerms = ['console', 'files', 'settings', 'power'];
+  const perms = Array.isArray(req.body.permissions) ? req.body.permissions.filter(p => validPerms.includes(p)) : [];
+  const result = db.prepare('UPDATE server_members SET permissions = ? WHERE server_id = ? AND user_id = ?')
+    .run(JSON.stringify(perms), req.params.id, Number(req.params.userId));
+  if (!result.changes) return res.status(404).json({ error: 'Member not found' });
+  res.json({ ok: true });
+});
+
+router.delete('/:id/members/:userId', (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+  db.prepare('DELETE FROM server_members WHERE server_id = ? AND user_id = ?').run(req.params.id, Number(req.params.userId));
+  res.json({ ok: true });
 });
 
 module.exports = router;

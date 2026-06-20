@@ -10,6 +10,14 @@ const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = require('./middleware/auth');
 const nodeManager = require('./nodeManager');
 
+function socketCanConsole(server, user) {
+  if (user.role === 'admin' || server.owner_id === user.id) return true;
+  const { db } = require('./db');
+  const member = db.prepare('SELECT permissions FROM server_members WHERE server_id = ? AND user_id = ?').get(server.id, user.id);
+  if (!member) return false;
+  try { return JSON.parse(member.permissions).includes('console'); } catch { return false; }
+}
+
 async function main() {
   // Init DB first (sql.js needs async WASM load)
   const { db, init } = require('./db');
@@ -136,7 +144,7 @@ async function main() {
     socket.on('subscribe-logs', ({ serverId, tail }) => {
       const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(serverId);
       if (!server) return socket.emit('error', 'Server not found');
-      if (server.owner_id !== socket.user.id && socket.user.role !== 'admin') return socket.emit('error', 'Forbidden');
+      if (!socketCanConsole(server, socket.user)) return socket.emit('error', 'Forbidden');
       if (!nodeManager.isOnline(server.node_id)) return socket.emit('log', { serverId, line: '[Node is offline]\n' });
 
       nodeManager.subscribeToLogs(serverId, socket);
@@ -154,7 +162,7 @@ async function main() {
     socket.on('send-command', ({ serverId, command }) => {
       const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(serverId);
       if (!server) return;
-      if (server.owner_id !== socket.user.id && socket.user.role !== 'admin') return;
+      if (!socketCanConsole(server, socket.user)) return;
       nodeManager.emit(server.node_id, { type: 'exec', serverId, containerId: server.container_id, command });
     });
   });

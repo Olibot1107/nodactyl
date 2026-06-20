@@ -244,9 +244,13 @@ function serverCard(s, showOwner = false) {
     <a href="/server/${s.id}" class="server-card">
       <div class="server-card-top">
         <div style="min-width:0;flex:1">
-          <div class="server-name">${esc(s.name)}</div>
+          <div class="server-name" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            ${esc(s.name)}
+            ${s.shared ? '<span class="badge" style="font-size:10px;padding:1px 5px;background:var(--bg3);color:var(--text-muted)">Shared</span>' : ''}
+          </div>
           <div class="server-image">${esc(s.image)}</div>
           ${showOwner ? `<div style="font-size:11px;color:var(--text-dim);margin-top:2px">Owner: ${esc(s.owner_name || 'Unknown')}</div>` : ''}
+          ${s.shared && s.member_permissions ? (() => { try { const p = JSON.parse(s.member_permissions); return p.length ? `<div style="font-size:10px;color:var(--text-dim);margin-top:2px">Access: ${p.join(', ')}</div>` : ''; } catch { return ''; } })() : ''}
         </div>
         ${badgeHtml(s.status)}
       </div>
@@ -293,9 +297,15 @@ function renderServers() {
         <div class="grid-2">${others.map(s => serverCard(s, true)).join('')}</div>
       ` : ''}`;
   } else {
+    const mine   = servers.filter(s => !s.shared);
+    const shared = servers.filter(s => s.shared);
     el.innerHTML = `
       <div class="section-header mb-4"><div class="section-title">My Servers</div></div>
-      <div class="grid-2">${servers.map(s => serverCard(s)).join('')}</div>`;
+      ${mine.length ? `<div class="grid-2 mb-6">${mine.map(s => serverCard(s)).join('')}</div>` : `<div class="empty-state" style="margin-bottom:24px"><p>No servers yet.${presets.length ? ' Choose a preset above to get started.' : ' Ask an admin to create presets.'}</p></div>`}
+      ${shared.length ? `
+        <div class="section-header mb-4"><div class="section-title">Shared With Me</div></div>
+        <div class="grid-2">${shared.map(s => serverCard(s, true)).join('')}</div>
+      ` : ''}`;
   }
 }
 
