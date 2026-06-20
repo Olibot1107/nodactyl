@@ -5,26 +5,154 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sign In</title>
   <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .auth-left {
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
+      position: relative;
+      overflow: hidden;
+      justify-content: flex-end;
+      gap: 0;
+      padding: 36px;
+    }
+
+    .auth-left-inner {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      gap: 0;
+    }
+
+    .auth-deco-grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(249,115,22,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(249,115,22,.04) 1px, transparent 1px);
+      background-size: 32px 32px;
+      z-index: 0;
+    }
+
+    .auth-deco-glow {
+      position: absolute;
+      top: -120px;
+      left: -80px;
+      width: 420px;
+      height: 420px;
+      background: radial-gradient(circle, rgba(249,115,22,.08) 0%, transparent 70%);
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .auth-brand {
+      margin-bottom: auto;
+    }
+
+    .auth-terminal {
+      background: var(--bg);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-family: 'Cascadia Code','Fira Code',Consolas,monospace;
+      font-size: 11.5px;
+      line-height: 1.8;
+      color: var(--text-dim);
+      margin: 28px 0;
+      position: relative;
+    }
+
+    .auth-terminal-bar {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .term-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+    }
+    .term-dot:nth-child(1) { background: #ef4444; }
+    .term-dot:nth-child(2) { background: #f59e0b; }
+    .term-dot:nth-child(3) { background: #22c55e; }
+
+    .term-title {
+      margin-left: 4px;
+      font-size: 10.5px;
+      color: var(--text-muted);
+    }
+
+    .term-line { display: flex; gap: 8px; }
+    .term-prompt { color: #f97316; }
+    .term-ok { color: #22c55e; }
+    .term-dim { color: var(--text-muted); }
+
+    .auth-statement {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .auth-statement strong {
+      color: var(--text-dim);
+      font-weight: 600;
+    }
+
+    /* right side tweaks */
+    .auth-box h1 {
+      font-size: 20px;
+      letter-spacing: -.35px;
+    }
+
+    .auth-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 20px 0;
+    }
+  </style>
 </head>
 <body>
 <div class="auth-page">
   <div class="auth-left">
-    <div class="auth-brand">
-      <div class="logo-icon" id="brandLogo" style="overflow:hidden">N</div>
-      <div class="auth-brand-name" id="brandName">Nodactyl</div>
-    </div>
-    <div class="auth-tagline">Self-hosted server management, done right.</div>
-    <div class="auth-features">
-      <div class="auth-feature">Deploy servers from admin-defined presets</div>
-      <div class="auth-feature">Real-time logs and resource monitoring</div>
-      <div class="auth-feature">Multi-node cluster support</div>
-      <div class="auth-feature">Full Docker container isolation</div>
+    <div class="auth-deco-grid"></div>
+    <div class="auth-deco-glow"></div>
+    <div class="auth-left-inner">
+      <div class="auth-brand">
+        <div class="auth-brand" style="display:flex;align-items:center;gap:11px;margin-bottom:0">
+          <div class="logo-icon" id="brandLogo" style="overflow:hidden">N</div>
+          <div class="auth-brand-name" id="brandName">Nodactyl</div>
+        </div>
+      </div>
+
+      <div class="auth-terminal">
+        <div class="auth-terminal-bar">
+          <span class="term-dot"></span>
+          <span class="term-dot"></span>
+          <span class="term-dot"></span>
+          <span class="term-title">node-1 — bash</span>
+        </div>
+        <div class="term-line"><span class="term-prompt">$</span><span>nodactyl status</span></div>
+        <div class="term-line"><span class="term-ok">✓</span><span>daemon connected</span></div>
+        <div class="term-line"><span class="term-ok">✓</span><span>3 servers running</span></div>
+        <div class="term-line"><span class="term-dim">&nbsp;&nbsp;uptime 14d 6h 22m</span></div>
+        <div class="term-line" style="margin-top:6px"><span class="term-prompt">$</span><span style="opacity:.35">_</span></div>
+      </div>
+
+      <div class="auth-statement">
+        Your servers, your infrastructure.<br>
+        <strong>No middlemen.</strong>
+      </div>
     </div>
   </div>
+
   <div class="auth-right">
     <div class="auth-box">
-      <h1>Welcome back</h1>
-      <p class="auth-sub">Sign in to your account to continue</p>
+      <h1>Sign in</h1>
+      <p class="auth-sub" style="margin-bottom:20px">Use your panel credentials to continue.</p>
 
       <div class="alert alert-error" id="loginError"></div>
 
@@ -33,7 +161,7 @@
           <label class="form-label">Username</label>
           <input type="text" class="form-input" id="username" autocomplete="username" placeholder="your-username" required>
         </div>
-        <div class="form-group">
+        <div class="form-group" style="margin-bottom:18px">
           <label class="form-label">Password</label>
           <input type="password" class="form-input" id="password" autocomplete="current-password" placeholder="••••••••" required>
         </div>
@@ -43,7 +171,7 @@
       </form>
 
       <div class="auth-footer">
-        Don't have an account? <a href="/register">Create one</a>
+        No account? <a href="/register">Create one</a>
       </div>
     </div>
   </div>
@@ -52,7 +180,6 @@
 <script>
   if (localStorage.getItem('token')) window.location.href = '/dashboard';
 
-  // Load panel branding
   fetch('/api/settings/public').then(r => r.json()).then(s => {
     if (s.panel_name) {
       document.getElementById('brandName').textContent = s.panel_name;
