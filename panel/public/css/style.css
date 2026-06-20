@@ -268,7 +268,7 @@ a { color: inherit; text-decoration: none; }
 /* ── Grids ────────────────────────────────────── */
 .grid-2    { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap: 12px; }
 .grid-3    { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px,1fr)); gap: 12px; }
-.grid-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px,1fr)); gap: 8px; }
+.grid-stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
 
 /* ── Stat cards ───────────────────────────────── */
 .stat-card {
