@@ -400,13 +400,15 @@ router.patch('/:id/settings', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
-  const { name, description, startup_command, disk_limit, discord_webhook, discord_config } = req.body;
+  const { name, description, startup_command, disk_limit, memory_limit, cpu_limit, discord_webhook, discord_config } = req.body;
   const updates = [];
   const values = [];
   if (name !== undefined) { updates.push('name = ?'); values.push(name.trim() || server.name); }
   if (description !== undefined) { updates.push('description = ?'); values.push(description); }
   if (startup_command !== undefined) { updates.push('startup_command = ?'); values.push(startup_command); }
   if (disk_limit !== undefined && req.user.role === 'admin') { updates.push('disk_limit = ?'); values.push(Math.max(0, parseInt(disk_limit) || 0)); }
+  if (memory_limit !== undefined && req.user.role === 'admin') { updates.push('memory_limit = ?'); values.push(Math.max(64, parseInt(memory_limit) || 512)); }
+  if (cpu_limit !== undefined && req.user.role === 'admin') { updates.push('cpu_limit = ?'); values.push(Math.max(0.1, parseFloat(cpu_limit) || 1)); }
   if (discord_webhook !== undefined) {
     const url = discord_webhook?.trim() || null;
     if (url && !/^https:\/\/discord(app)?\.com\/api\/webhooks\//.test(url)) {

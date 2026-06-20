@@ -9,10 +9,46 @@
 <body>
 <div class="layout" id="app"></div>
 
+<!-- Edit modal -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <h2 class="modal-title">Edit Server</h2>
+      <button class="modal-close" onclick="closeEditModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-error" id="editError"></div>
+      <div class="form-group">
+        <label class="form-label">Name</label>
+        <input class="form-input" id="e_name" placeholder="Server name">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Memory (MB)</label>
+          <input class="form-input" id="e_memory" type="number" min="64" step="128" placeholder="512">
+        </div>
+        <div class="form-group">
+          <label class="form-label">CPU (cores)</label>
+          <input class="form-input" id="e_cpu" type="number" min="0.1" step="0.1" placeholder="1">
+        </div>
+      </div>
+      <div class="form-group mb-0">
+        <label class="form-label">Startup Command <span class="text-muted">(optional)</span></label>
+        <input class="form-input font-mono" id="e_startup" placeholder="Leave blank for image default">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeEditModal()">Cancel</button>
+      <button class="btn btn-primary" id="editSaveBtn" onclick="saveEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
 <script src="/js/api.js"></script>
 <script>
 requireAdmin();
 let servers = [];
+let editTarget = null;
 
 async function init() {
   await loadPanelSettings();
@@ -77,11 +113,11 @@ function renderTable() {
       <thead>
         <tr>
           <th>Name</th>
-          <th>Image</th>
           <th>Owner</th>
           <th>Node</th>
           <th>Status</th>
           <th>RAM</th>
+          <th>CPU</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -92,23 +128,23 @@ function renderTable() {
               <a href="/server/${s.id}" style="color:var(--text);font-weight:600">${esc(s.name)}</a>
               ${s.description ? `<div class="text-xs text-muted">${esc(s.description)}</div>` : ''}
             </td>
-            <td class="font-mono text-xs text-dim">${esc(s.image)}</td>
-            <td>${esc(s.owner_name || '—')}</td>
+            <td class="text-dim">${esc(s.owner_name || '—')}</td>
             <td>
               <div>${esc(s.node_name || '—')}</div>
               ${!s.node_online ? '<div class="text-xs text-danger">offline</div>' : ''}
             </td>
             <td>${badgeHtml(s.status)}</td>
             <td class="text-dim text-sm">${s.memory_limit} MB</td>
+            <td class="text-dim text-sm">${s.cpu_limit}</td>
             <td>
-              <div class="flex gap-2">
+              <div class="flex gap-2" style="flex-wrap:wrap">
                 <a href="/server/${s.id}" class="btn btn-ghost btn-xs">Open</a>
-                ${s.status === 'stopped' && s.node_online
-                  ? `<button class="btn btn-success btn-xs" onclick="doAction('${s.id}','start')">Start</button>`
-                  : ''}
+                <button class="btn btn-ghost btn-xs" onclick="openEdit('${s.id}')">Edit</button>
                 ${s.status === 'running'
-                  ? `<button class="btn btn-ghost btn-xs" onclick="doAction('${s.id}','stop')">Stop</button>`
-                  : ''}
+                  ? `<button class="btn btn-ghost btn-xs" onclick="doAction('${s.id}','stop','${esc(s.name)}')">Suspend</button>`
+                  : s.status === 'stopped' && s.node_online
+                    ? `<button class="btn btn-success btn-xs" onclick="doAction('${s.id}','start','${esc(s.name)}')">Start</button>`
+                    : ''}
                 <button class="btn btn-danger btn-xs" onclick="deleteServer('${s.id}','${esc(s.name)}')">Delete</button>
               </div>
             </td>
@@ -117,17 +153,71 @@ function renderTable() {
     </table>` : `<div class="empty-state"><p>${servers.length ? 'No results match your search.' : 'No servers found.'}</p></div>`;
 }
 
-async function doAction(id, action) {
-  const labels = { start: 'started', stop: 'stopped', restart: 'restarted', kill: 'killed' };
+// ── Edit modal ────────────────────────────────────────────────────────────────
+function openEdit(id) {
+  editTarget = servers.find(s => s.id === id);
+  if (!editTarget) return;
+  document.getElementById('e_name').value    = editTarget.name;
+  document.getElementById('e_memory').value  = editTarget.memory_limit;
+  document.getElementById('e_cpu').value     = editTarget.cpu_limit;
+  document.getElementById('e_startup').value = editTarget.startup_command || '';
+  document.getElementById('editError').classList.remove('show');
+  document.getElementById('editModal').classList.add('open');
+}
+
+function closeEditModal() {
+  document.getElementById('editModal').classList.remove('open');
+  editTarget = null;
+}
+
+async function saveEdit() {
+  if (!editTarget) return;
+  const errEl = document.getElementById('editError');
+  errEl.classList.remove('show');
+
+  const name    = document.getElementById('e_name').value.trim();
+  const memory  = parseInt(document.getElementById('e_memory').value);
+  const cpu     = parseFloat(document.getElementById('e_cpu').value);
+  const startup = document.getElementById('e_startup').value.trim();
+
+  if (!name)            { errEl.textContent = 'Name is required.'; errEl.classList.add('show'); return; }
+  if (!memory || memory < 64) { errEl.textContent = 'Memory must be at least 64 MB.'; errEl.classList.add('show'); return; }
+  if (!cpu    || cpu < 0.1)   { errEl.textContent = 'CPU must be at least 0.1 cores.'; errEl.classList.add('show'); return; }
+
+  const btn = document.getElementById('editSaveBtn');
+  btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true;
+
+  try {
+    await API.patch(`/servers/${editTarget.id}/settings`, {
+      name,
+      memory_limit: memory,
+      cpu_limit: cpu,
+      startup_command: startup,
+    });
+    // update local cache
+    Object.assign(editTarget, { name, memory_limit: memory, cpu_limit: cpu, startup_command: startup });
+    closeEditModal();
+    renderTable();
+    showOk('Server updated.');
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.add('show');
+  } finally {
+    btn.innerHTML = 'Save'; btn.disabled = false;
+  }
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+async function doAction(id, action, name) {
   try {
     await API.post(`/servers/${id}/action`, { action });
-    showOk(`Server ${labels[action] || action + 'ed'}.`);
+    showOk(`"${name}" ${action === 'stop' ? 'suspended' : 'started'}.`);
     await loadServers();
   } catch (e) { showErr(e.message); }
 }
 
 async function deleteServer(id, name) {
-  if (!confirm(`Delete "${name}"? The container will be removed.`)) return;
+  if (!confirm(`Delete "${name}"? The container will be permanently removed.`)) return;
   try {
     await API.delete(`/servers/${id}`);
     showOk('Server deleted.');
@@ -145,6 +235,8 @@ function showOk(msg) {
   el.textContent = msg; el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 3000);
 }
+
+document.getElementById('editModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeEditModal(); });
 
 init();
 </script>
