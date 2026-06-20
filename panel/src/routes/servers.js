@@ -298,7 +298,8 @@ router.post('/:id/action', async (req, res) => {
   };
 
   if (action === 'start') {
-    msg.startupCommand = server.startup_command || '';
+    const terminalMode = req.body.terminalMode === true;
+    msg.startupCommand = terminalMode ? 'sleep infinity' : (server.startup_command || '');
     msg.serverConfig = {
       image: server.image,
       portMappings: JSON.parse(server.port_mappings),
