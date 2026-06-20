@@ -147,17 +147,35 @@ function ansiToHtml(raw) {
   let open = 0;
   let i = 0;
   while (i < s.length) {
-    if (s.charCodeAt(i) === 0x1b && s[i + 1] === '[') {
-      const end = s.indexOf('m', i + 2);
-      if (end === -1) { i++; continue; }
-      const codes = s.slice(i + 2, end).split(';').map(Number);
-      i = end + 1;
-      for (const n of codes) {
-        if (n === 0 || isNaN(n)) { html += '</span>'.repeat(open); open = 0; }
-        else if (FG[n])  { html += `<span style="color:${FG[n]}">`;     open++; }
-        else if (n === 1){ html += `<span style="font-weight:700">`;     open++; }
-        else if (n === 2){ html += `<span style="opacity:.6">`;          open++; }
+    const code = s.charCodeAt(i);
+    if (code === 0x1b) {
+      const next = s[i + 1];
+      if (next === '[') {
+        // CSI sequence — scan to final byte (0x40–0x7e)
+        let j = i + 2;
+        while (j < s.length && (s.charCodeAt(j) < 0x40 || s.charCodeAt(j) > 0x7e)) j++;
+        if (s[j] === 'm') {
+          const codes = s.slice(i + 2, j).split(';').map(Number);
+          for (const n of codes) {
+            if (n === 0 || isNaN(n)) { html += '</span>'.repeat(open); open = 0; }
+            else if (FG[n])  { html += `<span style="color:${FG[n]}">`;  open++; }
+            else if (n === 1){ html += `<span style="font-weight:700">`; open++; }
+            else if (n === 2){ html += `<span style="opacity:.6">`;      open++; }
+          }
+        }
+        // Skip entire CSI sequence regardless of type
+        i = j + 1;
+      } else if (next === ']') {
+        // OSC sequence — ends at BEL or ESC backslash
+        const bel = s.indexOf('\x07', i + 2);
+        i = bel === -1 ? s.length : bel + 1;
+      } else {
+        // Other 2-char escape (ESC =, ESC >, ESC 7, etc.) — skip
+        i += next ? 2 : 1;
       }
+    } else if (code < 0x20 && code !== 0x09 && code !== 0x0a) {
+      // Strip other control characters (keep tab + newline)
+      i++;
     } else {
       const c = s[i++];
       if      (c === '&') html += '&amp;';
