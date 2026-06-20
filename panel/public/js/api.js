@@ -72,16 +72,16 @@ function renderSidebar(activePage) {
 
   const userNav = [
     { href: '/dashboard', icon: ICONS.servers, label: 'My Servers', key: 'dashboard' },
-    { href: '/nodes',     icon: ICONS.nodes,   label: 'Node Status', key: 'nodes' },
+    ...(!isAdmin ? [{ href: '/nodes', icon: ICONS.nodes, label: 'Node Status', key: 'nodes' }] : []),
   ];
 
   const adminNav = isAdmin ? [
-    { href: '/admin/servers', icon: ICONS.allServers, label: 'All Servers',  key: 'admin-servers' },
-    { href: '/admin/presets', icon: ICONS.presets,    label: 'Presets',      key: 'admin-presets' },
-    { href: '/admin/ranks',   icon: ICONS.ranks,      label: 'Ranks',        key: 'admin-ranks' },
-    { href: '/admin/users',   icon: ICONS.users,      label: 'Users',        key: 'admin-users' },
-    { href: '/nodes',         icon: ICONS.nodes,      label: 'Nodes',        key: 'nodes' },
-    { href: '/admin/settings',icon: ICONS.settings,   label: 'Settings',     key: 'admin-settings' },
+    { href: '/admin/servers',  icon: ICONS.allServers, label: 'All Servers',  key: 'admin-servers' },
+    { href: '/admin/presets',  icon: ICONS.presets,    label: 'Presets',      key: 'admin-presets' },
+    { href: '/admin/ranks',    icon: ICONS.ranks,      label: 'Ranks',        key: 'admin-ranks' },
+    { href: '/admin/users',    icon: ICONS.users,      label: 'Users',        key: 'admin-users' },
+    { href: '/nodes',          icon: ICONS.nodes,      label: 'Nodes',        key: 'nodes' },
+    { href: '/admin/settings', icon: ICONS.settings,   label: 'Settings',     key: 'admin-settings' },
   ] : [];
 
   const navItem = (n) => `
@@ -113,15 +113,15 @@ function renderSidebar(activePage) {
         ${isAdmin ? `<div class="nav-divider"></div><div class="nav-section-title">Admin</div>${adminNav.map(navItem).join('')}` : ''}
       </nav>
       <div class="sidebar-footer">
-        <div class="user-chip">
-          <div class="user-avatar">${(user?.username?.[0] || '?').toUpperCase()}</div>
+        <div class="user-chip" onclick="location.href='/account'" style="cursor:pointer" title="My Account">
+          <div class="user-avatar" style="overflow:hidden">${user?.avatar ? `<img src="${esc(user.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" alt="">` : (user?.username?.[0] || '?').toUpperCase()}</div>
           <div class="user-info">
             <div class="user-name">${esc(user?.username || '')}</div>
             <div style="display:flex;align-items:center;gap:5px;margin-top:2px">
               ${rankBadge || `<span class="user-role">${user?.role || ''}</span>`}
             </div>
           </div>
-          <button class="logout-btn" onclick="logout()" title="Log out">${ICONS.logout}</button>
+          <button class="logout-btn" onclick="event.stopPropagation();logout()" title="Log out">${ICONS.logout}</button>
         </div>
       </div>
     </aside>`;

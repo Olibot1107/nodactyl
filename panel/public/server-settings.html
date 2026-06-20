@@ -94,15 +94,11 @@ function buildContent() {
         </div>
       </div>
 
-      ${isAdmin ? `
-      <div class="card mb-4">
-        <div class="card-title mb-4">Resource Limits</div>
-        <div class="form-group mb-0">
-          <label class="form-label">Disk Limit <span class="text-muted">(MB — 0 = unlimited)</span></label>
-          <input class="form-input" id="fieldDiskLimit" type="number" min="0" step="512" value="${esc(String(server.disk_limit || 0))}" placeholder="0">
-          <div class="form-hint mt-2">${UI.info} Maximum storage the server can use. Shown as a warning when exceeded.</div>
-        </div>
-      </div>` : ''}
+
+      <div class="card mb-4" id="notifCard">
+        <div class="card-title mb-4">Notifications</div>
+        ${buildNotifCard()}
+      </div>
 
       <div id="settingsAlert" class="alert mb-3" style="display:none"></div>
 
@@ -111,11 +107,11 @@ function buildContent() {
         <button class="btn btn-ghost" onclick="location.href='/server/${serverId}'">Cancel</button>
       </div>
 
-      ${isAdmin ? `
       <div class="card mt-6" style="border-color:var(--danger-muted,#ef444422)">
         <div class="card-title mb-1" style="color:var(--danger)">Danger Zone</div>
         <div class="text-muted mb-4" style="font-size:12.5px">These actions are irreversible.</div>
-        <div class="form-group mb-0">
+        ${isAdmin ? `
+        <div class="form-group mb-4">
           <label class="form-label mb-2">Server Details (read-only)</label>
           <div class="detail-list">
             <div class="detail-row">
@@ -139,11 +135,41 @@ function buildContent() {
               <div class="detail-value">${esc(String(server.cpu_limit))} cores</div>
             </div>
           </div>
-        </div>
-        <div class="mt-4">
+        </div>` : ''}
+        <div>
           <button class="btn btn-danger btn-sm" onclick="deleteServer()">Delete Server</button>
         </div>
-      </div>` : ''}
+      </div>
+    </div>`;
+}
+
+function buildNotifCard() {
+  const cfg = server.discord_config || {};
+  const events = cfg.events?.length ? cfg.events : ['running', 'stopped', 'error'];
+  const chk = (e) => events.includes(e) ? 'checked' : '';
+  return `
+    <div class="form-group mb-3">
+      <label class="form-label">Discord Webhook URL <span class="text-muted">(optional)</span></label>
+      <input class="form-input font-mono" id="fieldWebhook" value="${esc(server.discord_webhook || '')}" placeholder="https://discord.com/api/webhooks/...">
+      <div class="form-hint mt-2">${UI.info} Leave blank to disable Discord notifications.</div>
+    </div>
+    <div class="form-row mb-3">
+      <div class="form-group mb-0">
+        <label class="form-label">Bot Display Name <span class="text-muted">(optional)</span></label>
+        <input class="form-input" id="fieldBotName" value="${esc(cfg.username || '')}" placeholder="Nodactyl">
+      </div>
+      <div class="form-group mb-0">
+        <label class="form-label">Ping / Mention <span class="text-muted">(optional)</span></label>
+        <input class="form-input font-mono" id="fieldMention" value="${esc(cfg.mention || '')}" placeholder="@everyone">
+      </div>
+    </div>
+    <div class="form-group mb-0">
+      <label class="form-label mb-2">Notify on</label>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="checkbox" id="evtRunning" ${chk('running')} style="accent-color:var(--primary)"> Server Online</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="checkbox" id="evtStopped" ${chk('stopped')} style="accent-color:var(--primary)"> Server Offline</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="checkbox" id="evtError" ${chk('error')} style="accent-color:var(--primary)"> Error</label>
+      </div>
     </div>`;
 }
 
@@ -162,7 +188,16 @@ async function saveSettings() {
   const name = document.getElementById('fieldName').value.trim();
   const description = document.getElementById('fieldDesc').value.trim();
   const startup_command = document.getElementById('fieldStartup').value.trim();
-  const diskLimitEl = document.getElementById('fieldDiskLimit');
+  const discord_webhook = document.getElementById('fieldWebhook').value.trim();
+  const discord_config = {
+    username: document.getElementById('fieldBotName')?.value.trim() || null,
+    mention: document.getElementById('fieldMention')?.value.trim() || null,
+    events: [
+      document.getElementById('evtRunning')?.checked && 'running',
+      document.getElementById('evtStopped')?.checked && 'stopped',
+      document.getElementById('evtError')?.checked && 'error',
+    ].filter(Boolean),
+  };
   const alertEl = document.getElementById('settingsAlert');
   const btn = document.getElementById('saveBtn');
 
@@ -170,20 +205,24 @@ async function saveSettings() {
     showAlert('error', 'Name is required.');
     return;
   }
+  if (discord_webhook && !/^https:\/\/discord(app)?\.com\/api\/webhooks\//.test(discord_webhook)) {
+    showAlert('error', 'Invalid Discord webhook URL. Must start with https://discord.com/api/webhooks/');
+    return;
+  }
 
   btn.innerHTML = '<span class="spinner"></span> Saving...';
   btn.disabled = true;
   alertEl.style.display = 'none';
 
-  const body = { name, description, startup_command };
-  if (diskLimitEl) body.disk_limit = parseInt(diskLimitEl.value) || 0;
+  const body = { name, description, startup_command, discord_webhook: discord_webhook || null, discord_config };
 
   try {
     await API.patch(`/servers/${serverId}/settings`, body);
     server.name = name;
     server.description = description;
     server.startup_command = startup_command;
-    if (diskLimitEl) server.disk_limit = body.disk_limit;
+    server.discord_webhook = discord_webhook || null;
+    server.discord_config = discord_config;
     renderTopbar();
     showAlert('success', 'Settings saved.');
   } catch (e) {

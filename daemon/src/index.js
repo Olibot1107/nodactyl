@@ -1,6 +1,7 @@
 const WebSocket = require('ws');
 const nodePath = require('path');
 const fs = require('fs');
+const { spawnSync } = require('child_process');
 const docker = require('./docker');
 const hostfs = require('./hostfs');
 
@@ -358,6 +359,83 @@ async function handleMessage(msg) {
           await docker.renameFile(containerId, oldPath, newPath);
         }
         respond(requestId, {});
+      } catch (err) {
+        respond(requestId, {}, err);
+      }
+      break;
+    }
+
+    case 'update-daemon': {
+      const { requestId } = msg;
+      const repoDir = nodePath.join(__dirname, '..');
+      // Check this is actually a git repo before trying
+      if (!fs.existsSync(nodePath.join(repoDir, '.git'))) {
+        respond(requestId, {}, new Error(
+          'Not a git repository. The daemon must be installed via git clone to use auto-update.\n' +
+          'If running in Docker, rebuild the image instead: docker compose build daemon && docker compose up -d daemon'
+        ));
+        break;
+      }
+      const result = spawnSync('git', ['pull'], {
+        cwd: repoDir,
+        timeout: 60000,
+        encoding: 'utf8',
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      });
+      if (result.error) { respond(requestId, {}, result.error); break; }
+      const output = (result.stdout + result.stderr).trim() || 'Already up to date.';
+      if (result.status !== 0) { respond(requestId, {}, new Error(output)); break; }
+      respond(requestId, { output });
+      // Exit after response is sent — process manager (Docker restart policy, PM2 etc.) restarts with new code
+      console.log('[daemon] Update pulled — restarting...');
+      setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    case 'git-clone': {
+      const { requestId, serverId, url, branch, folder, path: targetPath } = msg;
+      if (!dataPath || !serverId) { respond(requestId, {}, new Error('No data path configured on this node')); break; }
+      try {
+        const dataDir = serverDataDir(serverId);
+        const hostTarget = toHostPath(targetPath || HOME_CONTAINER);
+        const base = nodePath.resolve(dataDir);
+
+        // Derive folder name from URL if not provided
+        const repoName = folder || url.split('/').pop().replace(/\.git$/, '') || 'repo';
+
+        const targetFull = nodePath.resolve(nodePath.join(base, hostTarget.replace(/^\//, ''), repoName));
+        if (!targetFull.startsWith(base + nodePath.sep) && targetFull !== base) {
+          respond(requestId, {}, new Error('Path traversal detected'));
+          break;
+        }
+
+        let result;
+        const isGitRepo = fs.existsSync(nodePath.join(targetFull, '.git'));
+
+        if (isGitRepo) {
+          console.log(`[server:${serverId.slice(0,8)}] Git pull in ${targetFull}`);
+          result = spawnSync('git', ['-C', targetFull, 'pull', '--ff-only'], {
+            timeout: 270000, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+          });
+        } else {
+          console.log(`[server:${serverId.slice(0,8)}] Git clone ${url} → ${targetFull}`);
+          const args = ['clone', '--depth', '1'];
+          if (branch) args.push('--branch', branch);
+          args.push(url, targetFull);
+          result = spawnSync('git', args, {
+            timeout: 270000, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+          });
+        }
+
+        if (result.error) { respond(requestId, {}, result.error); break; }
+        if (result.status !== 0) {
+          const msg = (result.stderr || result.stdout || 'git command failed').trim();
+          respond(requestId, {}, new Error(msg));
+          break;
+        }
+
+        const output = (result.stdout + result.stderr).trim() || (isGitRepo ? 'Already up to date.' : 'Clone complete.');
+        respond(requestId, { output, pulled: isGitRepo, folder: repoName });
       } catch (err) {
         respond(requestId, {}, err);
       }

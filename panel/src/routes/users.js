@@ -1,13 +1,14 @@
 const express = require('express');
 const { db } = require('../db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
+const nodeManager = require('../nodeManager');
 
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
 
 router.get('/', (req, res) => {
   const users = db.prepare(`
-    SELECT u.id, u.username, u.email, u.role, u.suspended, u.rank_id, u.created_at,
+    SELECT u.id, u.username, u.email, u.role, u.suspended, u.rank_id, u.avatar, u.created_at,
            r.name as rank_name, r.color as rank_color
     FROM users u
     LEFT JOIN ranks r ON u.rank_id = r.id
@@ -50,11 +51,21 @@ router.patch('/:id/rank', (req, res) => {
   res.json({ ok: true });
 });
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot delete yourself' });
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (user.role === 'admin') return res.status(400).json({ error: 'Cannot delete admin accounts' });
+
+  const servers = db.prepare('SELECT * FROM servers WHERE owner_id = ?').all(req.params.id);
+  await Promise.all(servers.map(s => {
+    if (nodeManager.isOnline(s.node_id) && s.container_id) {
+      return nodeManager.send(s.node_id, {
+        type: 'delete-server', serverId: s.id, containerId: s.container_id,
+      }, { timeout: 15000 }).catch(() => {});
+    }
+  }));
+
   db.prepare('DELETE FROM servers WHERE owner_id = ?').run(req.params.id);
   db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
   res.json({ ok: true });

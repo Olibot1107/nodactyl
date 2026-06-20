@@ -22,12 +22,12 @@ router.get('/:id', (req, res) => {
 });
 
 router.post('/', requireAdmin, (req, res) => {
-  const { name, description = '', image, port_mappings = [], env_vars = [], memory_limit = 512, cpu_limit = 1.0, startup_command = '' } = req.body;
+  const { name, description = '', image, port_mappings = [], env_vars = [], memory_limit = 512, cpu_limit = 1.0, disk_limit = 0, startup_command = '' } = req.body;
   if (!name || !image) return res.status(400).json({ error: 'name and image are required' });
 
   const id = uuidv4();
-  db.prepare('INSERT INTO presets (id, name, description, image, port_mappings, env_vars, memory_limit, cpu_limit, startup_command) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(id, name, description, image, JSON.stringify(port_mappings), JSON.stringify(env_vars), memory_limit, cpu_limit, startup_command);
+  db.prepare('INSERT INTO presets (id, name, description, image, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, name, description, image, JSON.stringify(port_mappings), JSON.stringify(env_vars), memory_limit, cpu_limit, Math.max(0, parseInt(disk_limit) || 0), startup_command);
 
   res.status(201).json(parsePreset(db.prepare('SELECT * FROM presets WHERE id = ?').get(id)));
 });
@@ -36,8 +36,8 @@ router.put('/:id', requireAdmin, (req, res) => {
   const existing = db.prepare('SELECT * FROM presets WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
-  const { name, description, image, port_mappings, env_vars, memory_limit, cpu_limit, startup_command } = req.body;
-  db.prepare('UPDATE presets SET name=?, description=?, image=?, port_mappings=?, env_vars=?, memory_limit=?, cpu_limit=?, startup_command=? WHERE id=?')
+  const { name, description, image, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command } = req.body;
+  db.prepare('UPDATE presets SET name=?, description=?, image=?, port_mappings=?, env_vars=?, memory_limit=?, cpu_limit=?, disk_limit=?, startup_command=? WHERE id=?')
     .run(
       name ?? existing.name,
       description ?? existing.description,
@@ -46,6 +46,7 @@ router.put('/:id', requireAdmin, (req, res) => {
       JSON.stringify(env_vars ?? JSON.parse(existing.env_vars)),
       memory_limit ?? existing.memory_limit,
       cpu_limit ?? existing.cpu_limit,
+      disk_limit !== undefined ? Math.max(0, parseInt(disk_limit) || 0) : (existing.disk_limit || 0),
       startup_command ?? existing.startup_command ?? '',
       req.params.id
     );

@@ -89,6 +89,26 @@
   </div>
 </div>
 
+<!-- Update Node Modal -->
+<div class="modal-overlay" id="updateModal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <h2 class="modal-title">Update Node — <span id="updateNodeName" style="color:var(--primary)"></span></h2>
+      <button class="modal-close" onclick="closeUpdateModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="updateBody">
+        <div style="display:flex;align-items:center;gap:10px;color:var(--text-muted)">
+          <span class="spinner"></span> Pulling latest code from GitHub…
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeUpdateModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Token display Modal -->
 <div class="modal-overlay" id="tokenModal">
   <div class="modal">
@@ -156,6 +176,7 @@ async function loadData() {
 
 function renderStats() {
   const online = nodes.filter(n => n.online).length;
+  const totalServers = nodes.reduce((s, n) => s + (n.server_count || 0), 0);
   const totalMem = nodes.reduce((s, n) => s + (n.memory || 0), 0);
   const usedMem  = nodes.reduce((s, n) => s + (n.used_memory || 0), 0);
   document.getElementById('statsRow').innerHTML = `
@@ -171,11 +192,16 @@ function renderStats() {
       <div class="stat-label">Offline</div>
       <div class="stat-value" style="color:${nodes.length - online ? 'var(--danger)' : 'var(--text-muted)'}">${nodes.length - online}</div>
     </div>
+    ${isAdmin && totalMem > 0 ? `
     <div class="stat-card">
       <div class="stat-label">RAM Allocated</div>
       <div class="stat-value">${fmtMb(usedMem)} <small style="font-size:13px;color:var(--text-muted)">/ ${fmtMb(totalMem)}</small></div>
-      <div class="bar-wrap"><div class="bar-fill ${totalMem > 0 && usedMem / totalMem > 0.8 ? 'danger' : usedMem / totalMem > 0.6 ? 'warn' : ''}" style="width:${totalMem > 0 ? Math.min(100, usedMem / totalMem * 100).toFixed(1) : 0}%"></div></div>
-    </div>`;
+      <div class="bar-wrap"><div class="bar-fill ${usedMem / totalMem > 0.8 ? 'danger' : usedMem / totalMem > 0.6 ? 'warn' : ''}" style="width:${Math.min(100, usedMem / totalMem * 100).toFixed(1)}%"></div></div>
+    </div>` : `
+    <div class="stat-card">
+      <div class="stat-label">Servers Hosted</div>
+      <div class="stat-value">${totalServers}</div>
+    </div>`}`;
 }
 
 function fmtMb(mb) {
@@ -259,6 +285,7 @@ function renderAdminCard(n) {
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" onclick="openEdit('${n.id}')">Edit</button>
         <button class="btn btn-ghost btn-sm" onclick="showToken('${n.id}','${n.token}')">Show Token</button>
+        ${n.online ? `<button class="btn btn-primary btn-sm" onclick="updateNode('${n.id}','${esc(n.name)}')">↑ Update</button>` : ''}
         <button class="btn btn-warning btn-sm" onclick="resetToken('${n.id}')">New Token</button>
         <button class="btn btn-danger btn-sm" onclick="deleteNode('${n.id}','${esc(n.name)}')">Delete</button>
       </div>
@@ -379,6 +406,39 @@ async function saveEdit() {
     btn.disabled = false;
   }
 }
+
+async function updateNode(id, name) {
+  if (!isAdmin) return;
+  document.getElementById('updateNodeName').textContent = name;
+  document.getElementById('updateBody').innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;color:var(--text-muted)">
+      <span class="spinner"></span> Pulling latest code from GitHub…
+    </div>`;
+  document.getElementById('updateModal').classList.add('open');
+  try {
+    const res = await API.post(`/nodes/${id}/update`, {});
+    document.getElementById('updateBody').innerHTML = `
+      <div style="margin-bottom:8px">
+        <span style="color:var(--success);font-weight:600">✓ Update successful — daemon is restarting</span>
+      </div>
+      <pre style="background:var(--surface2);padding:12px;border-radius:6px;font-size:12px;overflow:auto;max-height:200px;white-space:pre-wrap;word-break:break-word;color:var(--text-muted)">${esc(res.output)}</pre>
+      <div class="form-hint mt-3">The daemon will briefly go offline while it restarts, then reconnect automatically.</div>`;
+  } catch (e) {
+    document.getElementById('updateBody').innerHTML = `
+      <div style="margin-bottom:8px">
+        <span style="color:var(--danger);font-weight:600">Update failed</span>
+      </div>
+      <pre style="background:var(--surface2);padding:12px;border-radius:6px;font-size:12px;overflow:auto;max-height:200px;white-space:pre-wrap;word-break:break-word;color:var(--text-muted)">${esc(e.message)}</pre>`;
+  }
+}
+
+function closeUpdateModal() {
+  document.getElementById('updateModal').classList.remove('open');
+}
+
+document.getElementById('updateModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeUpdateModal();
+});
 
 document.getElementById('createModal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeCreateModal();

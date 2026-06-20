@@ -1,5 +1,43 @@
 const { v4: uuidv4 } = require('uuid');
 
+async function sendDiscordWebhook(serverId, status) {
+  try {
+    const { db } = require('./db');
+    const server = db.prepare('SELECT name, discord_webhook, discord_config FROM servers WHERE id = ?').get(serverId);
+    if (!server?.discord_webhook) return;
+
+    let cfg = {};
+    try { if (server.discord_config) cfg = JSON.parse(server.discord_config); } catch {}
+
+    // Only fire for events the user has enabled
+    const events = cfg.events?.length ? cfg.events : ['running', 'stopped', 'error'];
+    if (!events.includes(status)) return;
+
+    const colors = { running: 0x22c55e, stopped: 0x6b7280, error: 0xef4444 };
+    const labels = { running: '🟢 Online', stopped: '⚫ Offline', error: '🔴 Error' };
+
+    const payload = {
+      embeds: [{
+        title: server.name,
+        description: `Server status changed to **${status}**`,
+        color: colors[status] ?? 0x6b7280,
+        fields: [{ name: 'Status', value: labels[status] ?? status, inline: true }],
+        timestamp: new Date().toISOString(),
+        footer: { text: 'Nodactyl' },
+      }],
+    };
+
+    if (cfg.mention) payload.content = cfg.mention;
+    if (cfg.username) payload.username = cfg.username;
+
+    await fetch(server.discord_webhook, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch {}
+}
+
 // Manages all connected daemon WebSocket connections
 class NodeManager {
   constructor() {
@@ -30,8 +68,8 @@ class NodeManager {
     return this.connections.has(nodeId);
   }
 
-  // Send a command and wait for its response
-  send(nodeId, command) {
+  // Send a command and wait for its response. Pass { timeout: ms } to override the default 60s.
+  send(nodeId, command, { timeout = 60000 } = {}) {
     const conn = this.connections.get(nodeId);
     if (!conn) return Promise.reject(new Error('Node is offline'));
 
@@ -39,8 +77,8 @@ class NodeManager {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
-        reject(new Error('Command timed out after 60s'));
-      }, 60000);
+        reject(new Error(`Command timed out after ${timeout / 1000}s`));
+      }, timeout);
 
       this.pending.set(requestId, { resolve, reject, timer });
       conn.ws.send(JSON.stringify({ ...command, requestId }));
@@ -102,6 +140,7 @@ class NodeManager {
       case 'server-status': {
         db.prepare(`UPDATE servers SET status = ? WHERE id = ?`).run(msg.status, msg.serverId);
         if (this.io) this.io.emit('server-status', { serverId: msg.serverId, status: msg.status });
+        sendDiscordWebhook(msg.serverId, msg.status);
         break;
       }
 

@@ -21,7 +21,6 @@ async function main() {
   const presetRoutes = require('./routes/presets');
   const rankRoutes = require('./routes/ranks');
   const settingsRoutes = require('./routes/settings');
-
   const app = express();
   const httpServer = http.createServer(app);
   const io = new SocketIO(httpServer);
@@ -50,6 +49,7 @@ async function main() {
   app.get('/server/:id', (req, res) => res.sendFile(pub('server.html')));
   app.get('/server/:id/files', (req, res) => res.sendFile(pub('files.html')));
   app.get('/server/:id/settings', (req, res) => res.sendFile(pub('server-settings.html')));
+  app.get('/account', (req, res) => res.sendFile(pub('account.html')));
   app.get('/admin/users', (req, res) => res.sendFile(pub('admin/users.html')));
   app.get('/admin/presets', (req, res) => res.sendFile(pub('admin/presets.html')));
   app.get('/admin/servers', (req, res) => res.sendFile(pub('admin/servers.html')));
@@ -145,6 +145,27 @@ async function main() {
       nodeManager.emit(server.node_id, { type: 'exec', serverId, containerId: server.container_id, command });
     });
   });
+
+  // Background disk limit enforcement — checks all running servers every 60 seconds
+  setInterval(async () => {
+    try {
+      const running = db.prepare(`SELECT * FROM servers WHERE status = 'running' AND disk_limit > 0`).all();
+      for (const server of running) {
+        if (!nodeManager.isOnline(server.node_id) || !server.container_id) continue;
+        try {
+          const stats = await nodeManager.send(server.node_id, {
+            type: 'get-stats', serverId: server.id, containerId: server.container_id,
+          }, { timeout: 10000 });
+          if (stats.diskUsed && stats.diskUsed > server.disk_limit * 1024 * 1024) {
+            console.log(`[limit] Server ${server.id.slice(0, 8)} disk ${Math.round(stats.diskUsed / 1024 / 1024)} MB > limit ${server.disk_limit} MB — stopping`);
+            nodeManager.send(server.node_id, {
+              type: 'server-action', serverId: server.id, containerId: server.container_id, action: 'kill',
+            }, { timeout: 10000 }).catch(() => {});
+          }
+        } catch {}
+      }
+    } catch {}
+  }, 60000);
 
   httpServer.listen(PORT, () => {
     console.log(`\n  Nodactyl Panel  →  http://localhost:${PORT}`);

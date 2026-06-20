@@ -71,6 +71,39 @@
   </div>
 </div>
 
+<!-- Modal: git clone/pull -->
+<div class="modal-overlay" id="gitModal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <div class="modal-title">Git Clone / Pull</div>
+      <button class="modal-close" onclick="closeModal('gitModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group mb-2">
+        <label class="form-label">Repository URL <span class="text-muted">(https://)</span></label>
+        <input class="form-input font-mono" id="gitUrl" placeholder="https://github.com/user/repo.git" autocomplete="off">
+      </div>
+      <div class="form-row" style="gap:8px">
+        <div class="form-group mb-2" style="flex:1">
+          <label class="form-label">Branch <span class="text-muted">(optional)</span></label>
+          <input class="form-input" id="gitBranch" placeholder="main" autocomplete="off">
+        </div>
+        <div class="form-group mb-2" style="flex:1">
+          <label class="form-label">Folder name <span class="text-muted">(optional)</span></label>
+          <input class="form-input" id="gitFolder" placeholder="auto from URL" autocomplete="off">
+        </div>
+      </div>
+      <div class="form-hint mb-2" id="gitHint"></div>
+      <div id="gitError" class="alert alert-error"></div>
+      <div id="gitOutput" class="font-mono" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:11.5px;max-height:160px;overflow:auto;white-space:pre-wrap;margin-top:8px;color:var(--text-dim)"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('gitModal')">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="gitSubmit" onclick="submitGit()">Clone</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: rename -->
 <div class="modal-overlay" id="renameModal">
   <div class="modal modal-sm">
@@ -276,6 +309,7 @@ function buildShell() {
             <button class="btn btn-ghost btn-xs" onclick="openNewItemModal('file')" title="New file">${UI.plus} File</button>
             <button class="btn btn-ghost btn-xs" onclick="openNewItemModal('dir')" title="New folder">${UI.plus} Folder</button>
             <button class="btn btn-ghost btn-xs" onclick="triggerUpload()" title="Upload files">${UI.upload} Upload</button>
+            <button class="btn btn-ghost btn-xs" onclick="openGitModal()" title="Clone from GitHub">Git</button>
           </div>
 
           <div class="file-banner" id="fileBanner"></div>
@@ -781,6 +815,7 @@ function onKeyDown(e) {
     if (document.getElementById('newItemModal').classList.contains('open')) { e.preventDefault(); submitNewItem(); }
     else if (document.getElementById('renameModal').classList.contains('open')) { e.preventDefault(); submitRename(); }
     else if (document.getElementById('moveModal').classList.contains('open')) { e.preventDefault(); submitMove(); }
+    else if (document.getElementById('gitModal').classList.contains('open')) { e.preventDefault(); submitGit(); }
   }
 }
 
@@ -823,6 +858,74 @@ function formatBytes(size) {
   if (n < 1024) return `${n}B`;
   if (n < 1048576) return `${(n / 1024).toFixed(1)}K`;
   return `${(n / 1048576).toFixed(1)}M`;
+}
+
+// ── Git clone/pull ────────────────────────────────────────────────────────────
+function openGitModal() {
+  document.getElementById('gitUrl').value = '';
+  document.getElementById('gitBranch').value = '';
+  document.getElementById('gitFolder').value = '';
+  document.getElementById('gitError').classList.remove('show');
+  document.getElementById('gitOutput').style.display = 'none';
+  document.getElementById('gitOutput').textContent = '';
+  document.getElementById('gitSubmit').textContent = 'Clone';
+  document.getElementById('gitSubmit').disabled = false;
+  const rel = currentPath.startsWith(HOME + '/') ? '~/' + currentPath.slice(HOME.length + 1) : '~';
+  document.getElementById('gitHint').textContent = 'Will clone into: ' + rel + '/<folder>';
+  document.getElementById('gitModal').classList.add('open');
+  setTimeout(() => document.getElementById('gitUrl').focus(), 60);
+}
+
+document.getElementById('gitUrl').addEventListener('input', function () {
+  const url = this.value.trim();
+  const folder = document.getElementById('gitFolder').value.trim();
+  const auto = url.split('/').pop().replace(/\.git$/, '') || 'repo';
+  const name = folder || auto;
+  const rel = currentPath.startsWith(HOME + '/') ? '~/' + currentPath.slice(HOME.length + 1) : '~';
+  document.getElementById('gitHint').textContent = 'Will clone into: ' + rel + '/' + name;
+});
+
+document.getElementById('gitFolder').addEventListener('input', function () {
+  const url = document.getElementById('gitUrl').value.trim();
+  const auto = url.split('/').pop().replace(/\.git$/, '') || 'repo';
+  const name = this.value.trim() || auto;
+  const rel = currentPath.startsWith(HOME + '/') ? '~/' + currentPath.slice(HOME.length + 1) : '~';
+  document.getElementById('gitHint').textContent = 'Will clone into: ' + rel + '/' + name;
+});
+
+async function submitGit() {
+  const url    = document.getElementById('gitUrl').value.trim();
+  const branch = document.getElementById('gitBranch').value.trim();
+  const folder = document.getElementById('gitFolder').value.trim();
+  const errEl  = document.getElementById('gitError');
+  const outEl  = document.getElementById('gitOutput');
+  errEl.classList.remove('show');
+  outEl.style.display = 'none';
+
+  if (!url) { errEl.textContent = 'Repository URL is required'; errEl.classList.add('show'); return; }
+  if (!/^https?:\/\/.+/.test(url)) { errEl.textContent = 'Only https:// URLs are supported'; errEl.classList.add('show'); return; }
+
+  const btn = document.getElementById('gitSubmit');
+  btn.innerHTML = '<span class="spinner"></span> Cloning...';
+  btn.disabled = true;
+  setStatusState('Cloning...');
+
+  try {
+    const res = await API.post(`/servers/${serverId}/files/git`, {
+      url, branch, folder, path: currentPath,
+    });
+    outEl.textContent = res.output || 'Done.';
+    outEl.style.display = 'block';
+    btn.textContent = res.pulled ? 'Pulled' : 'Cloned';
+    await listDir(currentPath);
+    setStatusState('Ready');
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.add('show');
+    btn.textContent = 'Clone';
+    btn.disabled = false;
+    setStatusState('Error');
+  }
 }
 
 init();

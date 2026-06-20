@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nodactyl — My Account</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .avatar-lg {
+      width: 80px; height: 80px;
+      border-radius: 50%;
+      background: var(--primary);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 34px; font-weight: 800; color: #fff;
+      overflow: hidden; flex-shrink: 0;
+      border: 2px solid var(--border);
+    }
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 14px 18px;
+      text-align: center;
+      cursor: pointer;
+      position: relative;
+      transition: border-color .15s;
+    }
+    .upload-zone:hover { border-color: var(--primary); }
+    .upload-zone input[type=file] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+  </style>
+</head>
+<body>
+<div class="layout" id="app"></div>
+
+<script src="/js/api.js"></script>
+<script>
+requireAuth();
+let me = null;
+let pendingAvatar = undefined; // undefined=no change, null=clear, string=new data URL
+
+const UI = {
+  back: `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>`,
+  save: `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M5 3h12l2 2v16H5V3z"/><path d="M8 3v6h8V3"/><path d="M8 21v-7h8v7"/></svg>`,
+  cam:  `<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>`,
+};
+
+async function init() {
+  await loadPanelSettings();
+  document.getElementById('app').innerHTML = `
+    ${renderSidebar('')}
+    <div class="main">
+      <div class="topbar">
+        <div class="flex-center gap-2">
+          <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
+          <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+          <span class="page-title">My Account</span>
+        </div>
+      </div>
+      <div class="content" id="content">
+        <div class="empty-state"><span class="spinner"></span></div>
+      </div>
+    </div>`;
+
+  try {
+    me = await API.get('/auth/me');
+    const stored = getUser() || {};
+    localStorage.setItem('user', JSON.stringify({ ...stored, ...me }));
+    render();
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty-state"><p>${esc(e.message)}</p></div>`;
+  }
+}
+
+function avatarInner(src) {
+  if (src) return `<img src="${esc(src)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" alt="">`;
+  return `<span style="font-size:34px;font-weight:800;color:#fff">${esc((me?.username?.[0] || '?').toUpperCase())}</span>`;
+}
+
+function render() {
+  const rank = me.rank;
+  document.getElementById('content').innerHTML = `
+    <div style="max-width:500px">
+
+      <div class="card mb-4">
+        <div class="card-title mb-4">Profile Picture</div>
+        <div style="display:flex;align-items:center;gap:18px;margin-bottom:16px">
+          <div class="avatar-lg" id="avatarPreview">${avatarInner(me.avatar)}</div>
+          <div>
+            <div style="font-size:15px;font-weight:700;color:var(--text)">${esc(me.username)}</div>
+            <div style="font-size:12.5px;color:var(--text-muted);margin-top:1px">${esc(me.email)}</div>
+            ${rank ? `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;padding:1px 8px;border-radius:99px;background:${esc(rank.color)}22;color:${esc(rank.color)};border:1px solid ${esc(rank.color)}44">${esc(rank.name)}</span></div>` : ''}
+          </div>
+        </div>
+        <div class="upload-zone" id="uploadZone">
+          <input type="file" id="avatarFile" accept="image/*">
+          <div style="pointer-events:none;font-size:13px;color:var(--text-muted)">
+            ${UI.cam} &nbsp;Click or drag to upload &mdash; resized to 128 px
+          </div>
+        </div>
+        <div class="alert alert-error mt-3" id="avatarErr"></div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-primary btn-sm" id="avatarSave" onclick="saveAvatar()" disabled>${UI.save} Save Photo</button>
+          <button class="btn btn-ghost btn-sm" onclick="removeAvatar()">Remove Photo</button>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-title mb-4">Username</div>
+        <div class="form-group mb-0">
+          <label class="form-label">Username</label>
+          <input class="form-input" id="fieldUsername" value="${esc(me.username)}" placeholder="username">
+          <div class="form-hint mt-2">At least 3 characters. Used to log in.</div>
+        </div>
+        <div class="alert alert-error mt-3" id="usernameErr"></div>
+        <div class="alert alert-success mt-3" id="usernameOk"></div>
+        <div style="margin-top:12px">
+          <button class="btn btn-primary btn-sm" onclick="saveUsername()">Update Username</button>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-title mb-4">Change Password</div>
+        <div class="form-group mb-3">
+          <label class="form-label">Current Password</label>
+          <input type="password" class="form-input" id="fieldCurPw" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <div class="form-row">
+          <div class="form-group mb-0">
+            <label class="form-label">New Password</label>
+            <input type="password" class="form-input" id="fieldNewPw" placeholder="••••••••" autocomplete="new-password">
+          </div>
+          <div class="form-group mb-0">
+            <label class="form-label">Confirm</label>
+            <input type="password" class="form-input" id="fieldConPw" placeholder="••••••••" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="form-hint mt-2">At least 8 characters.</div>
+        <div class="alert alert-error mt-3" id="pwErr"></div>
+        <div class="alert alert-success mt-3" id="pwOk"></div>
+        <div style="margin-top:12px">
+          <button class="btn btn-primary btn-sm" onclick="savePassword()">Change Password</button>
+        </div>
+      </div>
+
+    </div>`;
+
+  document.getElementById('avatarFile').addEventListener('change', function() {
+    if (this.files[0]) handleFile(this.files[0]);
+  });
+  const zone = document.getElementById('uploadZone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.style.borderColor = 'var(--primary)'; });
+  zone.addEventListener('dragleave', () => { zone.style.borderColor = ''; });
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.style.borderColor = '';
+    if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+}
+
+async function handleFile(file) {
+  const errEl = document.getElementById('avatarErr');
+  errEl.classList.remove('show');
+  if (!file.type.startsWith('image/')) { errEl.textContent = 'Select an image file.'; errEl.classList.add('show'); return; }
+  if (file.size > 5 * 1024 * 1024) { errEl.textContent = 'Image must be under 5 MB.'; errEl.classList.add('show'); return; }
+  try {
+    const dataUrl = await resizeImage(file, 128);
+    pendingAvatar = dataUrl;
+    document.getElementById('avatarPreview').innerHTML = avatarInner(dataUrl);
+    document.getElementById('avatarSave').disabled = false;
+  } catch {
+    errEl.textContent = 'Could not read image.'; errEl.classList.add('show');
+  }
+}
+
+function resizeImage(file, maxPx) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = ev => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const scale = Math.min(maxPx / img.width, maxPx / img.height, 1);
+        const canvas = document.createElement('canvas');
+        canvas.width  = Math.round(img.width  * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function saveAvatar() {
+  if (pendingAvatar === undefined) return;
+  const btn = document.getElementById('avatarSave');
+  const errEl = document.getElementById('avatarErr');
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled = true;
+  errEl.classList.remove('show');
+  try {
+    await API.patch('/auth/me', { avatar: pendingAvatar });
+    me.avatar = pendingAvatar;
+    pendingAvatar = undefined;
+    patchStoredUser({ avatar: me.avatar });
+    updateSidebarAvatar();
+    btn.textContent = '✓ Saved';
+    setTimeout(() => { btn.innerHTML = `${UI.save} Save Photo`; btn.disabled = false; }, 2000);
+  } catch (e) {
+    errEl.textContent = e.message; errEl.classList.add('show');
+    btn.innerHTML = `${UI.save} Save Photo`;
+    btn.disabled = false;
+  }
+}
+
+async function removeAvatar() {
+  const errEl = document.getElementById('avatarErr');
+  errEl.classList.remove('show');
+  try {
+    await API.patch('/auth/me', { avatar: null });
+    me.avatar = null;
+    pendingAvatar = undefined;
+    document.getElementById('avatarPreview').innerHTML = avatarInner(null);
+    document.getElementById('avatarSave').disabled = true;
+    patchStoredUser({ avatar: null });
+    updateSidebarAvatar();
+  } catch (e) { errEl.textContent = e.message; errEl.classList.add('show'); }
+}
+
+async function saveUsername() {
+  const username = document.getElementById('fieldUsername').value.trim();
+  const errEl = document.getElementById('usernameErr');
+  const okEl  = document.getElementById('usernameOk');
+  errEl.classList.remove('show'); okEl.classList.remove('show');
+  if (username.length < 3) { errEl.textContent = 'At least 3 characters'; errEl.classList.add('show'); return; }
+  try {
+    const res = await API.patch('/auth/me', { username });
+    me.username = username;
+    if (res.token) {
+      localStorage.setItem('token', res.token);
+      document.cookie = `token=${res.token};max-age=86400;path=/;samesite=lax`;
+    }
+    patchStoredUser({ username });
+    const nameEl = document.querySelector('.user-name');
+    if (nameEl) nameEl.textContent = username;
+    // Update preview name
+    const prevName = document.querySelector('#content [style*="font-weight:700"]');
+    if (prevName) prevName.textContent = username;
+    okEl.textContent = 'Username updated.'; okEl.classList.add('show');
+    setTimeout(() => okEl.classList.remove('show'), 3000);
+  } catch (e) { errEl.textContent = e.message; errEl.classList.add('show'); }
+}
+
+async function savePassword() {
+  const cur = document.getElementById('fieldCurPw').value;
+  const np  = document.getElementById('fieldNewPw').value;
+  const con = document.getElementById('fieldConPw').value;
+  const errEl = document.getElementById('pwErr');
+  const okEl  = document.getElementById('pwOk');
+  errEl.classList.remove('show'); okEl.classList.remove('show');
+  if (!cur) { errEl.textContent = 'Enter your current password'; errEl.classList.add('show'); return; }
+  if (np.length < 8) { errEl.textContent = 'New password must be at least 8 characters'; errEl.classList.add('show'); return; }
+  if (np !== con)  { errEl.textContent = 'Passwords do not match'; errEl.classList.add('show'); return; }
+  try {
+    await API.patch('/auth/me', { current_password: cur, new_password: np });
+    ['fieldCurPw','fieldNewPw','fieldConPw'].forEach(id => { document.getElementById(id).value = ''; });
+    okEl.textContent = 'Password changed.'; okEl.classList.add('show');
+    setTimeout(() => okEl.classList.remove('show'), 3000);
+  } catch (e) { errEl.textContent = e.message; errEl.classList.add('show'); }
+}
+
+function patchStoredUser(patch) {
+  try {
+    const stored = JSON.parse(localStorage.getItem('user') || '{}');
+    localStorage.setItem('user', JSON.stringify({ ...stored, ...patch }));
+  } catch {}
+}
+
+function updateSidebarAvatar() {
+  const el = document.querySelector('.user-avatar');
+  if (!el) return;
+  el.innerHTML = me.avatar
+    ? `<img src="${esc(me.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" alt="">`
+    : (me.username?.[0] || '?').toUpperCase();
+}
+
+init();
+</script>
+</body>
+</html>

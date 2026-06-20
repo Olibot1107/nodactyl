@@ -16,6 +16,7 @@ function userWithRank(user) {
     username: user.username,
     email: user.email,
     role: user.role,
+    avatar: user.avatar || null,
     rank: rank || null,
   };
 }
@@ -62,6 +63,55 @@ router.post('/login', (req, res) => {
 router.post('/logout', (req, res) => {
   res.clearCookie('token');
   res.json({ ok: true });
+});
+
+router.patch('/me', requireAuth, (req, res) => {
+  const { username, avatar, current_password, new_password } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'Not found' });
+
+  const updates = [];
+  const values = [];
+
+  if (username !== undefined) {
+    const trimmed = String(username).trim();
+    if (trimmed.length < 3) return res.status(400).json({ error: 'Username must be at least 3 characters' });
+    const dupe = db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(trimmed, user.id);
+    if (dupe) return res.status(400).json({ error: 'Username already taken' });
+    updates.push('username = ?'); values.push(trimmed);
+  }
+
+  if ('avatar' in req.body) {
+    const av = avatar || null;
+    if (av && av.length > 200000) return res.status(400).json({ error: 'Avatar too large (max ~200 KB)' });
+    updates.push('avatar = ?'); values.push(av);
+  }
+
+  if (new_password !== undefined) {
+    if (!current_password) return res.status(400).json({ error: 'Current password is required' });
+    if (!bcrypt.compareSync(current_password, user.password)) return res.status(400).json({ error: 'Current password is incorrect' });
+    if (String(new_password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    updates.push('password = ?'); values.push(bcrypt.hashSync(new_password, 10));
+  }
+
+  if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
+  values.push(user.id);
+  db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+
+  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+  const out = { user: userWithRank(updated) };
+
+  if (username !== undefined) {
+    const token = jwt.sign(
+      { id: updated.id, username: updated.username, role: updated.role },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+    res.cookie('token', token, { httpOnly: false, maxAge: 86400000, sameSite: 'lax' });
+    out.token = token;
+  }
+
+  res.json(out);
 });
 
 router.get('/me', requireAuth, (req, res) => {

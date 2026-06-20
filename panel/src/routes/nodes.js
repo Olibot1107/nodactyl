@@ -82,6 +82,19 @@ router.delete('/:id', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// Update daemon (git pull + restart)
+router.post('/:id/update', requireAdmin, async (req, res) => {
+  const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(req.params.id);
+  if (!node) return res.status(404).json({ error: 'Not found' });
+  if (!nodeManager.isOnline(node.id)) return res.status(503).json({ error: 'Node is offline' });
+  try {
+    const result = await nodeManager.send(node.id, { type: 'update-daemon' }, { timeout: 90000 });
+    res.json({ ok: true, output: result.output || 'Already up to date.' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Regenerate token
 router.post('/:id/reset-token', requireAdmin, (req, res) => {
   const token = crypto.randomBytes(32).toString('hex');

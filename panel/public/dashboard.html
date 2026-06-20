@@ -90,12 +90,19 @@
   </div>
 </div>
 
+<script src="/socket.io/socket.io.js"></script>
 <script src="/js/api.js"></script>
 <script>
 requireAuth();
 const user = getUser();
 let servers = [], nodes = [], presets = [];
 let deployPresetId = null;
+
+function fmtMb(mb) {
+  if (!mb) return '0 MB';
+  if (mb >= 1024) return (mb / 1024 % 1 === 0 ? mb / 1024 : (mb / 1024).toFixed(1)) + ' GB';
+  return mb + ' MB';
+}
 
 async function init() {
   await loadPanelSettings();
@@ -125,6 +132,17 @@ async function init() {
     </div>`;
 
   await loadData();
+
+  // Live status updates via socket.io
+  const socket = io({ auth: { token: getToken() } });
+  socket.on('server-status', ({ serverId, status }) => {
+    const s = servers.find(x => x.id === serverId);
+    if (s) { s.status = status; renderServers(); renderStats(); }
+  });
+  socket.on('node-status', ({ nodeId, status }) => {
+    const n = nodes.find(x => x.id === nodeId);
+    if (n) { n.online = status === 'online'; renderServers(); renderStats(); }
+  });
 }
 
 async function loadData() {
@@ -138,14 +156,35 @@ async function loadData() {
   renderServers();
 }
 
+function quotaBar(used, limit, label) {
+  if (!limit || limit <= 0) return '';
+  const pct = Math.min(100, Math.round(used / limit * 100));
+  const color = pct >= 90 ? 'var(--danger)' : pct >= 70 ? '#f59e0b' : 'var(--primary)';
+  return `
+    <div class="stat-card">
+      <div class="stat-label">${label}</div>
+      <div class="stat-value" style="font-size:15px">${fmtMb(used)} / ${fmtMb(limit)}</div>
+      <div style="margin-top:8px;height:5px;border-radius:3px;background:var(--border);overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:${color};border-radius:3px;transition:width .3s"></div>
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px">${pct}% used</div>
+    </div>`;
+}
+
 function renderStats() {
   const freshUser = getUser();
   const running = servers.filter(s => s.status === 'running').length;
   const nodesOnline = nodes.filter(n => n.online).length;
   const rank = freshUser?.rank;
-  const maxServers = rank ? rank.max_servers : (freshUser?.role === 'admin' ? -1 : 1);
+  const isAdmin = freshUser?.role === 'admin';
+  const maxServers = rank ? rank.max_servers : (isAdmin ? -1 : 1);
   const limitText = maxServers === -1 ? 'Unlimited' : `${servers.length} / ${maxServers}`;
   const limitColor = maxServers !== -1 && servers.length >= maxServers ? 'var(--danger)' : 'inherit';
+
+  const usedMemory = servers.reduce((s, x) => s + (x.memory_limit || 0), 0);
+  const usedDisk   = servers.reduce((s, x) => s + (x.disk_limit   || 0), 0);
+  const memLimit   = isAdmin ? 0 : (rank?.memory_limit || 0);
+  const diskLimit  = isAdmin ? 0 : (rank?.disk_limit   || 0);
 
   document.getElementById('statsRow').innerHTML = `
     <div class="stat-card">
@@ -160,7 +199,9 @@ function renderStats() {
     <div class="stat-card">
       <div class="stat-label">Nodes Online</div>
       <div class="stat-value" style="color:${nodesOnline ? 'var(--success)' : 'var(--danger)'}">${nodesOnline}/${nodes.length}</div>
-    </div>`;
+    </div>
+    ${quotaBar(usedMemory, memLimit, 'RAM Quota')}
+    ${quotaBar(usedDisk, diskLimit, 'Disk Quota')}`;
 }
 
 function renderPresets() {
@@ -196,8 +237,34 @@ function renderPresets() {
     </div>`;
 }
 
+function serverCard(s, showOwner = false) {
+  return `
+    <a href="/server/${s.id}" class="server-card">
+      <div class="server-card-top">
+        <div style="min-width:0;flex:1">
+          <div class="server-name">${esc(s.name)}</div>
+          <div class="server-image">${esc(s.image)}</div>
+          ${showOwner ? `<div style="font-size:11px;color:var(--text-dim);margin-top:2px">Owner: ${esc(s.owner_name || 'Unknown')}</div>` : ''}
+        </div>
+        ${badgeHtml(s.status)}
+      </div>
+      <div class="server-node">
+        <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>
+        ${esc(s.node_name || 'Unknown')}
+        ${!s.node_online ? '<span class="text-danger text-xs"> — offline</span>' : ''}
+      </div>
+      <div class="server-mini-stats">
+        <div class="server-mini-stat">RAM: <span>${fmtMb(s.memory_limit)}</span></div>
+        <div class="server-mini-stat">CPU: <span>${s.cpu_limit}</span></div>
+        ${s.port_mappings?.length ? `<div class="server-mini-stat">Ports: <span>${s.port_mappings.length}</span></div>` : ''}
+      </div>
+    </a>`;
+}
+
 function renderServers() {
   const el = document.getElementById('serverSection');
+  const isAdmin = user?.role === 'admin';
+
   if (!servers.length) {
     el.innerHTML = `
       <div class="section-header"><div class="section-title">My Servers</div></div>
@@ -208,30 +275,26 @@ function renderServers() {
     return;
   }
 
-  el.innerHTML = `
-    <div class="section-header mb-4"><div class="section-title">My Servers</div></div>
-    <div class="grid-2">
-      ${servers.map(s => `
-        <a href="/server/${s.id}" class="server-card">
-          <div class="server-card-top">
-            <div>
-              <div class="server-name">${esc(s.name)}</div>
-              <div class="server-image">${esc(s.image)}</div>
-            </div>
-            ${badgeHtml(s.status)}
-          </div>
-          <div class="server-node">
-            <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>
-            ${esc(s.node_name || 'Unknown')}
-            ${!s.node_online ? '<span class="text-danger text-xs"> — offline</span>' : ''}
-          </div>
-          <div class="server-mini-stats">
-            <div class="server-mini-stat">RAM: <span>${s.memory_limit} MB</span></div>
-            <div class="server-mini-stat">CPU: <span>${s.cpu_limit}</span></div>
-            ${s.port_mappings?.length ? `<div class="server-mini-stat">Ports: <span>${s.port_mappings.length}</span></div>` : ''}
-          </div>
-        </a>`).join('')}
-    </div>`;
+  if (isAdmin) {
+    const mine   = servers.filter(s => s.owner_id === user.id);
+    const others = servers.filter(s => s.owner_id !== user.id);
+    el.innerHTML = `
+      ${mine.length ? `
+        <div class="section-header mb-4"><div class="section-title">My Servers</div></div>
+        <div class="grid-2 mb-6">${mine.map(s => serverCard(s)).join('')}</div>
+      ` : `
+        <div class="section-header mb-4"><div class="section-title">My Servers</div></div>
+        <div class="empty-state" style="margin-bottom:24px"><p>You have no servers.</p></div>
+      `}
+      ${others.length ? `
+        <div class="section-header mb-4"><div class="section-title">Other Servers</div></div>
+        <div class="grid-2">${others.map(s => serverCard(s, true)).join('')}</div>
+      ` : ''}`;
+  } else {
+    el.innerHTML = `
+      <div class="section-header mb-4"><div class="section-title">My Servers</div></div>
+      <div class="grid-2">${servers.map(s => serverCard(s)).join('')}</div>`;
+  }
 }
 
 // ── Deploy from preset ────────────────────────────────────────────────────────
@@ -255,11 +318,10 @@ function openDeployModal(presetId, presetName) {
   } else if (onlineNodes.length > 1) {
     _autoNodeId = null;
     nodeGroup.style.display = '';
-    nodeSelect.innerHTML = onlineNodes.map(n => `<option value="${n.id}">${esc(n.name)}</option>`).join('');
+    nodeSelect.innerHTML = '<option value="">Auto (best available)</option>' + onlineNodes.map(n => `<option value="${n.id}">${esc(n.name)}</option>`).join('');
   } else {
     _autoNodeId = null;
-    nodeGroup.style.display = '';
-    nodeSelect.innerHTML = '<option value="">— No nodes online —</option>';
+    nodeGroup.style.display = 'none';
   }
 
   document.getElementById('deployModal').classList.add('open');
@@ -276,9 +338,8 @@ async function deployServer() {
   errEl.classList.remove('show');
   const btn = document.getElementById('deployBtn');
   const name = document.getElementById('d_name').value.trim();
-  const node_id = _autoNodeId || document.getElementById('d_node').value;
+  const node_id = _autoNodeId || document.getElementById('d_node').value || null;
   if (!name) { errEl.textContent = 'Server name is required.'; errEl.classList.add('show'); return; }
-  if (!node_id) { errEl.textContent = 'No node available.'; errEl.classList.add('show'); return; }
 
   btn.innerHTML = '<span class="spinner"></span> Deploying...';
   btn.disabled = true;

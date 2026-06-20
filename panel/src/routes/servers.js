@@ -48,30 +48,18 @@ function checkNodeCapacity(nodeId, addMemoryMb, addDiskMb) {
   return null;
 }
 
-// Returns the rank resource limits for a user (memory_limit, disk_limit in MB; 0 = no limit)
-function getRankLimits(userId) {
-  const row = db.prepare(`
-    SELECT r.memory_limit, r.disk_limit
-    FROM users u LEFT JOIN ranks r ON u.rank_id = r.id
-    WHERE u.id = ?
-  `).get(userId);
-  return { memory_limit: row?.memory_limit ?? 0, disk_limit: row?.disk_limit ?? 0 };
-}
-
 // Find the best online node that can fit the requested resources.
 // Prefers preferNodeId if it has capacity; otherwise picks the node with the most free RAM.
 function findAvailableNode(preferNodeId, memoryMb, diskMb) {
-  const allNodes = db.prepare('SELECT * FROM nodes').all();
-  const online = allNodes.filter(n => nodeManager.isOnline(n.id));
+  const online = db.prepare('SELECT * FROM nodes').all().filter(n => nodeManager.isOnline(n.id));
 
-  // Try the preferred node first
   if (preferNodeId) {
     const pref = online.find(n => n.id === preferNodeId);
     if (pref && !checkNodeCapacity(pref.id, memoryMb, diskMb)) return pref.id;
   }
 
-  // Rank remaining nodes by most free memory
-  const others = online
+  // Try all other online nodes, sorted by most free RAM
+  const candidates = online
     .filter(n => n.id !== preferNodeId)
     .map(n => {
       const used = db.prepare('SELECT COALESCE(SUM(memory_limit), 0) as u FROM servers WHERE node_id = ?').get(n.id)?.u ?? 0;
@@ -79,23 +67,45 @@ function findAvailableNode(preferNodeId, memoryMb, diskMb) {
     })
     .sort((a, b) => b.free - a.free);
 
-  for (const n of others) {
+  for (const n of candidates) {
     if (!checkNodeCapacity(n.id, memoryMb, diskMb)) return n.id;
   }
   return null;
 }
 
-function checkServerLimit(userId) {
-  const userData = db.prepare(`
-    SELECT u.role, r.max_servers
+// Check that creating a server won't exceed the user's account-level quotas (total across all their servers).
+// Admins bypass all limits. Returns an error string or null.
+function checkAccountLimits(userId, addMemoryMb, addDiskMb) {
+  const data = db.prepare(`
+    SELECT u.role, r.max_servers, r.memory_limit, r.disk_limit
     FROM users u LEFT JOIN ranks r ON u.rank_id = r.id
     WHERE u.id = ?
   `).get(userId);
-  if (!userData || userData.role === 'admin') return null; // admins unlimited
-  const max = userData.max_servers ?? 1;
-  if (max === -1) return null; // unlimited rank
-  const count = db.prepare('SELECT COUNT(*) as n FROM servers WHERE owner_id = ?').get(userId)?.n ?? 0;
-  if (count >= max) return `Server limit reached (${count}/${max}). Ask an admin to upgrade your rank.`;
+  if (!data || data.role === 'admin') return null;
+
+  // Max servers
+  const maxServers = data.max_servers ?? 1;
+  if (maxServers !== -1) {
+    const count = db.prepare('SELECT COUNT(*) as n FROM servers WHERE owner_id = ?').get(userId)?.n ?? 0;
+    if (count >= maxServers) return `Server limit reached (${count}/${maxServers}). Ask an admin to upgrade your rank.`;
+  }
+
+  // Total memory quota
+  if (data.memory_limit > 0) {
+    const used = db.prepare('SELECT COALESCE(SUM(memory_limit), 0) as u FROM servers WHERE owner_id = ?').get(userId)?.u ?? 0;
+    if (used + addMemoryMb > data.memory_limit) {
+      return `Not enough memory quota. You have ${data.memory_limit - used} MB remaining but this preset needs ${addMemoryMb} MB.`;
+    }
+  }
+
+  // Total disk quota
+  if (data.disk_limit > 0 && addDiskMb > 0) {
+    const used = db.prepare('SELECT COALESCE(SUM(disk_limit), 0) as u FROM servers WHERE owner_id = ? AND disk_limit > 0').get(userId)?.u ?? 0;
+    if (used + addDiskMb > data.disk_limit) {
+      return `Not enough disk quota. You have ${data.disk_limit - used} MB remaining but this preset needs ${addDiskMb} MB.`;
+    }
+  }
+
   return null;
 }
 
@@ -108,6 +118,7 @@ router.get('/', (req, res) => {
     ...s,
     port_mappings: JSON.parse(s.port_mappings),
     env_vars: JSON.parse(s.env_vars),
+    discord_config: s.discord_config ? JSON.parse(s.discord_config) : null,
     node_online: nodeManager.isOnline(s.node_id),
   })));
 });
@@ -121,6 +132,7 @@ router.get('/:id', (req, res) => {
     ...server,
     port_mappings: JSON.parse(server.port_mappings),
     env_vars: JSON.parse(server.env_vars),
+    discord_config: server.discord_config ? JSON.parse(server.discord_config) : null,
     node_online: nodeManager.isOnline(server.node_id),
   });
 });
@@ -129,30 +141,22 @@ router.post('/from-preset', async (req, res) => {
   const { name, preset_id, node_id } = req.body;
   if (!name || !preset_id) return res.status(400).json({ error: 'name and preset_id are required' });
 
-  const limitErr = checkServerLimit(req.user.id);
-  if (limitErr) return res.status(403).json({ error: limitErr });
-
   const preset = db.prepare('SELECT * FROM presets WHERE id = ?').get(preset_id);
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
 
-  // Apply rank resource defaults for non-admins
-  let memoryLimit = preset.memory_limit;
-  let diskLimit = 0;
-  if (req.user.role !== 'admin') {
-    const rankLimits = getRankLimits(req.user.id);
-    if (rankLimits.memory_limit > 0) memoryLimit = Math.min(memoryLimit, rankLimits.memory_limit);
-    if (rankLimits.disk_limit > 0) diskLimit = rankLimits.disk_limit;
-  }
+  // Preset defines exact resources — no per-server rank capping
+  const memoryLimit = preset.memory_limit;
+  const diskLimit   = preset.disk_limit || 0;
 
-  // Find a node with enough capacity — prefer requested node, fall back to next available
+  // Check account-level quotas (total RAM + disk across all user's servers)
+  const limitErr = checkAccountLimits(req.user.id, memoryLimit, diskLimit);
+  if (limitErr) return res.status(403).json({ error: limitErr });
+
+  // Find a node with enough capacity — prefers requested node, auto-fails over to next best
   const finalNodeId = findAvailableNode(node_id || null, memoryLimit, diskLimit);
   if (!finalNodeId) {
-    return res.status(503).json({ error: 'No nodes have enough capacity to create this server. Ask an admin to add more resources.' });
+    return res.status(503).json({ error: 'All nodes are full or offline. Try again later or ask an admin to add capacity.' });
   }
-  if (!nodeManager.isOnline(finalNodeId)) {
-    return res.status(503).json({ error: 'Node is offline' });
-  }
-  const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(finalNodeId);
 
   const id = uuidv4();
   const port_mappings = JSON.parse(preset.port_mappings);
@@ -190,12 +194,12 @@ router.post('/', requireAdmin, async (req, res) => {
   if (!name || !image || !node_id) return res.status(400).json({ error: 'name, image, and node_id are required' });
 
   const targetOwner = owner_id || req.user.id;
-  const limitErr = checkServerLimit(targetOwner);
-  if (limitErr) return res.status(403).json({ error: limitErr });
   const disk_limit_val = Math.max(0, parseInt(req.body.disk_limit) || 0);
+  // Admins bypass quota checks (checkAccountLimits returns null for admins)
+  const limitErr = checkAccountLimits(targetOwner, memory_limit, disk_limit_val);
+  if (limitErr) return res.status(403).json({ error: limitErr });
   const actualNodeId = findAvailableNode(node_id, memory_limit, disk_limit_val);
-  if (!actualNodeId) return res.status(503).json({ error: 'No nodes have enough capacity for this server.' });
-  if (!nodeManager.isOnline(actualNodeId)) return res.status(503).json({ error: 'Node is offline' });
+  if (!actualNodeId) return res.status(503).json({ error: 'All nodes are full or offline.' });
 
   const id = uuidv4();
 
@@ -358,6 +362,25 @@ router.delete('/:id/files', async (req, res) => {
   } catch (err) { sendFileError(res, err); }
 });
 
+router.post('/:id/files/git', async (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  const accessError = fileAccessError(server);
+  if (accessError) return res.status(accessError.status).json({ error: accessError.error });
+  const { url, branch, folder, path: targetPath } = req.body;
+  if (!url) return res.status(400).json({ error: 'url is required' });
+  if (!/^https?:\/\/.+/.test(url)) return res.status(400).json({ error: 'Only https:// URLs are supported' });
+  try {
+    const result = await nodeManager.send(
+      server.node_id,
+      fileMsg(server, { type: 'git-clone', url, branch: branch || '', folder: folder || '', path: targetPath || '/home/container' }),
+      { timeout: 300000 }  // 5 minutes for large repos
+    );
+    res.json(result);
+  } catch (err) { sendFileError(res, err); }
+});
+
 router.post('/:id/files/rename', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
@@ -377,23 +400,42 @@ router.patch('/:id/settings', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
-  const { name, description, startup_command, disk_limit } = req.body;
+  const { name, description, startup_command, disk_limit, discord_webhook, discord_config } = req.body;
   const updates = [];
   const values = [];
   if (name !== undefined) { updates.push('name = ?'); values.push(name.trim() || server.name); }
   if (description !== undefined) { updates.push('description = ?'); values.push(description); }
   if (startup_command !== undefined) { updates.push('startup_command = ?'); values.push(startup_command); }
   if (disk_limit !== undefined && req.user.role === 'admin') { updates.push('disk_limit = ?'); values.push(Math.max(0, parseInt(disk_limit) || 0)); }
+  if (discord_webhook !== undefined) {
+    const url = discord_webhook?.trim() || null;
+    if (url && !/^https:\/\/discord(app)?\.com\/api\/webhooks\//.test(url)) {
+      return res.status(400).json({ error: 'Invalid Discord webhook URL' });
+    }
+    updates.push('discord_webhook = ?');
+    values.push(url);
+  }
+  if (discord_config !== undefined) {
+    const cfg = discord_config ? {
+      events: (Array.isArray(discord_config.events) ? discord_config.events : ['running', 'stopped', 'error'])
+        .filter(e => ['running', 'stopped', 'error'].includes(e)),
+      mention: discord_config.mention ? String(discord_config.mention).slice(0, 100) : null,
+      username: discord_config.username ? String(discord_config.username).slice(0, 80) : null,
+    } : null;
+    updates.push('discord_config = ?');
+    values.push(cfg ? JSON.stringify(cfg) : null);
+  }
   if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
   values.push(req.params.id);
   db.prepare(`UPDATE servers SET ${updates.join(', ')} WHERE id = ?`).run(...values);
   const updated = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
-  res.json({ ...updated, port_mappings: JSON.parse(updated.port_mappings), env_vars: JSON.parse(updated.env_vars) });
+  res.json({ ...updated, port_mappings: JSON.parse(updated.port_mappings), env_vars: JSON.parse(updated.env_vars), discord_config: updated.discord_config ? JSON.parse(updated.discord_config) : null });
 });
 
-router.delete('/:id', requireAdmin, async (req, res) => {
+router.delete('/:id', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
 
   if (nodeManager.isOnline(server.node_id) && server.container_id) {
     await nodeManager.send(server.node_id, {
@@ -420,6 +462,12 @@ router.get('/:id/stats', async (req, res) => {
       serverId: server.id,
       containerId: server.container_id,
     });
+    // Enforce disk limit immediately when stats are checked
+    if (server.disk_limit > 0 && stats.diskUsed > server.disk_limit * 1024 * 1024) {
+      nodeManager.send(server.node_id, {
+        type: 'server-action', serverId: server.id, containerId: server.container_id, action: 'kill',
+      }, { timeout: 10000 }).catch(() => {});
+    }
     res.json({ ...stats, diskLimit: server.disk_limit || 0 });
   } catch (err) {
     res.status(500).json({ error: err.message });

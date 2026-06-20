@@ -87,7 +87,7 @@ function render() {
       </div>
       <div class="flex-center gap-2">
         <div class="service-controls" id="controls">${controlsHtml()}</div>
-        ${user?.role === 'admin' ? `<div style="width:1px;height:20px;background:var(--border);flex-shrink:0"></div><button class="btn btn-danger btn-sm" onclick="deleteServer()">${UI.trash} Delete</button>` : ''}
+        ${(user?.role === 'admin' || server?.owner_id === user?.id) ? `<div style="width:1px;height:20px;background:var(--border);flex-shrink:0"></div><button class="btn btn-danger btn-sm" onclick="deleteServer()">${UI.trash} Delete</button>` : ''}
       </div>
     </div>
 

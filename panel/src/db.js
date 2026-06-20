@@ -140,9 +140,13 @@ async function init() {
   try { _db.exec(`ALTER TABLE servers ADD COLUMN home_dir TEXT DEFAULT '/home/container'`); } catch {}
   try { _db.exec(`ALTER TABLE presets ADD COLUMN startup_command TEXT DEFAULT ''`); } catch {}
   try { _db.exec(`ALTER TABLE servers ADD COLUMN disk_limit INTEGER DEFAULT 0`); } catch {}
+  try { _db.exec(`ALTER TABLE servers ADD COLUMN discord_webhook TEXT DEFAULT NULL`); } catch {}
   try { _db.exec(`ALTER TABLE nodes ADD COLUMN disk_limit INTEGER DEFAULT 0`); } catch {}
   try { _db.exec(`ALTER TABLE ranks ADD COLUMN memory_limit INTEGER DEFAULT 0`); } catch {}
   try { _db.exec(`ALTER TABLE ranks ADD COLUMN disk_limit INTEGER DEFAULT 0`); } catch {}
+  try { _db.exec(`ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT NULL`); } catch {}
+  try { _db.exec(`ALTER TABLE servers ADD COLUMN discord_config TEXT DEFAULT NULL`); } catch {}
+  try { _db.exec(`ALTER TABLE presets ADD COLUMN disk_limit INTEGER DEFAULT 0`); } catch {}
 
   // Seed default ranks
   const rankCount = prepare('SELECT COUNT(*) as count FROM ranks').get();
