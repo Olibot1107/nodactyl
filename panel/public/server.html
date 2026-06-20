@@ -10,7 +10,7 @@
 <div class="layout" id="app"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="/js/api.js"></script>
+<script src="/js/api.js?v=2"></script>
 <script>
 requireAuth();
 
@@ -57,6 +57,10 @@ async function init() {
 
   try {
     server = await API.get(`/servers/${serverId}`);
+    // Restore terminal mode across reloads while server is still running
+    if (server.status === 'running' && sessionStorage.getItem('termMode_' + serverId) === '1') {
+      isTerminalMode = true;
+    }
     document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'console');
     render();
     connectSocket();
@@ -346,7 +350,7 @@ function connectSocket() {
     if (sid !== serverId) return;
     server.status = status;
     if (status === 'running') { server.started_at = Math.floor(Date.now() / 1000); startUptimeTicker(); }
-    else if (status === 'stopped' || status === 'error') { server.started_at = null; stopUptimeTicker(); isTerminalMode = false; }
+    else if (status === 'stopped' || status === 'error') { server.started_at = null; stopUptimeTicker(); isTerminalMode = false; sessionStorage.removeItem('termMode_' + serverId); }
     updateLiveBits();
 
     if (status === 'running') {
@@ -433,6 +437,7 @@ async function doTerminal() {
   if (server.status !== 'stopped') return;
   server.status = 'starting';
   isTerminalMode = true;
+  sessionStorage.setItem('termMode_' + serverId, '1');
   updateLiveBits();
   try {
     await API.post(`/servers/${serverId}/action`, { action: 'start', terminalMode: true });
