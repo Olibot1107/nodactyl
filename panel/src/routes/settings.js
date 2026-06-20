@@ -32,6 +32,7 @@ router.patch('/', requireAuth, requireAdmin, (req, res) => {
 
   for (const [key, value] of Object.entries(updates)) {
     if (typeof value !== 'string') continue;
+    if (!/^[a-z][a-z0-9_]{0,63}$/.test(key)) continue; // only allow safe key names
     const trimmed = value.trim();
     if (!trimmed) continue;
     if (trimmed.length > 300000) return res.status(400).json({ error: 'Value too large (max ~300 KB)' });

@@ -142,6 +142,13 @@ async function init() {
   try { _db.exec(`ALTER TABLE servers ADD COLUMN disk_limit INTEGER DEFAULT 0`); } catch {}
   try { _db.exec(`ALTER TABLE servers ADD COLUMN discord_webhook TEXT DEFAULT NULL`); } catch {}
   try { _db.exec(`ALTER TABLE nodes ADD COLUMN disk_limit INTEGER DEFAULT 0`); } catch {}
+  try { _db.exec(`ALTER TABLE nodes ADD COLUMN port_range_start INTEGER DEFAULT 10000`); } catch {}
+  try { _db.exec(`ALTER TABLE nodes ADD COLUMN port_range_end INTEGER DEFAULT 30000`); } catch {}
+  try { _db.exec(`ALTER TABLE servers ADD COLUMN suspended INTEGER DEFAULT 0`); } catch {}
+  try { _db.exec(`ALTER TABLE servers ADD COLUMN started_at INTEGER DEFAULT NULL`); } catch {}
+  try { _db.exec(`ALTER TABLE presets ADD COLUMN install_script TEXT DEFAULT ''`); } catch {}
+  try { _db.exec(`ALTER TABLE presets ADD COLUMN required_rank_id TEXT DEFAULT NULL`); } catch {}
+  try { _db.exec(`ALTER TABLE servers ADD COLUMN install_script TEXT DEFAULT ''`); } catch {}
   try { _db.exec(`ALTER TABLE ranks ADD COLUMN memory_limit INTEGER DEFAULT 0`); } catch {}
   try { _db.exec(`ALTER TABLE ranks ADD COLUMN disk_limit INTEGER DEFAULT 0`); } catch {}
   try { _db.exec(`ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT NULL`); } catch {}

@@ -133,13 +133,30 @@ class NodeManager {
       }
 
       case 'stats': {
-        if (this.io) this.io.emit('stats', msg);
+        // Scoped emit: only send stats to the server's owner and admins
+        if (this.io && msg.serverId) {
+          const srv = db.prepare('SELECT owner_id FROM servers WHERE id = ?').get(msg.serverId);
+          if (srv) this.io.to(`user:${srv.owner_id}`).to('admins').emit('stats', msg);
+        }
         break;
       }
 
       case 'server-status': {
-        db.prepare(`UPDATE servers SET status = ? WHERE id = ?`).run(msg.status, msg.serverId);
-        if (this.io) this.io.emit('server-status', { serverId: msg.serverId, status: msg.status });
+        // Guard: only accept status updates for servers that belong to this node
+        const server = db.prepare('SELECT node_id, owner_id FROM servers WHERE id = ?').get(msg.serverId);
+        if (!server || server.node_id !== nodeId) break;
+
+        if (msg.status === 'running') {
+          db.prepare(`UPDATE servers SET status = ?, started_at = strftime('%s','now') WHERE id = ?`).run(msg.status, msg.serverId);
+        } else if (msg.status === 'stopped' || msg.status === 'error') {
+          db.prepare(`UPDATE servers SET status = ?, started_at = NULL WHERE id = ?`).run(msg.status, msg.serverId);
+        } else {
+          db.prepare(`UPDATE servers SET status = ? WHERE id = ?`).run(msg.status, msg.serverId);
+        }
+        // Scoped emit: only the server owner and admins receive the update
+        if (this.io) {
+          this.io.to(`user:${server.owner_id}`).to('admins').emit('server-status', { serverId: msg.serverId, status: msg.status });
+        }
         sendDiscordWebhook(msg.serverId, msg.status);
         break;
       }

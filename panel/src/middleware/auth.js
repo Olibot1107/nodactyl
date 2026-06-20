@@ -1,12 +1,21 @@
 const jwt = require('jsonwebtoken');
+const { db } = require('../db');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'nodactyl-change-me-in-production';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable is not set. Generate a random secret and add it to your .env or environment before starting the panel.');
+  process.exit(1);
+}
 
 function requireAuth(req, res, next) {
   const token = req.cookies?.token || req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
+    // Re-read from DB on every request: catches role changes and suspensions before token expires
+    const user = db.prepare('SELECT id, username, role, suspended FROM users WHERE id = ?').get(decoded.id);
+    if (!user || user.suspended) return res.status(401).json({ error: 'Unauthorized' });
+    req.user = { ...decoded, role: user.role };
     next();
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' });

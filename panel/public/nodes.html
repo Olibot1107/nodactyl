@@ -42,6 +42,20 @@
         <input type="number" class="form-input" id="n_disk" value="0" min="0">
         <div class="form-hint">Set to track how much disk is allocated across servers on this node. 0 = don't track.</div>
       </div>
+      <div class="form-group">
+        <label class="form-label">Port Range</label>
+        <div class="form-row" style="margin-top:0">
+          <div class="form-group" style="margin-bottom:0">
+            <input type="number" class="form-input" id="n_portStart" value="10000" min="1024" max="65534" placeholder="10000">
+            <div class="form-hint">Start</div>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <input type="number" class="form-input" id="n_portEnd" value="30000" min="1025" max="65535" placeholder="30000">
+            <div class="form-hint">End</div>
+          </div>
+        </div>
+        <div class="form-hint">Host ports auto-assigned to servers from this range.</div>
+      </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-ghost" onclick="closeCreateModal()">Cancel</button>
         <button class="btn btn-primary" id="createBtn" onclick="createNode()">Add Node</button>
@@ -80,6 +94,20 @@
       <div class="form-group">
         <label class="form-label">Disk Limit <span class="text-muted">(GB — 0 = unlimited tracking)</span></label>
         <input type="number" class="form-input" id="e_disk" value="0" min="0">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Port Range</label>
+        <div class="form-row" style="margin-top:0">
+          <div class="form-group" style="margin-bottom:0">
+            <input type="number" class="form-input" id="e_portStart" min="1024" max="65534" placeholder="10000">
+            <div class="form-hint">Start</div>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <input type="number" class="form-input" id="e_portEnd" min="1025" max="65535" placeholder="30000">
+            <div class="form-hint">End</div>
+          </div>
+        </div>
+        <div class="form-hint">Host ports auto-assigned to servers from this range.</div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-ghost" onclick="closeEditModal()">Cancel</button>
@@ -271,6 +299,7 @@ function renderAdminCard(n) {
       <div class="node-meta" style="margin-top:8px">
         ${fmtMb(n.memory)} RAM · ${n.cpu} CPU cores · ${n.server_count || 0} server${(n.server_count || 0) !== 1 ? 's' : ''}
         ${n.disk_limit > 0 ? ` · ${fmtMb(n.disk_limit)} disk` : ''}
+        <br>Ports: ${n.port_range_start ?? 10000}–${n.port_range_end ?? 30000}
       </div>
 
       ${allocBar(n.used_memory || 0, n.memory, 'RAM Allocated')}
@@ -328,6 +357,8 @@ function openCreate() {
   document.getElementById('n_mem').value = 8;
   document.getElementById('n_cpu').value = 4;
   document.getElementById('n_disk').value = 0;
+  document.getElementById('n_portStart').value = 10000;
+  document.getElementById('n_portEnd').value = 30000;
   document.getElementById('createError').classList.remove('show');
   document.getElementById('createModal').classList.add('open');
 }
@@ -350,6 +381,8 @@ async function createNode() {
       memory: parseInt(document.getElementById('n_mem').value) * 1024,  // GB → MB
       cpu: parseInt(document.getElementById('n_cpu').value),
       disk_limit: parseInt(document.getElementById('n_disk').value) * 1024, // GB → MB
+      port_range_start: parseInt(document.getElementById('n_portStart').value) || 10000,
+      port_range_end: parseInt(document.getElementById('n_portEnd').value) || 30000,
     });
     closeCreateModal();
     await loadData();
@@ -372,6 +405,8 @@ function openEdit(id) {
   document.getElementById('e_mem').value = (n.memory / 1024).toFixed(1);  // MB → GB
   document.getElementById('e_cpu').value = n.cpu;
   document.getElementById('e_disk').value = n.disk_limit > 0 ? (n.disk_limit / 1024).toFixed(1) : 0;
+  document.getElementById('e_portStart').value = n.port_range_start ?? 10000;
+  document.getElementById('e_portEnd').value = n.port_range_end ?? 30000;
   document.getElementById('editError').classList.remove('show');
   document.getElementById('editModal').classList.add('open');
 }
@@ -395,6 +430,8 @@ async function saveEdit() {
       memory: Math.round(parseFloat(document.getElementById('e_mem').value) * 1024),  // GB → MB
       cpu: parseInt(document.getElementById('e_cpu').value),
       disk_limit: Math.round(parseFloat(document.getElementById('e_disk').value) * 1024), // GB → MB
+      port_range_start: parseInt(document.getElementById('e_portStart').value) || 10000,
+      port_range_end: parseInt(document.getElementById('e_portEnd').value) || 30000,
     });
     closeEditModal();
     await loadData();

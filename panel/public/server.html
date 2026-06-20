@@ -58,6 +58,7 @@ async function init() {
     render();
     connectSocket();
     startStats();
+    if (server.started_at) startUptimeTicker();
   } catch (e) {
     document.getElementById('content').innerHTML = `<div class="empty-state"><p>${esc(e.message)}</p></div>`;
   }
@@ -72,6 +73,7 @@ function topbarHtml() {
     </div>
     <div class="flex-center gap-2">
       ${statusBadge(server.status)}
+      ${server.suspended ? '<span class="badge badge-warn">Suspended</span>' : ''}
       ${nodeStatusBadge()}
     </div>`;
 }
@@ -87,10 +89,11 @@ function render() {
       </div>
       <div class="flex-center gap-2">
         <div class="service-controls" id="controls">${controlsHtml()}</div>
-        ${(user?.role === 'admin' || server?.owner_id === user?.id) ? `<div style="width:1px;height:20px;background:var(--border);flex-shrink:0"></div><button class="btn btn-danger btn-sm" onclick="deleteServer()">${UI.trash} Delete</button>` : ''}
+        ${(user?.role === 'admin' || server?.owner_id === user?.id) && !(server.suspended && user?.role !== 'admin') ? `<div style="width:1px;height:20px;background:var(--border);flex-shrink:0"></div><button class="btn btn-danger btn-sm" onclick="deleteServer()">${UI.trash} Delete</button>` : ''}
       </div>
     </div>
 
+    ${server.suspended ? `<div class="alert alert-error show" style="margin-bottom:16px">This server has been suspended by an administrator. It cannot be started until unsuspended.</div>` : ''}
     <div class="grid-stats mb-4" id="statsRow">
       <div class="stat-card">
         <div class="stat-label">CPU</div>
@@ -119,6 +122,10 @@ function render() {
         <div class="stat-label">Disk Limit</div>
         <div class="stat-value">${server.disk_limit > 0 ? server.disk_limit + ' <small style="font-size:14px">MB</small>' : '<span style="font-size:14px;color:var(--text-muted)">Unlimited</span>'}</div>
       </div>
+      <div class="stat-card">
+        <div class="stat-label">Uptime</div>
+        <div class="stat-value" id="statUptime" style="font-size:16px">${server.started_at ? '—' : '<span style="font-size:13px;color:var(--text-muted)">Offline</span>'}</div>
+      </div>
     </div>
 
     <div class="service-grid">
@@ -138,13 +145,21 @@ function render() {
       </div>
 
       <aside class="service-side">
+        ${server.suspended && user?.role !== 'admin' ? `
+        <div class="quick-card" style="opacity:0.45;cursor:not-allowed;pointer-events:none">
+          <span class="quick-icon">${UI.folder}</span>
+          <span>
+            <span class="quick-title">Files</span>
+            <span class="quick-sub">Unavailable while suspended.</span>
+          </span>
+        </div>` : `
         <a href="/server/${serverId}/files" class="quick-card">
           <span class="quick-icon">${UI.folder}</span>
           <span>
             <span class="quick-title">Files</span>
             <span class="quick-sub">Browse and edit the filesystem, even when stopped.</span>
           </span>
-        </a>
+        </a>`}
 
         <div class="card">
           <div class="card-title mb-4">Details</div>
@@ -171,13 +186,13 @@ function render() {
 
         ${server.port_mappings?.length ? `
         <div class="card">
-          <div class="card-title mb-4">Ports</div>
-          <div class="detail-list">
-            ${server.port_mappings.map(p => `
-              <div class="detail-row">
-                <div class="detail-label">${esc(p.protocol || 'tcp').toUpperCase()}</div>
-                <div class="detail-value"><span class="chip">${esc(p.hostPort)}</span> → <span class="chip">${esc(p.containerPort)}</span></div>
-              </div>`).join('')}
+          <div class="card-title mb-4">Connection Port</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span style="font-size:28px;font-weight:700;color:var(--primary);letter-spacing:-1px">${esc(String(server.port_mappings[0].hostPort))}</span>
+            <div style="font-size:12px;color:var(--text-dim);line-height:1.5">
+              ${esc((server.port_mappings[0].protocol || 'tcp').toUpperCase())} · container port ${esc(String(server.port_mappings[0].containerPort))}
+              <br><button class="btn btn-ghost btn-xs mt-1" onclick="copyText('${esc(String(server.port_mappings[0].hostPort))}', this)">Copy Port</button>
+            </div>
           </div>
         </div>` : ''}
 
@@ -234,31 +249,69 @@ function controlsHtml() {
   const offline = !server.node_online;
   const busy = s === 'installing' || s === 'stopping' || s === 'starting';
   const running = s === 'running';
+  const susp = !!server.suspended;
   return `
-    <button class="btn btn-success btn-sm" onclick="doAction('start')" ${running || busy || offline ? 'disabled' : ''}>${UI.play} Start</button>
+    <button class="btn btn-success btn-sm" onclick="doAction('start')" ${running || busy || offline || susp ? 'disabled' : ''}>${UI.play} Start</button>
     <button class="btn btn-warning btn-sm" onclick="doAction('restart')" ${!running || busy || offline ? 'disabled' : ''}>${UI.rotate} Restart</button>
     <button class="btn btn-ghost btn-sm" onclick="doAction('stop')" ${!running || busy || offline ? 'disabled' : ''}>${UI.stop} Stop</button>
     <button class="btn btn-danger btn-sm" onclick="doAction('kill')" ${!running || busy || offline ? 'disabled' : ''}>${UI.zap} Kill</button>`;
 }
 
+const MAX_LOG_LINES = 1500;
+let _logQueue = [];
+let _logRafPending = false;
+
+function stripAnsi(str) {
+  return str
+    .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')   // CSI sequences (colour, cursor, etc.)
+    .replace(/\x1B\][^\x07\x1B]*(\x07|\x1B\\)/g, '') // OSC sequences
+    .replace(/\x1B[()][A-Z0-9]/g, '')          // Charset designations
+    .replace(/\x1B[@-_]/g, '');                // 2-char escape sequences
+}
+
 function appendLog(raw, isErr) {
+  const clean = stripAnsi(String(raw));
+  // Split on newline; within each segment handle \r by keeping only the last part
+  // (simulates terminal carriage-return overwrite / progress bars)
+  const newlines = clean.split('\n');
+  for (let i = 0; i < newlines.length; i++) {
+    if (i === newlines.length - 1 && newlines[i] === '') continue;
+    const parts = newlines[i].split('\r');
+    const line = parts[parts.length - 1]; // \r overwrites — keep final value
+    _logQueue.push({ line, isErr: !!isErr });
+  }
+  if (!_logRafPending) {
+    _logRafPending = true;
+    requestAnimationFrame(_flushLogs);
+  }
+}
+
+function _flushLogs() {
+  _logRafPending = false;
   const el = document.getElementById('consoleOut');
-  if (!el) return;
-  const nearBottom = el.scrollHeight - el.clientHeight - el.scrollTop < 120;
-  // Strip ANSI escape codes; remove bare carriage returns
-  const clean = String(raw).replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').replace(/\r/g, '');
-  const lines = clean.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    if (i === lines.length - 1 && lines[i] === '') break; // skip trailing empty from \n
+  if (!el || !_logQueue.length) return;
+
+  const nearBottom = el.scrollHeight - el.clientHeight - el.scrollTop < 150;
+  const batch = _logQueue.splice(0);
+
+  const frag = document.createDocumentFragment();
+  for (const { line, isErr } of batch) {
     const div = document.createElement('div');
     div.className = 'log-line' + (isErr ? ' stderr' : '');
-    div.textContent = lines[i];
-    el.appendChild(div);
+    div.textContent = line;
+    frag.appendChild(div);
   }
+  el.appendChild(frag);
+
+  // Prune oldest lines to stay under cap
+  while (el.childElementCount > MAX_LOG_LINES) el.removeChild(el.firstChild);
+
   if (nearBottom) el.scrollTop = el.scrollHeight;
+  if (_logQueue.length) { _logRafPending = true; requestAnimationFrame(_flushLogs); }
 }
 
 function clearConsole() {
+  _logQueue = [];
   const el = document.getElementById('consoleOut');
   if (el) el.innerHTML = '';
 }
@@ -267,8 +320,16 @@ function connectSocket() {
   socket = io({ auth: { token: getToken() } });
 
   socket.on('connect', () => {
-    logsSubscribed = false; // panel lost subscription state on reconnect
-    if (server.status === 'running') subscribeToLogs();
+    logsSubscribed = false;
+    if (server.status === 'running') {
+      if (logsTailDone) {
+        // Already showed startup history — just catch a few lines missed during reconnect
+        logsSubscribed = true;
+        socket.emit('subscribe-logs', { serverId, tail: 15 });
+      } else {
+        subscribeToLogs();
+      }
+    }
   });
 
   socket.on('log', ({ serverId: sid, line }) => {
@@ -278,6 +339,8 @@ function connectSocket() {
   socket.on('server-status', ({ serverId: sid, status }) => {
     if (sid !== serverId) return;
     server.status = status;
+    if (status === 'running') { server.started_at = Math.floor(Date.now() / 1000); startUptimeTicker(); }
+    else if (status === 'stopped' || status === 'error') { server.started_at = null; stopUptimeTicker(); }
     updateLiveBits();
 
     if (status === 'running') subscribeToLogs();
@@ -325,6 +388,12 @@ async function sendSignal() {
 }
 
 async function doAction(action) {
+  // Fresh start: clear old log history so previous run output doesn't flood in
+  if (action === 'start') {
+    clearConsole();          // also clears _logQueue
+    logsTailDone = false;    // show startup tail on next subscribe
+    logsSubscribed = false;
+  }
   // Optimistic status — disables buttons immediately
   const expectStopped = new Set(['stop', 'kill', 'sigint', 'sigterm']);
   if (expectStopped.has(action)) server.status = 'stopping';
@@ -350,6 +419,36 @@ async function deleteServer() {
   } catch (e) {
     alert(e.message);
   }
+}
+
+let uptimeInterval = null;
+
+function fmtUptime(secs) {
+  if (!secs || secs < 0) return '0s';
+  const d = Math.floor(secs / 86400), h = Math.floor((secs % 86400) / 3600),
+        m = Math.floor((secs % 3600) / 60), s = secs % 60;
+  if (d) return `${d}d ${h}h ${m}m`;
+  if (h) return `${h}h ${m}m ${s}s`;
+  if (m) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+function startUptimeTicker() {
+  stopUptimeTicker();
+  if (!server.started_at) return;
+  function tick() {
+    const el = document.getElementById('statUptime');
+    if (!el) return;
+    el.textContent = fmtUptime(Math.floor(Date.now() / 1000) - server.started_at);
+  }
+  tick();
+  uptimeInterval = setInterval(tick, 1000);
+}
+
+function stopUptimeTicker() {
+  if (uptimeInterval) { clearInterval(uptimeInterval); uptimeInterval = null; }
+  const el = document.getElementById('statUptime');
+  if (el) el.innerHTML = '<span style="font-size:13px;color:var(--text-muted)">Offline</span>';
 }
 
 async function startStats() {

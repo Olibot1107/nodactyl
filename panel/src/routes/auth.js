@@ -1,11 +1,32 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../db');
 const { JWT_SECRET, requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Try again in 15 minutes.' },
+});
+
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many registrations from this IP. Try again later.' },
+});
+
+function cookieOpts() {
+  return { httpOnly: true, maxAge: 86400000, sameSite: 'strict' };
+}
 
 function userWithRank(user) {
   const rank = user.rank_id
@@ -21,7 +42,11 @@ function userWithRank(user) {
   };
 }
 
-router.post('/register', (req, res) => {
+router.post('/register', registerLimiter, (req, res) => {
+  if (process.env.REGISTRATION_OPEN !== 'true') {
+    return res.status(403).json({ error: 'Registration is currently closed.' });
+  }
+
   const { username, email, password } = req.body;
   if (!username || !email || !password) return res.status(400).json({ error: 'All fields are required' });
   if (username.length < 3) return res.status(400).json({ error: 'Username must be at least 3 characters' });
@@ -33,12 +58,13 @@ router.post('/register', (req, res) => {
 
   const hashed = bcrypt.hashSync(password, 10);
   const id = uuidv4();
-  db.prepare('INSERT INTO users (id, username, email, password, role) VALUES (?, ?, ?, ?, ?)').run(id, username, email, hashed, 'user');
+  const defaultRank = db.prepare('SELECT id FROM ranks WHERE sort_order = 0 LIMIT 1').get();
+  db.prepare('INSERT INTO users (id, username, email, password, role, rank_id) VALUES (?, ?, ?, ?, ?, ?)').run(id, username, email, hashed, 'user', defaultRank?.id || null);
 
   res.status(201).json({ ok: true });
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', loginLimiter, (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Missing fields' });
 
@@ -56,7 +82,7 @@ router.post('/login', (req, res) => {
     { expiresIn: '24h' }
   );
 
-  res.cookie('token', token, { httpOnly: false, maxAge: 86400000, sameSite: 'lax' });
+  res.cookie('token', token, cookieOpts());
   res.json({ token, user: userWithRank(user) });
 });
 
@@ -107,7 +133,7 @@ router.patch('/me', requireAuth, (req, res) => {
       JWT_SECRET,
       { expiresIn: '24h' }
     );
-    res.cookie('token', token, { httpOnly: false, maxAge: 86400000, sameSite: 'lax' });
+    res.cookie('token', token, cookieOpts());
     out.token = token;
   }
 

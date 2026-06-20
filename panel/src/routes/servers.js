@@ -11,6 +11,11 @@ function canAccess(server, user) {
   return user.role === 'admin' || server.owner_id === user.id;
 }
 
+function suspendedBlock(server, user) {
+  if (server.suspended && user.role !== 'admin') return { status: 403, error: 'Server is suspended' };
+  return null;
+}
+
 function fileAccessError(server) {
   if (!nodeManager.isOnline(server.node_id)) return { status: 503, error: 'Node is offline. Start the daemon on this node to access files.' };
   return null;
@@ -137,12 +142,57 @@ router.get('/:id', (req, res) => {
   });
 });
 
+function getUsedPorts(nodeId) {
+  const rows = db.prepare('SELECT port_mappings FROM servers WHERE node_id = ?').all(nodeId);
+  const used = new Set();
+  for (const row of rows) {
+    try {
+      for (const m of JSON.parse(row.port_mappings)) {
+        if (m.hostPort) used.add(Number(m.hostPort));
+      }
+    } catch {}
+  }
+  return used;
+}
+
+function findAvailablePort(nodeId, extraUsed = new Set()) {
+  const node = db.prepare('SELECT port_range_start, port_range_end FROM nodes WHERE id = ?').get(nodeId);
+  const rangeStart = node?.port_range_start ?? 10000;
+  const rangeEnd   = node?.port_range_end   ?? 30000;
+  const used = getUsedPorts(nodeId);
+  for (const p of extraUsed) used.add(p);
+  for (let p = rangeStart; p <= rangeEnd; p++) {
+    if (!used.has(p)) return p;
+  }
+  return null;
+}
+
+function autoPortMappings(nodeId) {
+  const hostPort = findAvailablePort(nodeId, new Set());
+  if (!hostPort) return [];
+  return [
+    { hostPort, containerPort: hostPort, protocol: 'tcp' },
+    { hostPort, containerPort: hostPort, protocol: 'udp' },
+  ];
+}
+
 router.post('/from-preset', async (req, res) => {
   const { name, preset_id, node_id } = req.body;
   if (!name || !preset_id) return res.status(400).json({ error: 'name and preset_id are required' });
 
   const preset = db.prepare('SELECT * FROM presets WHERE id = ?').get(preset_id);
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
+
+  // Rank gate — check if user has access to this preset
+  if (req.user.role !== 'admin' && preset.required_rank_id) {
+    const canUse = (() => {
+      if (!req.user.rank_id) return false;
+      const uRank = db.prepare('SELECT sort_order FROM ranks WHERE id = ?').get(req.user.rank_id);
+      const rRank = db.prepare('SELECT sort_order FROM ranks WHERE id = ?').get(preset.required_rank_id);
+      return uRank && rRank && uRank.sort_order >= rRank.sort_order;
+    })();
+    if (!canUse) return res.status(403).json({ error: 'Your rank does not have access to this preset' });
+  }
 
   // Preset defines exact resources — no per-server rank capping
   const memoryLimit = preset.memory_limit;
@@ -159,11 +209,12 @@ router.post('/from-preset', async (req, res) => {
   }
 
   const id = uuidv4();
-  const port_mappings = JSON.parse(preset.port_mappings);
+  const port_mappings = autoPortMappings(finalNodeId);
   const env_vars = JSON.parse(preset.env_vars);
 
-  db.prepare(`INSERT INTO servers (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
-    .run(id, name, preset.description, preset.image, finalNodeId, req.user.id, preset.port_mappings, preset.env_vars, memoryLimit, preset.cpu_limit, diskLimit, preset.startup_command || '');
+  const installScript = preset.install_script || '';
+  db.prepare(`INSERT INTO servers (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
+    .run(id, name, preset.description, preset.image, finalNodeId, req.user.id, JSON.stringify(port_mappings), preset.env_vars, memoryLimit, preset.cpu_limit, diskLimit, preset.startup_command || '', installScript);
 
   nodeManager.send(finalNodeId, {
     type: 'install-server',
@@ -174,6 +225,7 @@ router.post('/from-preset', async (req, res) => {
     memoryLimit: memoryLimit,
     cpuLimit: preset.cpu_limit,
     startupCommand: preset.startup_command || '',
+    installScript,
   }).then(data => {
     db.prepare(`UPDATE servers SET container_id = ?, status = 'stopped' WHERE id = ?`).run(data.containerId, id);
   }).catch(err => {
@@ -187,7 +239,7 @@ router.post('/from-preset', async (req, res) => {
 router.post('/', requireAdmin, async (req, res) => {
   const {
     name, description = '', image, node_id, owner_id,
-    port_mappings = [], env_vars = [],
+    env_vars = [],
     memory_limit = 512, cpu_limit = 1.0,
   } = req.body;
 
@@ -195,19 +247,18 @@ router.post('/', requireAdmin, async (req, res) => {
 
   const targetOwner = owner_id || req.user.id;
   const disk_limit_val = Math.max(0, parseInt(req.body.disk_limit) || 0);
-  // Admins bypass quota checks (checkAccountLimits returns null for admins)
   const limitErr = checkAccountLimits(targetOwner, memory_limit, disk_limit_val);
   if (limitErr) return res.status(403).json({ error: limitErr });
   const actualNodeId = findAvailableNode(node_id, memory_limit, disk_limit_val);
   if (!actualNodeId) return res.status(503).json({ error: 'All nodes are full or offline.' });
 
-  const id = uuidv4();
+  const port_mappings = autoPortMappings(actualNodeId);
 
+  const id = uuidv4();
   const startup_command = req.body.startup_command || '';
   db.prepare(`INSERT INTO servers (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
     .run(id, name, description, image, actualNodeId, targetOwner, JSON.stringify(port_mappings), JSON.stringify(env_vars), memory_limit, cpu_limit, disk_limit_val, startup_command);
 
-  // Send install command to daemon — async, don't block response
   nodeManager.send(actualNodeId, {
     type: 'install-server',
     serverId: id,
@@ -236,6 +287,8 @@ router.post('/:id/action', async (req, res) => {
   const { action } = req.body;
   const validActions = ['start', 'stop', 'restart', 'kill', 'sigint', 'sigterm'];
   if (!validActions.includes(action)) return res.status(400).json({ error: 'Invalid action' });
+  if (server.status === 'installing') return res.status(400).json({ error: 'Server is still installing' });
+  if (action === 'start' && server.suspended) return res.status(403).json({ error: 'Server is suspended' });
 
   const msg = {
     type: 'server-action',
@@ -268,6 +321,25 @@ router.post('/:id/action', async (req, res) => {
   });
 });
 
+router.post('/:id/suspend', requireAdmin, async (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  db.prepare('UPDATE servers SET suspended = 1 WHERE id = ?').run(req.params.id);
+  // Stop the container if running so the user can't keep using it
+  if (server.container_id && nodeManager.isOnline(server.node_id)) {
+    nodeManager.send(server.node_id, {
+      type: 'server-action', serverId: server.id, containerId: server.container_id, action: 'stop',
+    }).catch(() => {});
+  }
+  res.json({ ok: true });
+});
+
+router.post('/:id/unsuspend', requireAdmin, (req, res) => {
+  const result = db.prepare('UPDATE servers SET suspended = 0 WHERE id = ?').run(req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'Not found' });
+  res.json({ ok: true });
+});
+
 // ── File manager ─────────────────────────────────────────────────────────────
 function fileMsg(server, extra) {
   return { serverId: server.id, containerId: server.container_id, ...extra };
@@ -277,6 +349,7 @@ router.get('/:id/files', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
   try {
@@ -290,6 +363,7 @@ router.get('/:id/files/read', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
   const { path: filePath } = req.query;
@@ -305,6 +379,7 @@ router.put('/:id/files/write', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
   const { path: filePath, content } = req.body;
@@ -320,6 +395,7 @@ router.post('/:id/files/upload', express.raw({ type: '*/*', limit: '512mb' }), a
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
   const { path: filePath } = req.query;
@@ -336,6 +412,7 @@ router.post('/:id/files/mkdir', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
   const { path: dirPath } = req.body;
@@ -351,6 +428,7 @@ router.delete('/:id/files', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
   const { path: filePath } = req.query;
@@ -366,11 +444,20 @@ router.post('/:id/files/git', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
   const { url, branch, folder, path: targetPath } = req.body;
   if (!url) return res.status(400).json({ error: 'url is required' });
-  if (!/^https?:\/\/.+/.test(url)) return res.status(400).json({ error: 'Only https:// URLs are supported' });
+  if (!/^https:\/\/.+/.test(url)) return res.status(400).json({ error: 'Only https:// URLs are supported' });
+  try {
+    const host = new URL(url).hostname;
+    if (/^(localhost|.*\.local|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|fd[0-9a-f]{2}:)/i.test(host)) {
+      return res.status(400).json({ error: 'Private or loopback URLs are not allowed' });
+    }
+  } catch {
+    return res.status(400).json({ error: 'Invalid URL' });
+  }
   try {
     const result = await nodeManager.send(
       server.node_id,
@@ -385,6 +472,7 @@ router.post('/:id/files/rename', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
   const { oldPath, newPath } = req.body;
@@ -400,7 +488,8 @@ router.patch('/:id/settings', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
-  const { name, description, startup_command, disk_limit, memory_limit, cpu_limit, discord_webhook, discord_config } = req.body;
+  const suspErr2 = suspendedBlock(server, req.user); if (suspErr2) return res.status(suspErr2.status).json({ error: suspErr2.error });
+  const { name, description, startup_command, disk_limit, memory_limit, cpu_limit, discord_webhook, discord_config, env_vars } = req.body;
   const updates = [];
   const values = [];
   if (name !== undefined) { updates.push('name = ?'); values.push(name.trim() || server.name); }
@@ -416,6 +505,11 @@ router.patch('/:id/settings', async (req, res) => {
     }
     updates.push('discord_webhook = ?');
     values.push(url);
+  }
+  if (env_vars !== undefined && Array.isArray(env_vars)) {
+    const sanitized = env_vars.filter(e => e.key && String(e.key).trim()).map(e => ({ key: String(e.key).trim(), value: String(e.value ?? '') }));
+    updates.push('env_vars = ?');
+    values.push(JSON.stringify(sanitized));
   }
   if (discord_config !== undefined) {
     const cfg = discord_config ? {
@@ -438,6 +532,7 @@ router.delete('/:id', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  const suspErr3 = suspendedBlock(server, req.user); if (suspErr3) return res.status(suspErr3.status).json({ error: suspErr3.error });
 
   if (nodeManager.isOnline(server.node_id) && server.container_id) {
     await nodeManager.send(server.node_id, {

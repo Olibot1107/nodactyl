@@ -3,6 +3,7 @@ const http = require('http');
 const { Server: SocketIO } = require('socket.io');
 const WebSocket = require('ws');
 const cookieParser = require('cookie-parser');
+const helmet = require('helmet');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 
@@ -28,6 +29,7 @@ async function main() {
 
   nodeManager.setIO(io);
 
+  app.use(helmet({ contentSecurityPolicy: false })); // CSP disabled — panel uses inline scripts; enable & configure once ready
   app.use(express.json());
   app.use(cookieParser());
   app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -114,7 +116,10 @@ async function main() {
       || socket.handshake.headers.cookie?.match(/token=([^;]+)/)?.[1];
     if (!token) return next(new Error('Unauthorized'));
     try {
-      socket.user = jwt.verify(token, JWT_SECRET);
+      const decoded = jwt.verify(token, JWT_SECRET);
+      const user = db.prepare('SELECT id, username, role, suspended FROM users WHERE id = ?').get(decoded.id);
+      if (!user || user.suspended) return next(new Error('Unauthorized'));
+      socket.user = { ...decoded, role: user.role };
       next();
     } catch {
       next(new Error('Invalid token'));
@@ -122,6 +127,10 @@ async function main() {
   });
 
   io.on('connection', (socket) => {
+    // Join personal room so server-status can be scoped to owner only
+    socket.join(`user:${socket.user.id}`);
+    if (socket.user.role === 'admin') socket.join('admins');
+
     socket.on('subscribe-logs', ({ serverId, tail }) => {
       const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(serverId);
       if (!server) return socket.emit('error', 'Server not found');
@@ -134,7 +143,9 @@ async function main() {
 
     socket.on('unsubscribe-logs', ({ serverId }) => {
       const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(serverId);
-      if (server) nodeManager.emit(server.node_id, { type: 'unsubscribe-logs', serverId });
+      if (server && (server.owner_id === socket.user.id || socket.user.role === 'admin')) {
+        nodeManager.emit(server.node_id, { type: 'unsubscribe-logs', serverId });
+      }
       nodeManager.unsubscribeFromLogs(serverId, socket);
     });
 

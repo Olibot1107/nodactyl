@@ -39,14 +39,14 @@ router.get('/:id', requireAdmin, (req, res) => {
 });
 
 router.post('/', requireAdmin, (req, res) => {
-  const { name, description, memory = 4096, cpu = 4, disk_limit = 0 } = req.body;
+  const { name, description, memory = 4096, cpu = 4, disk_limit = 0, port_range_start = 10000, port_range_end = 30000 } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
   const id = uuidv4();
   const token = crypto.randomBytes(32).toString('hex');
 
-  db.prepare(`INSERT INTO nodes (id, name, description, token, memory, cpu, disk_limit) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, name, description || '', token, memory, cpu, Math.max(0, parseInt(disk_limit) || 0));
+  db.prepare(`INSERT INTO nodes (id, name, description, token, memory, cpu, disk_limit, port_range_start, port_range_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, name, description || '', token, memory, cpu, Math.max(0, parseInt(disk_limit) || 0), parseInt(port_range_start) || 10000, parseInt(port_range_end) || 30000);
 
   const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(id);
   res.status(201).json(node);
@@ -55,7 +55,7 @@ router.post('/', requireAdmin, (req, res) => {
 router.patch('/:id', requireAdmin, (req, res) => {
   const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(req.params.id);
   if (!node) return res.status(404).json({ error: 'Not found' });
-  const { name, description, memory, cpu, disk_limit } = req.body;
+  const { name, description, memory, cpu, disk_limit, port_range_start, port_range_end } = req.body;
   const updates = [];
   const values = [];
   if (name !== undefined) { updates.push('name = ?'); values.push(name.trim() || node.name); }
@@ -63,6 +63,8 @@ router.patch('/:id', requireAdmin, (req, res) => {
   if (memory !== undefined) { updates.push('memory = ?'); values.push(Math.max(0, parseInt(memory) || 0)); }
   if (cpu !== undefined) { updates.push('cpu = ?'); values.push(Math.max(0, parseInt(cpu) || 0)); }
   if (disk_limit !== undefined) { updates.push('disk_limit = ?'); values.push(Math.max(0, parseInt(disk_limit) || 0)); }
+  if (port_range_start !== undefined) { updates.push('port_range_start = ?'); values.push(Math.max(1024, parseInt(port_range_start) || 10000)); }
+  if (port_range_end !== undefined) { updates.push('port_range_end = ?'); values.push(Math.min(65535, parseInt(port_range_end) || 30000)); }
   if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
   values.push(req.params.id);
   db.prepare(`UPDATE nodes SET ${updates.join(', ')} WHERE id = ?`).run(...values);

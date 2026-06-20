@@ -30,6 +30,10 @@ async function init() {
     server = await API.get(`/servers/${serverId}`);
     renderTopbar();
     document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'settings');
+    if (server.suspended && getUser()?.role !== 'admin') {
+      document.getElementById('content').innerHTML = `<div class="empty-state"><div class="empty-icon" style="font-size:28px">⚠</div><p>This server is suspended. Settings are unavailable until an admin unsuspends it.</p></div>`;
+      return;
+    }
     populateForm();
     document.getElementById('content').innerHTML = buildContent();
     attachListeners();
@@ -94,6 +98,13 @@ function buildContent() {
         </div>
       </div>
 
+
+      <div class="card mb-4">
+        <div class="card-title mb-4">Environment Variables</div>
+        <div id="envList"></div>
+        <button class="btn btn-ghost btn-sm mt-3" type="button" onclick="addEnvRow()">+ Add Variable</button>
+        <div class="form-hint mt-2">Changes take effect after restarting the server.</div>
+      </div>
 
       <div class="card mb-4" id="notifCard">
         <div class="card-title mb-4">Notifications</div>
@@ -173,7 +184,34 @@ function buildNotifCard() {
     </div>`;
 }
 
-function populateForm() {}
+let envCount = 0;
+
+function addEnvRow(key = '', value = '') {
+  const id = ++envCount;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:6px';
+  div.innerHTML = `
+    <input type="text" class="form-input" id="ek_${id}" placeholder="KEY" value="${esc(key)}" style="flex:1;font-family:monospace">
+    <span class="text-muted">=</span>
+    <input type="text" class="form-input" id="ev_${id}" placeholder="value" value="${esc(value)}" style="flex:2">
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px" type="button">✕</button>`;
+  document.getElementById('envList').appendChild(div);
+}
+
+function getEnvVars() {
+  const envs = [];
+  document.querySelectorAll('[id^="ek_"]').forEach(el => {
+    const id = el.id.slice(3);
+    const key = el.value.trim();
+    const value = document.getElementById(`ev_${id}`)?.value ?? '';
+    if (key) envs.push({ key, value });
+  });
+  return envs;
+}
+
+function populateForm() {
+  (server.env_vars || []).forEach(e => addEnvRow(e.key, e.value));
+}
 
 function attachListeners() {
   document.getElementById('fieldName')?.addEventListener('keydown', e => {
@@ -214,7 +252,7 @@ async function saveSettings() {
   btn.disabled = true;
   alertEl.style.display = 'none';
 
-  const body = { name, description, startup_command, discord_webhook: discord_webhook || null, discord_config };
+  const body = { name, description, startup_command, env_vars: getEnvVars(), discord_webhook: discord_webhook || null, discord_config };
 
   try {
     await API.patch(`/servers/${serverId}/settings`, body);

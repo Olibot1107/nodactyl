@@ -105,7 +105,7 @@ async function handleMessage(msg) {
     }
 
     case 'install-server': {
-      const { requestId, serverId, image, portMappings, envVars, memoryLimit, cpuLimit, startupCommand } = msg;
+      const { requestId, serverId, image, portMappings, envVars, memoryLimit, cpuLimit, startupCommand, installScript } = msg;
       console.log(`[server:${serverId.slice(0, 8)}] Installing — pulling ${image}...`);
 
       // Create persistent data directory before pulling image
@@ -113,9 +113,6 @@ async function handleMessage(msg) {
       if (dataPath && serverId) {
         const dir = serverDataDir(serverId);
         fs.mkdirSync(dir, { recursive: true });
-        // Use hostDataPath for the bind mount so Docker (on the host) can resolve it.
-        // When the daemon runs inside Docker, dataPath is inside the container but
-        // hostDataPath is the same path as seen by the Docker host.
         const hostDir = nodePath.join(hostDataPath, serverId);
         binds.push(`${hostDir}:/home/container`);
         console.log(`[server:${serverId.slice(0, 8)}] Data dir: ${dir} (bind: ${hostDir})`);
@@ -123,7 +120,61 @@ async function handleMessage(msg) {
 
       try {
         await docker.pullImage(image);
-        console.log(`[server:${serverId.slice(0, 8)}] Image pulled — creating container`);
+        console.log(`[server:${serverId.slice(0, 8)}] Image pulled`);
+
+        // Run install script in a temporary container if provided
+        if (installScript && installScript.trim()) {
+          console.log(`[server:${serverId.slice(0, 8)}] Running install script...`);
+          send({ type: 'log', serverId, line: '\r\n\x1b[33m[Nodactyl] Running install script...\x1b[0m\r\n' });
+
+          const memBytes = (memoryLimit || 512) * 1024 * 1024;
+          const installContainer = await docker.docker.createContainer({
+            Image: image,
+            Cmd: ['/bin/sh', '-c', installScript],
+            WorkingDir: '/home/container',
+            Env: (envVars || []).map(e => `${e.key}=${e.value}`),
+            HostConfig: {
+              Binds: binds,
+              Memory: memBytes,
+              MemorySwap: memBytes * 2,
+              NanoCpus: Math.floor((cpuLimit || 1) * 1e9),
+            },
+          });
+
+          // Attach before start so no output is missed
+          const attachStream = await installContainer.attach({ stream: true, stdout: true, stderr: true });
+          attachStream.on('data', chunk => {
+            let offset = 0;
+            while (offset + 8 <= chunk.length) {
+              const size = chunk.readUInt32BE(offset + 4);
+              const end = offset + 8 + size;
+              if (end > chunk.length) break;
+              const text = chunk.slice(offset + 8, end).toString('utf8');
+              if (text) send({ type: 'log', serverId, line: text });
+              offset = end;
+            }
+            if (offset === 0) {
+              const text = chunk.toString('utf8');
+              if (text) send({ type: 'log', serverId, line: text });
+            }
+          });
+
+          await installContainer.start();
+          const { StatusCode: exitCode } = await installContainer.wait();
+          try { await installContainer.remove({ force: true }); } catch {}
+
+          if (exitCode !== 0) {
+            send({ type: 'log', serverId, line: `\r\n\x1b[31m[Nodactyl] Install script failed (exit ${exitCode}).\x1b[0m\r\n` });
+            console.error(`[server:${serverId.slice(0, 8)}] Install script failed (exit ${exitCode})`);
+            respond(requestId, {}, new Error(`Install script failed (exit ${exitCode})`));
+            send({ type: 'server-status', serverId, status: 'error' });
+            break;
+          }
+
+          send({ type: 'log', serverId, line: '\r\n\x1b[32m[Nodactyl] Install complete. Setting up server container...\x1b[0m\r\n' });
+          console.log(`[server:${serverId.slice(0, 8)}] Install script done ✓`);
+        }
+
         const container = await docker.createContainer({
           serverId, image, portMappings, envVars, memoryLimit, cpuLimit,
           binds,

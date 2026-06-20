@@ -72,12 +72,6 @@
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Port Mappings</label>
-        <div id="portList"></div>
-        <button class="btn btn-ghost btn-sm mt-2" onclick="addPort()" type="button">+ Add Port</button>
-        <div class="form-hint">host:container (e.g. 8080:80)</div>
-      </div>
-      <div class="form-group">
         <label class="form-label">Environment Variables</label>
         <div id="envList"></div>
         <button class="btn btn-ghost btn-sm mt-2" onclick="addEnv()" type="button">+ Add Variable</button>
@@ -137,7 +131,7 @@ async function init() {
   const socket = io({ auth: { token: getToken() } });
   socket.on('server-status', ({ serverId, status }) => {
     const s = servers.find(x => x.id === serverId);
-    if (s) { s.status = status; renderServers(); renderStats(); }
+    if (s) { s.status = status; renderServers(); renderStats(); renderPresets(); }
   });
   socket.on('node-status', ({ nodeId, status }) => {
     const n = nodes.find(x => x.id === nodeId);
@@ -208,16 +202,24 @@ function renderPresets() {
   const el = document.getElementById('presetsSection');
   if (!presets.length) { el.innerHTML = ''; return; }
 
+  const freshUser = getUser();
+  const isAdmin = freshUser?.role === 'admin';
+  const rank = freshUser?.rank;
+  const maxServers = isAdmin ? -1 : (rank?.max_servers ?? 1);
+  const atLimit = maxServers !== -1 && servers.length >= maxServers;
+
   el.innerHTML = `
     <div class="section-header mb-4">
       <div>
         <div class="section-title">Available Presets</div>
-        <div class="section-sub">Pick a preset to deploy a new server</div>
+        <div class="section-sub">${atLimit
+          ? `<span style="color:var(--danger)">You've reached your server limit (${servers.length}/${maxServers}). Contact an admin to upgrade your rank.</span>`
+          : 'Pick a preset to deploy a new server'}</div>
       </div>
     </div>
     <div class="grid-3 mb-6">
       ${presets.map(p => `
-        <div class="preset-card">
+        <div class="preset-card${atLimit ? ' opacity-50' : ''}">
           <div>
             <div class="preset-card-name">${esc(p.name)}</div>
             ${p.description ? `<div class="preset-card-desc mt-2">${esc(p.description)}</div>` : ''}
@@ -226,12 +228,12 @@ function renderPresets() {
           <div class="preset-card-meta">
             <span>${p.memory_limit} MB RAM</span>
             <span>${p.cpu_limit} CPU</span>
-            ${p.port_mappings?.length ? `<span>${p.port_mappings.length} port(s)</span>` : ''}
           </div>
           <div class="preset-card-footer">
-            <button class="btn btn-primary btn-sm w-full" style="justify-content:center" onclick="openDeployModal('${esc(p.id)}', '${esc(p.name)}')">
-              Deploy
-            </button>
+            ${atLimit
+              ? `<button class="btn btn-ghost btn-sm w-full" style="justify-content:center;cursor:not-allowed;opacity:.6" disabled title="Server limit reached">Deploy</button>`
+              : `<button class="btn btn-primary btn-sm w-full" style="justify-content:center" onclick="openDeployModal('${esc(p.id)}', '${esc(p.name)}')">Deploy</button>`
+            }
           </div>
         </div>`).join('')}
     </div>`;
@@ -256,7 +258,7 @@ function serverCard(s, showOwner = false) {
       <div class="server-mini-stats">
         <div class="server-mini-stat">RAM: <span>${fmtMb(s.memory_limit)}</span></div>
         <div class="server-mini-stat">CPU: <span>${s.cpu_limit}</span></div>
-        ${s.port_mappings?.length ? `<div class="server-mini-stat">Ports: <span>${s.port_mappings.length}</span></div>` : ''}
+        ${s.port_mappings?.[0]?.hostPort ? `<div class="server-mini-stat">Port: <span>${s.port_mappings[0].hostPort}</span></div>` : ''}
       </div>
     </a>`;
 }
@@ -357,16 +359,15 @@ async function deployServer() {
 }
 
 // ── Admin custom create ───────────────────────────────────────────────────────
-let portCount = 0, envCount = 0;
+let envCount = 0;
 let _createAutoNodeId = null;
 
 function openCreateModal() {
-  document.getElementById('portList').innerHTML = '';
   document.getElementById('envList').innerHTML = '';
   ['c_name','c_image','c_desc'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('c_memory').value = 512;
   document.getElementById('c_cpu').value = 1;
-  portCount = 0; envCount = 0;
+  envCount = 0;
   _createAutoNodeId = null;
 
   const onlineNodes = nodes.filter(n => n.online);
@@ -390,19 +391,6 @@ function openCreateModal() {
 
 function closeCreateModal() { document.getElementById('createModal').classList.remove('open'); }
 
-function addPort() {
-  const id = ++portCount;
-  const div = document.createElement('div');
-  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:6px';
-  div.innerHTML = `
-    <input type="number" class="form-input" id="ph_${id}" placeholder="Host" style="flex:1">
-    <span class="text-muted">:</span>
-    <input type="number" class="form-input" id="pc_${id}" placeholder="Container" style="flex:1">
-    <select class="form-select" id="pp_${id}" style="width:76px"><option>tcp</option><option>udp</option></select>
-    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">✕</button>`;
-  document.getElementById('portList').appendChild(div);
-}
-
 function addEnv() {
   const id = ++envCount;
   const div = document.createElement('div');
@@ -413,18 +401,6 @@ function addEnv() {
     <input type="text" class="form-input" id="ev_${id}" placeholder="value" style="flex:2">
     <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">✕</button>`;
   document.getElementById('envList').appendChild(div);
-}
-
-function getPortMappings() {
-  const ports = [];
-  document.querySelectorAll('[id^="ph_"]').forEach(el => {
-    const id = el.id.slice(3);
-    const hostPort = parseInt(el.value);
-    const containerPort = parseInt(document.getElementById(`pc_${id}`).value);
-    const protocol = document.getElementById(`pp_${id}`).value;
-    if (hostPort && containerPort) ports.push({ hostPort, containerPort, protocol });
-  });
-  return ports;
 }
 
 function getEnvVars() {
@@ -452,7 +428,6 @@ async function createServer() {
       node_id: _createAutoNodeId || document.getElementById('c_node').value,
       memory_limit: parseInt(document.getElementById('c_memory').value),
       cpu_limit: parseFloat(document.getElementById('c_cpu').value),
-      port_mappings: getPortMappings(),
       env_vars: getEnvVars(),
     });
     closeCreateModal();
