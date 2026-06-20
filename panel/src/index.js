@@ -29,6 +29,7 @@ async function main() {
 
   nodeManager.setIO(io);
 
+  app.set('trust proxy', 1);
   app.use(helmet({ contentSecurityPolicy: false })); // CSP disabled — panel uses inline scripts; enable & configure once ready
   app.use(express.json());
   app.use(cookieParser());
