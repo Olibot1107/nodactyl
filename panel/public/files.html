@@ -1032,8 +1032,20 @@ function showDirError(message) {
     </div>`;
 }
 
+function selectAll() {
+  document.querySelectorAll('[data-ctx-path]').forEach(el => {
+    const path = el.dataset.ctxPath;
+    const isDir = el.dataset.ctxIsdir === 'true';
+    const name = el.dataset.ctxName;
+    if (!selectedItems.has(path)) selectedItems.set(path, { path, isDir, name });
+    el.classList.add('selected');
+  });
+  updateSelectionBar();
+}
+
 function onKeyDown(e) {
   if ((e.ctrlKey || e.metaKey) && e.key === 's' && openFile) { e.preventDefault(); saveFile(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'a' && !openFile) { e.preventDefault(); selectAll(); }
   if (e.key === 'Escape') {
     closeCtx();
     const openModals = document.querySelectorAll('.modal-overlay.open');
