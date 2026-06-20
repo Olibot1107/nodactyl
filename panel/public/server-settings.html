@@ -109,7 +109,8 @@ function buildContent() {
 
       ${(isAdmin || server.owner_id === getUser()?.id) ? `
       <div class="card mb-4" id="membersCard">
-        <div class="card-title mb-4">Access &amp; Members</div>
+        <div class="card-title mb-1">Access &amp; Members</div>
+        <div class="text-muted mb-4" style="font-size:12.5px">Share this server with other users and control what they can do.</div>
         <div id="membersList"><div class="text-muted" style="font-size:13px">Loading...</div></div>
         <div class="mt-4" style="border-top:1px solid var(--border);padding-top:16px">
           <div class="form-label mb-2">Add member</div>
@@ -242,22 +243,51 @@ function attachListeners() {
   });
 }
 
+const ALL_PERMS = ['console', 'files', 'settings', 'power'];
+const PERM_LABELS = { console: 'Console', files: 'Files', settings: 'Settings', power: 'Power' };
+
+function memberAvatarHtml(m, size = 32) {
+  const radius = size <= 28 ? '6px' : '8px';
+  const inner = m.avatar
+    ? `<img src="${esc(m.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:${radius}" alt="">`
+    : `<span style="font-size:${Math.floor(size * 0.44)}px;font-weight:600;line-height:1">${esc(m.username[0].toUpperCase())}</span>`;
+  return `<div style="width:${size}px;height:${size}px;background:var(--primary);border-radius:${radius};display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;color:#fff">${inner}</div>`;
+}
+
 async function loadMembers() {
   const el = document.getElementById('membersList');
   if (!el) return;
   try {
     const members = await API.get(`/servers/${serverId}/members`);
     if (!members.length) { el.innerHTML = '<div class="text-muted" style="font-size:13px">No members yet.</div>'; return; }
-    const PERM_LABELS = { console: 'Console', files: 'Files', settings: 'Settings', power: 'Power' };
     el.innerHTML = members.map(m => `
-      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
-        <span style="font-size:13px;font-weight:500;min-width:120px">${esc(m.username)}</span>
-        <span style="flex:1;display:flex;gap:4px;flex-wrap:wrap">
-          ${m.permissions.map(p => `<span class="badge" style="font-size:10px;padding:1px 6px;background:var(--bg3)">${PERM_LABELS[p]||p}</span>`).join('')}
-        </span>
-        <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:11px" onclick="removeMember(${m.user_id})">Remove</button>
+      <div class="member-row" data-uid="${m.user_id}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+        ${memberAvatarHtml(m)}
+        <div style="min-width:110px">
+          <div style="font-size:13px;font-weight:500;line-height:1.2">${esc(m.username)}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${esc(m.email)}</div>
+        </div>
+        <div style="flex:1;display:flex;gap:6px;flex-wrap:wrap">
+          ${ALL_PERMS.map(p => `
+            <label style="display:flex;align-items:center;gap:3px;font-size:12px;cursor:pointer;white-space:nowrap">
+              <input type="checkbox" class="mperm-${m.user_id}" data-perm="${p}" ${m.permissions.includes(p) ? 'checked' : ''} style="accent-color:var(--primary)"> ${PERM_LABELS[p]}
+            </label>`).join('')}
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn btn-primary btn-sm" style="font-size:11px" onclick="saveMemberPerms(${m.user_id})">Save</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--danger)" onclick="removeMember(${m.user_id})">Remove</button>
+        </div>
       </div>`).join('');
   } catch (e) { el.innerHTML = `<div class="text-muted" style="font-size:13px">${esc(e.message)}</div>`; }
+}
+
+async function saveMemberPerms(userId) {
+  const checked = [...document.querySelectorAll(`.mperm-${userId}:checked`)].map(el => el.dataset.perm);
+  try {
+    await API.patch(`/servers/${serverId}/members/${userId}`, { permissions: checked });
+    const row = document.querySelector(`.member-row[data-uid="${userId}"]`);
+    if (row) { const btn = row.querySelector('.btn-primary'); if (btn) { btn.textContent = 'Saved ✓'; setTimeout(() => btn.textContent = 'Save', 1500); } }
+  } catch (e) { alert(e.message); }
 }
 
 async function addMember() {

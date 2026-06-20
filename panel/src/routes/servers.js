@@ -699,7 +699,7 @@ router.get('/:id/members', (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
-  const members = db.prepare(`SELECT sm.user_id, sm.permissions, sm.created_at, u.username, u.email
+  const members = db.prepare(`SELECT sm.user_id, sm.permissions, sm.created_at, u.username, u.email, u.avatar
     FROM server_members sm JOIN users u ON sm.user_id = u.id
     WHERE sm.server_id = ? ORDER BY sm.created_at ASC`).all(req.params.id);
   res.json(members.map(m => ({ ...m, permissions: JSON.parse(m.permissions || '[]') })));
