@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nodactyl - Server Settings</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="layout" id="app"></div>
+
+<script src="/js/api.js"></script>
+<script>
+requireAuth();
+
+const serverId = location.pathname.match(/^\/server\/([^/]+)/)?.[1] || '';
+let server = null;
+
+const UI = {
+  back: `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>`,
+  save: `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M5 3h12l2 2v16H5V3z"/><path d="M8 3v6h8V3"/><path d="M8 21v-7h8v7"/></svg>`,
+  info: `<svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" width="13" height="13" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`,
+};
+
+async function init() {
+  await loadPanelSettings();
+  document.getElementById('app').innerHTML = buildShell();
+
+  try {
+    server = await API.get(`/servers/${serverId}`);
+    renderTopbar();
+    document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'settings');
+    populateForm();
+    document.getElementById('content').innerHTML = buildContent();
+    attachListeners();
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty-state"><p>${esc(e.message)}</p></div>`;
+  }
+}
+
+function buildShell() {
+  return `
+    ${renderSidebar('dashboard')}
+    <div class="main">
+      <div class="topbar" id="topbar">
+        <div class="flex-center gap-2">
+          <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
+          <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+          <span class="page-title">Loading…</span>
+          <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+          <span class="text-muted" style="font-size:13px">Settings</span>
+        </div>
+      </div>
+      <div id="serverNavSlot"></div>
+      <div class="content" id="content">
+        <div class="empty-state"><span class="spinner"></span></div>
+      </div>
+    </div>`;
+}
+
+function renderTopbar() {
+  document.getElementById('topbar').innerHTML = `
+    <div class="flex-center gap-2">
+      <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
+      <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+      <a class="topbar-link" href="/server/${serverId}">${esc(server.name)}</a>
+      <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+      <span class="page-title">Settings</span>
+    </div>
+    <div class="flex-center gap-2">
+      ${badgeHtml(server.status)}
+    </div>`;
+}
+
+function buildContent() {
+  const isAdmin = getUser()?.role === 'admin';
+  return `
+    <div style="max-width:640px">
+
+      <div class="card mb-4">
+        <div class="card-title mb-4">General</div>
+        <div class="form-group mb-3">
+          <label class="form-label">Name</label>
+          <input class="form-input" id="fieldName" value="${esc(server.name)}" placeholder="Server name">
+        </div>
+        <div class="form-group mb-3">
+          <label class="form-label">Description <span class="text-muted">(optional)</span></label>
+          <textarea class="form-input" id="fieldDesc" rows="2" placeholder="What is this server for?">${esc(server.description || '')}</textarea>
+        </div>
+        <div class="form-group mb-0">
+          <label class="form-label">Startup Command <span class="text-muted">(optional)</span></label>
+          <input class="form-input font-mono" id="fieldStartup" value="${esc(server.startup_command || '')}" placeholder="e.g. java -jar server.jar">
+          <div class="form-hint mt-2">${UI.info} Overrides the Docker image's default entrypoint. Leave blank to use the image default.</div>
+        </div>
+      </div>
+
+      ${isAdmin ? `
+      <div class="card mb-4">
+        <div class="card-title mb-4">Resource Limits</div>
+        <div class="form-group mb-0">
+          <label class="form-label">Disk Limit <span class="text-muted">(MB — 0 = unlimited)</span></label>
+          <input class="form-input" id="fieldDiskLimit" type="number" min="0" step="512" value="${esc(String(server.disk_limit || 0))}" placeholder="0">
+          <div class="form-hint mt-2">${UI.info} Maximum storage the server can use. Shown as a warning when exceeded.</div>
+        </div>
+      </div>` : ''}
+
+      <div id="settingsAlert" class="alert mb-3" style="display:none"></div>
+
+      <div class="flex-center gap-2">
+        <button class="btn btn-primary" id="saveBtn" onclick="saveSettings()">${UI.save} Save Changes</button>
+        <button class="btn btn-ghost" onclick="location.href='/server/${serverId}'">Cancel</button>
+      </div>
+
+      ${isAdmin ? `
+      <div class="card mt-6" style="border-color:var(--danger-muted,#ef444422)">
+        <div class="card-title mb-1" style="color:var(--danger)">Danger Zone</div>
+        <div class="text-muted mb-4" style="font-size:12.5px">These actions are irreversible.</div>
+        <div class="form-group mb-0">
+          <label class="form-label mb-2">Server Details (read-only)</label>
+          <div class="detail-list">
+            <div class="detail-row">
+              <div class="detail-label">Server ID</div>
+              <div class="detail-value font-mono">${esc(server.id)}</div>
+            </div>
+            <div class="detail-row">
+              <div class="detail-label">Image</div>
+              <div class="detail-value font-mono">${esc(server.image)}</div>
+            </div>
+            <div class="detail-row">
+              <div class="detail-label">Node</div>
+              <div class="detail-value">${esc(server.node_name || 'Unknown')}</div>
+            </div>
+            <div class="detail-row">
+              <div class="detail-label">Memory</div>
+              <div class="detail-value">${esc(String(server.memory_limit))} MB</div>
+            </div>
+            <div class="detail-row">
+              <div class="detail-label">CPU</div>
+              <div class="detail-value">${esc(String(server.cpu_limit))} cores</div>
+            </div>
+          </div>
+        </div>
+        <div class="mt-4">
+          <button class="btn btn-danger btn-sm" onclick="deleteServer()">Delete Server</button>
+        </div>
+      </div>` : ''}
+    </div>`;
+}
+
+function populateForm() {}
+
+function attachListeners() {
+  document.getElementById('fieldName')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); saveSettings(); }
+  });
+  document.getElementById('fieldStartup')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); saveSettings(); }
+  });
+}
+
+async function saveSettings() {
+  const name = document.getElementById('fieldName').value.trim();
+  const description = document.getElementById('fieldDesc').value.trim();
+  const startup_command = document.getElementById('fieldStartup').value.trim();
+  const diskLimitEl = document.getElementById('fieldDiskLimit');
+  const alertEl = document.getElementById('settingsAlert');
+  const btn = document.getElementById('saveBtn');
+
+  if (!name) {
+    showAlert('error', 'Name is required.');
+    return;
+  }
+
+  btn.innerHTML = '<span class="spinner"></span> Saving...';
+  btn.disabled = true;
+  alertEl.style.display = 'none';
+
+  const body = { name, description, startup_command };
+  if (diskLimitEl) body.disk_limit = parseInt(diskLimitEl.value) || 0;
+
+  try {
+    await API.patch(`/servers/${serverId}/settings`, body);
+    server.name = name;
+    server.description = description;
+    server.startup_command = startup_command;
+    if (diskLimitEl) server.disk_limit = body.disk_limit;
+    renderTopbar();
+    showAlert('success', 'Settings saved.');
+  } catch (e) {
+    showAlert('error', e.message);
+  } finally {
+    btn.innerHTML = `${UI.save} Save Changes`;
+    btn.disabled = false;
+  }
+}
+
+async function deleteServer() {
+  if (!confirm(`Delete "${server.name}"?\n\nThis will stop and permanently remove the container and all its data.`)) return;
+  try {
+    await API.delete(`/servers/${serverId}`);
+    window.location.href = '/dashboard';
+  } catch (e) {
+    alert('Delete failed: ' + e.message);
+  }
+}
+
+function showAlert(type, msg) {
+  const el = document.getElementById('settingsAlert');
+  el.className = `alert alert-${type === 'error' ? 'error' : 'success'} show`;
+  el.style.display = '';
+  el.textContent = msg;
+  if (type === 'success') setTimeout(() => { el.style.display = 'none'; }, 3000);
+}
+
+init();
+</script>
+</body>
+</html>

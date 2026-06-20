@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nodactyl — All Servers</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="layout" id="app"></div>
+
+<script src="/js/api.js"></script>
+<script>
+requireAdmin();
+let servers = [];
+
+async function init() {
+  await loadPanelSettings();
+  document.getElementById('app').innerHTML = `
+    ${renderSidebar('admin-servers')}
+    <div class="main">
+      <div class="topbar">
+        <div>
+          <div class="page-title">All Servers</div>
+          <div class="page-sub">Every server across all users</div>
+        </div>
+        <div class="flex gap-2 flex-center">
+          <input type="text" class="form-input" id="searchInput" placeholder="Search by name or owner..." style="width:220px" oninput="renderTable()">
+          <button class="btn btn-ghost btn-sm" onclick="loadServers()">Refresh</button>
+        </div>
+      </div>
+      <div class="content">
+        <div class="grid-stats mb-6" id="statsRow"></div>
+        <div class="alert alert-error" id="pageError"></div>
+        <div class="alert alert-success" id="pageSuccess"></div>
+        <div class="card">
+          <div class="table-wrap" id="tableWrap">
+            <div class="empty-state"><span class="spinner"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  await loadServers();
+}
+
+async function loadServers() {
+  try {
+    servers = await API.get('/servers');
+    renderStats();
+    renderTable();
+  } catch (e) {
+    showErr(e.message);
+  }
+}
+
+function renderStats() {
+  const running = servers.filter(s => s.status === 'running').length;
+  const error   = servers.filter(s => s.status === 'error').length;
+  document.getElementById('statsRow').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">${servers.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Running</div><div class="stat-value text-success">${running}</div></div>
+    <div class="stat-card"><div class="stat-label">Stopped</div><div class="stat-value">${servers.filter(s=>s.status==='stopped').length}</div></div>
+    <div class="stat-card"><div class="stat-label">Errors</div><div class="stat-value" style="color:${error?'var(--danger)':'inherit'}">${error}</div></div>`;
+}
+
+function renderTable() {
+  const q = (document.getElementById('searchInput')?.value || '').toLowerCase();
+  const filtered = servers.filter(s =>
+    s.name.toLowerCase().includes(q) ||
+    (s.owner_name || '').toLowerCase().includes(q) ||
+    (s.image || '').toLowerCase().includes(q)
+  );
+
+  document.getElementById('tableWrap').innerHTML = filtered.length ? `
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Image</th>
+          <th>Owner</th>
+          <th>Node</th>
+          <th>Status</th>
+          <th>RAM</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filtered.map(s => `
+          <tr>
+            <td>
+              <a href="/server/${s.id}" style="color:var(--text);font-weight:600">${esc(s.name)}</a>
+              ${s.description ? `<div class="text-xs text-muted">${esc(s.description)}</div>` : ''}
+            </td>
+            <td class="font-mono text-xs text-dim">${esc(s.image)}</td>
+            <td>${esc(s.owner_name || '—')}</td>
+            <td>
+              <div>${esc(s.node_name || '—')}</div>
+              ${!s.node_online ? '<div class="text-xs text-danger">offline</div>' : ''}
+            </td>
+            <td>${badgeHtml(s.status)}</td>
+            <td class="text-dim text-sm">${s.memory_limit} MB</td>
+            <td>
+              <div class="flex gap-2">
+                <a href="/server/${s.id}" class="btn btn-ghost btn-xs">Open</a>
+                ${s.status === 'stopped' && s.node_online
+                  ? `<button class="btn btn-success btn-xs" onclick="doAction('${s.id}','start')">Start</button>`
+                  : ''}
+                ${s.status === 'running'
+                  ? `<button class="btn btn-ghost btn-xs" onclick="doAction('${s.id}','stop')">Stop</button>`
+                  : ''}
+                <button class="btn btn-danger btn-xs" onclick="deleteServer('${s.id}','${esc(s.name)}')">Delete</button>
+              </div>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>` : `<div class="empty-state"><p>${servers.length ? 'No results match your search.' : 'No servers found.'}</p></div>`;
+}
+
+async function doAction(id, action) {
+  try {
+    await API.post(`/servers/${id}/action`, { action });
+    showOk(`Server ${action}ed.`);
+    await loadServers();
+  } catch (e) { showErr(e.message); }
+}
+
+async function deleteServer(id, name) {
+  if (!confirm(`Delete "${name}"? The container will be removed.`)) return;
+  try {
+    await API.delete(`/servers/${id}`);
+    showOk('Server deleted.');
+    await loadServers();
+  } catch (e) { showErr(e.message); }
+}
+
+function showErr(msg) {
+  const el = document.getElementById('pageError');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 4000);
+}
+function showOk(msg) {
+  const el = document.getElementById('pageSuccess');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+init();
+</script>
+</body>
+</html>

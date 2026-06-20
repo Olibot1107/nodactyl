@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nodactyl — Ranks</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="layout" id="app"></div>
+
+<!-- Create / Edit modal -->
+<div class="modal-overlay" id="rankModal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modalTitle">New Rank</h2>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-error" id="modalError"></div>
+      <div class="form-group">
+        <label class="form-label">Rank Name</label>
+        <input type="text" class="form-input" id="r_name" placeholder="VIP">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Color</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="color" id="r_color" value="#6366f1" style="width:40px;height:36px;border-radius:6px;border:1px solid var(--border);background:transparent;cursor:pointer;padding:2px">
+            <input type="text" class="form-input" id="r_color_text" placeholder="#6366f1" style="flex:1" oninput="syncColorText()">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Server Limit</label>
+          <input type="number" class="form-input" id="r_max" value="1" min="-1">
+          <div class="form-hint">-1 = unlimited</div>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Memory Limit <span class="text-muted">(MB)</span></label>
+          <input type="number" class="form-input" id="r_memory" value="0" min="0" step="128">
+          <div class="form-hint">Per server. 0 = use preset default</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Disk Limit <span class="text-muted">(MB)</span></label>
+          <input type="number" class="form-input" id="r_disk" value="0" min="0" step="512">
+          <div class="form-hint">Per server. 0 = unlimited</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Sort Order</label>
+        <input type="number" class="form-input" id="r_order" value="0" min="0">
+        <div class="form-hint">Lower numbers appear first.</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="saveBtn" onclick="saveRank()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+requireAdmin();
+let ranks = [];
+let editId = null;
+
+async function init() {
+  await loadPanelSettings();
+  document.getElementById('app').innerHTML = `
+    ${renderSidebar('admin-ranks')}
+    <div class="main">
+      <div class="topbar">
+        <div>
+          <div class="page-title">Ranks</div>
+          <div class="page-sub">User ranks control server and resource limits</div>
+        </div>
+        <button class="btn btn-primary" onclick="openCreate()">New Rank</button>
+      </div>
+      <div class="content">
+        <div class="alert alert-error" id="pageError"></div>
+        <div class="alert alert-success" id="pageSuccess"></div>
+        <div class="card">
+          <div class="table-wrap" id="tableWrap">
+            <div class="empty-state"><span class="spinner"></span></div>
+          </div>
+        </div>
+        <div class="card mt-4" style="margin-top:16px">
+          <div class="card-title mb-3">How ranks work</div>
+          <ul style="list-style:none;display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--text-dim)">
+            <li>• Admins assign ranks to users from the <a href="/admin/users" style="color:#a5b4fc">Users</a> page.</li>
+            <li>• <b>Server Limit</b>: max servers a user can own. -1 = unlimited.</li>
+            <li>• <b>Memory Limit</b>: max RAM per server in MB. 0 = use preset default (uncapped).</li>
+            <li>• <b>Disk Limit</b>: max disk per server in MB. 0 = unlimited.</li>
+            <li>• Users with no rank assigned default to <b>1 server, no resource limits</b>.</li>
+            <li>• Admins are always unlimited regardless of rank.</li>
+            <li>• Node capacity is always enforced — a server can't be created if the node is full.</li>
+          </ul>
+        </div>
+      </div>
+    </div>`;
+
+  await loadRanks();
+}
+
+async function loadRanks() {
+  try {
+    ranks = await API.get('/ranks');
+    renderTable();
+  } catch (e) { showErr(e.message); }
+}
+
+function fmtMb(mb) {
+  if (!mb) return '<span class="text-muted">—</span>';
+  if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
+  return mb + ' MB';
+}
+
+function renderTable() {
+  document.getElementById('tableWrap').innerHTML = ranks.length ? `
+    <table>
+      <thead>
+        <tr><th>Rank</th><th>Servers</th><th>Memory/server</th><th>Disk/server</th><th>Order</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        ${ranks.map(r => `
+          <tr>
+            <td>
+              <span style="display:inline-flex;align-items:center;gap:7px">
+                <span style="padding:2px 8px;border-radius:99px;font-size:12px;font-weight:700;background:${esc(r.color)}22;color:${esc(r.color)};border:1px solid ${esc(r.color)}44">${esc(r.name)}</span>
+              </span>
+            </td>
+            <td>${r.max_servers === -1 ? '<span class="text-success">Unlimited</span>' : r.max_servers + ' server' + (r.max_servers !== 1 ? 's' : '')}</td>
+            <td>${r.memory_limit > 0 ? fmtMb(r.memory_limit) : '<span class="text-muted">Preset default</span>'}</td>
+            <td>${r.disk_limit > 0 ? fmtMb(r.disk_limit) : '<span class="text-muted">Unlimited</span>'}</td>
+            <td class="text-dim">${r.sort_order}</td>
+            <td>
+              <div class="flex gap-2">
+                <button class="btn btn-ghost btn-xs" onclick="openEdit('${r.id}')">Edit</button>
+                <button class="btn btn-danger btn-xs" onclick="deleteRank('${r.id}', '${esc(r.name)}')">Delete</button>
+              </div>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>` : `<div class="empty-state"><p>No ranks yet.</p></div>`;
+}
+
+function syncColorText() {
+  const v = document.getElementById('r_color_text').value;
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) document.getElementById('r_color').value = v;
+}
+
+document.addEventListener('change', e => {
+  if (e.target.id === 'r_color') document.getElementById('r_color_text').value = e.target.value;
+});
+
+function openCreate() {
+  editId = null;
+  document.getElementById('r_name').value = '';
+  document.getElementById('r_color').value = '#6366f1';
+  document.getElementById('r_color_text').value = '#6366f1';
+  document.getElementById('r_max').value = 1;
+  document.getElementById('r_memory').value = 0;
+  document.getElementById('r_disk').value = 0;
+  document.getElementById('r_order').value = ranks.length;
+  document.getElementById('modalError').classList.remove('show');
+  document.getElementById('modalTitle').textContent = 'New Rank';
+  document.getElementById('saveBtn').textContent = 'Create Rank';
+  document.getElementById('rankModal').classList.add('open');
+}
+
+function openEdit(id) {
+  editId = id;
+  const r = ranks.find(x => x.id === id);
+  if (!r) return;
+  document.getElementById('r_name').value = r.name;
+  document.getElementById('r_color').value = r.color;
+  document.getElementById('r_color_text').value = r.color;
+  document.getElementById('r_max').value = r.max_servers;
+  document.getElementById('r_memory').value = r.memory_limit || 0;
+  document.getElementById('r_disk').value = r.disk_limit || 0;
+  document.getElementById('r_order').value = r.sort_order;
+  document.getElementById('modalError').classList.remove('show');
+  document.getElementById('modalTitle').textContent = 'Edit Rank';
+  document.getElementById('saveBtn').textContent = 'Update Rank';
+  document.getElementById('rankModal').classList.add('open');
+}
+
+function closeModal() { document.getElementById('rankModal').classList.remove('open'); }
+
+async function saveRank() {
+  const errEl = document.getElementById('modalError');
+  errEl.classList.remove('show');
+  const name = document.getElementById('r_name').value.trim();
+  const color = document.getElementById('r_color_text').value.trim() || document.getElementById('r_color').value;
+  const max_servers = parseInt(document.getElementById('r_max').value);
+  const memory_limit = parseInt(document.getElementById('r_memory').value) || 0;
+  const disk_limit = parseInt(document.getElementById('r_disk').value) || 0;
+  const sort_order = parseInt(document.getElementById('r_order').value) || 0;
+
+  if (!name) { errEl.textContent = 'Name is required.'; errEl.classList.add('show'); return; }
+  if (!/^#[0-9a-fA-F]{6}$/.test(color)) { errEl.textContent = 'Color must be a 6-digit hex code like #6366f1.'; errEl.classList.add('show'); return; }
+
+  const btn = document.getElementById('saveBtn');
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled = true;
+
+  try {
+    if (editId) {
+      await API.put(`/ranks/${editId}`, { name, color, max_servers, memory_limit, disk_limit, sort_order });
+      showOk('Rank updated.');
+    } else {
+      await API.post('/ranks', { name, color, max_servers, memory_limit, disk_limit, sort_order });
+      showOk('Rank created.');
+    }
+    closeModal();
+    await loadRanks();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.add('show');
+  } finally {
+    btn.innerHTML = editId ? 'Update Rank' : 'Create Rank';
+    btn.disabled = false;
+  }
+}
+
+async function deleteRank(id, name) {
+  if (!confirm(`Delete rank "${name}"? Users with this rank will have no rank assigned.`)) return;
+  try { await API.delete(`/ranks/${id}`); showOk('Rank deleted.'); await loadRanks(); }
+  catch (e) { showErr(e.message); }
+}
+
+function showErr(msg) { const el = document.getElementById('pageError'); el.textContent = msg; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 4000); }
+function showOk(msg)  { const el = document.getElementById('pageSuccess'); el.textContent = msg; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 3000); }
+
+document.getElementById('rankModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nodactyl — Settings</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.drag { border-color: var(--primary); background: var(--primary-glow); }
+    .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .logo-thumb {
+      width: 64px; height: 64px;
+      border-radius: 12px;
+      background: var(--primary);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px; font-weight: 800; color: #fff;
+      overflow: hidden; flex-shrink: 0;
+      border: 2px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+<div class="layout" id="app"></div>
+
+<script src="/js/api.js"></script>
+<script>
+requireAdmin();
+
+async function init() {
+  await loadPanelSettings();
+  document.getElementById('app').innerHTML = `
+    ${renderSidebar('admin-settings')}
+    <div class="main">
+      <div class="topbar">
+        <div>
+          <div class="page-title">Settings</div>
+          <div class="page-sub">Panel configuration</div>
+        </div>
+      </div>
+      <div class="content">
+        <div class="alert alert-error"   id="pageError"></div>
+        <div class="alert alert-success" id="pageSuccess"></div>
+
+        <div class="card" style="max-width:520px;margin-bottom:16px">
+          <div class="card-title" style="margin-bottom:18px">Branding</div>
+
+          <div class="form-group">
+            <label class="form-label">Panel Name</label>
+            <input type="text" class="form-input" id="panel_name" placeholder="Nodactyl">
+            <div class="form-hint">Shown in the sidebar and page titles.</div>
+          </div>
+
+          <!-- Logo section -->
+          <div class="form-group">
+            <label class="form-label">Logo</label>
+
+            <!-- Upload zone -->
+            <div class="upload-zone" id="uploadZone">
+              <input type="file" id="logoFile" accept="image/*">
+              <div style="pointer-events:none">
+                <div style="font-size:22px;margin-bottom:6px">📁</div>
+                <div style="font-size:13px;font-weight:600;color:var(--text)">Click or drag an image here</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:3px">PNG, JPG, GIF, SVG · max 2 MB · resized to 128 px</div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:8px;margin:10px 0">
+              <div style="flex:1;height:1px;background:var(--border)"></div>
+              <span style="font-size:11px;color:var(--text-muted)">or type text / emoji / URL</span>
+              <div style="flex:1;height:1px;background:var(--border)"></div>
+            </div>
+
+            <input type="text" class="form-input" id="panel_logo" placeholder="N  or  🚀  or  https://…/logo.png">
+            <div class="form-hint">Single character, emoji, or image URL. Uploading a file above fills this automatically.</div>
+          </div>
+
+          <!-- Preview -->
+          <div style="margin:4px 0 20px">
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Preview</div>
+            <div style="display:flex;align-items:center;gap:14px">
+              <div class="logo-thumb" id="logoPreview">N</div>
+              <div>
+                <div style="font-size:18px;font-weight:700" id="namePreview">Nodactyl</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:2px">sidebar logo · 32 px in production</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" id="saveBtn" onclick="saveSettings()">Save Changes</button>
+            <button class="btn btn-ghost" onclick="clearLogo()">Clear Logo</button>
+          </div>
+        </div>
+
+        <div class="card" style="max-width:520px">
+          <div class="card-title mb-3">Quick links</div>
+          <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
+            <a href="/admin/ranks"   style="color:#a5b4fc">Manage Ranks</a>
+            <a href="/admin/presets" style="color:#a5b4fc">Manage Presets</a>
+            <a href="/admin/users"   style="color:#a5b4fc">Manage Users</a>
+            <a href="/nodes"         style="color:#a5b4fc">Manage Nodes</a>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  await loadSettings();
+  setupListeners();
+}
+
+async function loadSettings() {
+  try {
+    const s = await API.get('/settings');
+    if (s.panel_name) document.getElementById('panel_name').value = s.panel_name;
+    if (s.panel_logo) document.getElementById('panel_logo').value = s.panel_logo;
+    updatePreview();
+  } catch (e) { showErr(e.message); }
+}
+
+function setupListeners() {
+  document.getElementById('panel_name').addEventListener('input', updatePreview);
+  document.getElementById('panel_logo').addEventListener('input', updatePreview);
+
+  const fileInput = document.getElementById('logoFile');
+  fileInput.addEventListener('change', () => handleFile(fileInput.files[0]));
+
+  const zone = document.getElementById('uploadZone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag');
+    handleFile(e.dataTransfer.files[0]);
+  });
+}
+
+async function handleFile(file) {
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { showErr('Please select an image file.'); return; }
+  if (file.size > 2 * 1024 * 1024) { showErr('Image must be under 2 MB.'); return; }
+
+  try {
+    const dataUrl = await resizeImage(file, 128);
+    document.getElementById('panel_logo').value = dataUrl;
+    updatePreview();
+    showOk('Image ready — click Save Changes to apply.');
+  } catch (e) {
+    showErr('Could not read image: ' + e.message);
+  }
+}
+
+function resizeImage(file, maxPx) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = ev => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const scale = Math.min(maxPx / img.width, maxPx / img.height, 1);
+        const w = Math.round(img.width  * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width  = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function isImageSrc(v) {
+  return v.startsWith('http') || v.startsWith('/') || v.startsWith('data:');
+}
+
+function updatePreview() {
+  const name = document.getElementById('panel_name')?.value || 'Nodactyl';
+  const logo = document.getElementById('panel_logo')?.value || 'N';
+  const lp   = document.getElementById('logoPreview');
+  if (!lp) return;
+  document.getElementById('namePreview').textContent = name;
+  if (isImageSrc(logo)) {
+    lp.innerHTML = `<img src="${logo}" style="width:100%;height:100%;object-fit:cover" alt="">`;
+  } else {
+    lp.textContent = logo || 'N';
+  }
+}
+
+function clearLogo() {
+  document.getElementById('panel_logo').value = '';
+  document.getElementById('logoFile').value = '';
+  updatePreview();
+}
+
+async function saveSettings() {
+  const logoVal = document.getElementById('panel_logo').value.trim();
+  if (logoVal.startsWith('data:') && logoVal.length > 300000) {
+    showErr('Image is too large even after resize. Try a smaller file.');
+    return;
+  }
+  const btn = document.getElementById('saveBtn');
+  btn.innerHTML = '<span class="spinner"></span> Saving...';
+  btn.disabled = true;
+  try {
+    const body = { panel_name: document.getElementById('panel_name').value.trim() };
+    // Only send panel_logo if it has a value (don't wipe with empty string)
+    if (logoVal) body.panel_logo = logoVal;
+    await API.patch('/settings', body);
+    showOk('Settings saved. Reload the page to see changes everywhere.');
+  } catch (e) {
+    showErr(e.message);
+  } finally {
+    btn.innerHTML = 'Save Changes';
+    btn.disabled = false;
+  }
+}
+
+function showErr(msg) { const el = document.getElementById('pageError'); el.textContent = msg; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 5000); }
+function showOk(msg)  { const el = document.getElementById('pageSuccess'); el.textContent = msg; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 4000); }
+
+init();
+</script>
+</body>
+</html>

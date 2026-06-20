@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nodactyl — Presets</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="layout" id="app"></div>
+
+<!-- Create / Edit modal -->
+<div class="modal-overlay" id="presetModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modalTitle">New Preset</h2>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-error" id="modalError"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Preset Name *</label>
+          <input type="text" class="form-input" id="p_name" placeholder="Minecraft Java">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Docker Image *</label>
+          <input type="text" class="form-input" id="p_image" placeholder="itzg/minecraft-server:latest">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <input type="text" class="form-input" id="p_desc" placeholder="Brief description shown to users">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Memory Limit (MB)</label>
+          <input type="number" class="form-input" id="p_memory" value="512" min="64">
+        </div>
+        <div class="form-group">
+          <label class="form-label">CPU Limit (cores)</label>
+          <input type="number" class="form-input" id="p_cpu" value="1" step="0.1" min="0.1">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Port Mappings</label>
+        <div id="portList"></div>
+        <button class="btn btn-ghost btn-sm mt-2" onclick="addPort()" type="button">+ Add Port</button>
+        <div class="form-hint">host:container — e.g. 25565:25565</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Environment Variables</label>
+        <div id="envList"></div>
+        <button class="btn btn-ghost btn-sm mt-2" onclick="addEnv()" type="button">+ Add Variable</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Startup Command</label>
+        <input type="text" class="form-input font-mono" id="p_startup" placeholder="java -jar server.jar --nogui">
+        <div class="form-hint">Runs inside <code>/home/container</code>. Leave blank to use the image's default CMD.</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="saveBtn" onclick="savePreset()">Save Preset</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+requireAdmin();
+let presets = [];
+let editId = null;
+let portCount = 0, envCount = 0;
+
+async function init() {
+  await loadPanelSettings();
+  document.getElementById('app').innerHTML = `
+    ${renderSidebar('admin-presets')}
+    <div class="main">
+      <div class="topbar">
+        <div>
+          <div class="page-title">Presets</div>
+          <div class="page-sub">Server templates users can deploy from</div>
+        </div>
+        <button class="btn btn-primary" onclick="openCreate()">New Preset</button>
+      </div>
+      <div class="content">
+        <div class="alert alert-error" id="pageError"></div>
+        <div class="alert alert-success" id="pageSuccess"></div>
+        <div id="presetsGrid">
+          <div class="empty-state"><span class="spinner"></span></div>
+        </div>
+      </div>
+    </div>`;
+
+  await loadPresets();
+}
+
+async function loadPresets() {
+  try {
+    presets = await API.get('/presets');
+    renderPresets();
+  } catch (e) {
+    showErr(e.message);
+  }
+}
+
+function renderPresets() {
+  const el = document.getElementById('presetsGrid');
+  if (!presets.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">—</div><p>No presets yet. Create one so users can deploy servers.</p></div>`;
+    return;
+  }
+  el.innerHTML = `<div class="grid-3">${presets.map(p => `
+    <div class="preset-card">
+      <div>
+        <div class="preset-card-name">${esc(p.name)}</div>
+        ${p.description ? `<div class="preset-card-desc mt-2">${esc(p.description)}</div>` : ''}
+      </div>
+      <div class="preset-card-image">${esc(p.image)}</div>
+      ${p.startup_command ? `<div class="preset-card-cmd font-mono">${esc(p.startup_command)}</div>` : ''}
+      <div class="preset-card-meta">
+        <span>${p.memory_limit} MB</span>
+        <span>${p.cpu_limit} CPU</span>
+        ${p.port_mappings?.length ? `<span>${p.port_mappings.length} port(s)</span>` : ''}
+        ${p.env_vars?.length ? `<span>${p.env_vars.length} env var(s)</span>` : ''}
+      </div>
+      <div class="preset-card-footer">
+        <button class="btn btn-ghost btn-sm" onclick="openEdit('${p.id}')">Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deletePreset('${p.id}', '${esc(p.name)}')">Delete</button>
+      </div>
+    </div>`).join('')}</div>`;
+}
+
+// ── Modal helpers ─────────────────────────────────────────────────────────────
+function clearModal() {
+  ['p_name','p_image','p_desc','p_startup'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('p_memory').value = 512;
+  document.getElementById('p_cpu').value = 1;
+  document.getElementById('portList').innerHTML = '';
+  document.getElementById('envList').innerHTML = '';
+  document.getElementById('modalError').classList.remove('show');
+  portCount = 0; envCount = 0;
+}
+
+function openCreate() {
+  editId = null;
+  clearModal();
+  document.getElementById('modalTitle').textContent = 'New Preset';
+  document.getElementById('saveBtn').textContent = 'Save Preset';
+  document.getElementById('presetModal').classList.add('open');
+}
+
+function openEdit(id) {
+  editId = id;
+  const p = presets.find(x => x.id === id);
+  if (!p) return;
+  clearModal();
+  document.getElementById('p_name').value = p.name;
+  document.getElementById('p_image').value = p.image;
+  document.getElementById('p_desc').value = p.description || '';
+  document.getElementById('p_memory').value = p.memory_limit;
+  document.getElementById('p_cpu').value = p.cpu_limit;
+  (p.port_mappings || []).forEach(pm => addPort(pm.hostPort, pm.containerPort, pm.protocol));
+  (p.env_vars || []).forEach(ev => addEnv(ev.key, ev.value));
+  document.getElementById('p_startup').value = p.startup_command || '';
+  document.getElementById('modalTitle').textContent = 'Edit Preset';
+  document.getElementById('saveBtn').textContent = 'Update Preset';
+  document.getElementById('presetModal').classList.add('open');
+}
+
+function closeModal() { document.getElementById('presetModal').classList.remove('open'); }
+
+function addPort(host='', container='', protocol='tcp') {
+  const id = ++portCount;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:6px';
+  div.innerHTML = `
+    <input type="number" class="form-input" id="ph_${id}" placeholder="Host" value="${host}" style="flex:1">
+    <span class="text-muted">:</span>
+    <input type="number" class="form-input" id="pc_${id}" placeholder="Container" value="${container}" style="flex:1">
+    <select class="form-select" id="pp_${id}" style="width:76px"><option ${protocol==='tcp'?'selected':''}>tcp</option><option ${protocol==='udp'?'selected':''}>udp</option></select>
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">✕</button>`;
+  document.getElementById('portList').appendChild(div);
+}
+
+function addEnv(key='', value='') {
+  const id = ++envCount;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:6px';
+  div.innerHTML = `
+    <input type="text" class="form-input" id="ek_${id}" placeholder="KEY" value="${esc(key)}" style="flex:1">
+    <span class="text-muted">=</span>
+    <input type="text" class="form-input" id="ev_${id}" placeholder="value" value="${esc(value)}" style="flex:2">
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">✕</button>`;
+  document.getElementById('envList').appendChild(div);
+}
+
+function getPortMappings() {
+  const ports = [];
+  document.querySelectorAll('[id^="ph_"]').forEach(el => {
+    const id = el.id.slice(3);
+    const hostPort = parseInt(el.value);
+    const containerPort = parseInt(document.getElementById(`pc_${id}`).value);
+    const protocol = document.getElementById(`pp_${id}`).value;
+    if (hostPort && containerPort) ports.push({ hostPort, containerPort, protocol });
+  });
+  return ports;
+}
+
+function getEnvVars() {
+  const envs = [];
+  document.querySelectorAll('[id^="ek_"]').forEach(el => {
+    const id = el.id.slice(3);
+    const key = el.value.trim();
+    const value = document.getElementById(`ev_${id}`).value;
+    if (key) envs.push({ key, value });
+  });
+  return envs;
+}
+
+async function savePreset() {
+  const errEl = document.getElementById('modalError');
+  errEl.classList.remove('show');
+  const btn = document.getElementById('saveBtn');
+  const body = {
+    name: document.getElementById('p_name').value.trim(),
+    description: document.getElementById('p_desc').value.trim(),
+    image: document.getElementById('p_image').value.trim(),
+    memory_limit: parseInt(document.getElementById('p_memory').value),
+    cpu_limit: parseFloat(document.getElementById('p_cpu').value),
+    port_mappings: getPortMappings(),
+    env_vars: getEnvVars(),
+    startup_command: document.getElementById('p_startup').value.trim(),
+  };
+  if (!body.name || !body.image) {
+    errEl.textContent = 'Name and image are required.';
+    errEl.classList.add('show');
+    return;
+  }
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled = true;
+  try {
+    if (editId) {
+      await API.put(`/presets/${editId}`, body);
+      showOk('Preset updated.');
+    } else {
+      await API.post('/presets', body);
+      showOk('Preset created.');
+    }
+    closeModal();
+    await loadPresets();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.add('show');
+  } finally {
+    btn.innerHTML = editId ? 'Update Preset' : 'Save Preset';
+    btn.disabled = false;
+  }
+}
+
+async function deletePreset(id, name) {
+  if (!confirm(`Delete preset "${name}"? Users will no longer be able to deploy it.`)) return;
+  try { await API.delete(`/presets/${id}`); showOk('Preset deleted.'); await loadPresets(); }
+  catch (e) { showErr(e.message); }
+}
+
+function showErr(msg) {
+  const el = document.getElementById('pageError');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 4000);
+}
+function showOk(msg) {
+  const el = document.getElementById('pageSuccess');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+document.getElementById('presetModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+
+init();
+</script>
+</body>
+</html>

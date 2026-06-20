@@ -9,19 +9,44 @@
 <body>
 <div class="layout" id="app"></div>
 
-<!-- Create Server Modal -->
+<!-- Deploy from preset modal -->
+<div class="modal-overlay" id="deployModal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <h2 class="modal-title">Deploy <span id="deployPresetName" style="color:var(--primary)"></span></h2>
+      <button class="modal-close" onclick="closeDeployModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-error" id="deployError"></div>
+      <div class="form-group">
+        <label class="form-label">Server Name</label>
+        <input type="text" class="form-input" id="d_name" placeholder="my-server">
+      </div>
+      <div class="form-group" id="d_nodeGroup">
+        <label class="form-label">Node</label>
+        <select class="form-select" id="d_node"></select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeDeployModal()">Cancel</button>
+      <button class="btn btn-primary" id="deployBtn" onclick="deployServer()">Deploy</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin: custom create modal -->
 <div class="modal-overlay" id="createModal">
   <div class="modal">
     <div class="modal-header">
       <h2 class="modal-title">Create Server</h2>
-      <button class="modal-close" onclick="closeModal()">✕</button>
+      <button class="modal-close" onclick="closeCreateModal()">✕</button>
     </div>
     <div class="modal-body">
-      <div id="createError" class="login-error"></div>
+      <div class="alert alert-error" id="createError"></div>
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Server Name *</label>
-          <input type="text" class="form-input" id="c_name" placeholder="My Server">
+          <input type="text" class="form-input" id="c_name" placeholder="my-server">
         </div>
         <div class="form-group">
           <label class="form-label">Docker Image *</label>
@@ -30,9 +55,9 @@
       </div>
       <div class="form-group">
         <label class="form-label">Description</label>
-        <input type="text" class="form-input" id="c_desc" placeholder="Optional description">
+        <input type="text" class="form-input" id="c_desc" placeholder="Optional">
       </div>
-      <div class="form-group">
+      <div class="form-group" id="c_nodeGroup">
         <label class="form-label">Node *</label>
         <select class="form-select" id="c_node"></select>
       </div>
@@ -46,24 +71,21 @@
           <input type="number" class="form-input" id="c_cpu" value="1" step="0.1" min="0.1">
         </div>
       </div>
-
       <div class="form-group">
         <label class="form-label">Port Mappings</label>
         <div id="portList"></div>
-        <button class="btn btn-ghost btn-sm mt-4" onclick="addPort()" type="button">+ Add Port</button>
+        <button class="btn btn-ghost btn-sm mt-2" onclick="addPort()" type="button">+ Add Port</button>
         <div class="form-hint">host:container (e.g. 8080:80)</div>
       </div>
-
       <div class="form-group">
         <label class="form-label">Environment Variables</label>
         <div id="envList"></div>
-        <button class="btn btn-ghost btn-sm mt-4" onclick="addEnv()" type="button">+ Add Variable</button>
+        <button class="btn btn-ghost btn-sm mt-2" onclick="addEnv()" type="button">+ Add Variable</button>
       </div>
-
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
-        <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-        <button class="btn btn-primary" id="createBtn" onclick="createServer()">Create Server</button>
-      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeCreateModal()">Cancel</button>
+      <button class="btn btn-primary" id="createBtn" onclick="createServer()">Create Server</button>
     </div>
   </div>
 </div>
@@ -72,24 +94,32 @@
 <script>
 requireAuth();
 const user = getUser();
-let servers = [];
-let nodes = [];
+let servers = [], nodes = [], presets = [];
+let deployPresetId = null;
 
 async function init() {
+  await loadPanelSettings();
+  // Refresh user rank info from server
+  try {
+    const me = await API.get('/auth/me');
+    localStorage.setItem('user', JSON.stringify(me));
+  } catch {}
+
   document.getElementById('app').innerHTML = `
     ${renderSidebar('dashboard')}
     <div class="main">
       <div class="topbar">
         <div>
-          <div class="page-title">Servers</div>
-          <div class="page-sub">Manage your Docker containers</div>
+          <div class="page-title">My Servers</div>
+          <div class="page-sub">Your deployed containers</div>
         </div>
-        ${user?.role === 'admin' ? '<button class="btn btn-primary" onclick="openCreate()">+ New Server</button>' : ''}
+        ${user?.role === 'admin' ? '<button class="btn btn-ghost btn-sm" onclick="openCreateModal()">Custom Create</button>' : ''}
       </div>
       <div class="content">
         <div class="grid-stats mb-6" id="statsRow"></div>
-        <div class="grid-2" id="serverGrid">
-          <div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>
+        <div id="presetsSection"></div>
+        <div id="serverSection">
+          <div class="empty-state"><span class="spinner"></span></div>
         </div>
       </div>
     </div>`;
@@ -98,117 +128,229 @@ async function init() {
 }
 
 async function loadData() {
-  [servers, nodes] = await Promise.all([
+  [servers, nodes, presets] = await Promise.all([
     API.get('/servers').catch(() => []),
-    user?.role === 'admin' ? API.get('/nodes').catch(() => []) : Promise.resolve([]),
+    API.get('/nodes').catch(() => []),
+    API.get('/presets').catch(() => []),
   ]);
-
   renderStats();
+  renderPresets();
   renderServers();
 }
 
 function renderStats() {
-  const total = servers.length;
+  const freshUser = getUser();
   const running = servers.filter(s => s.status === 'running').length;
   const nodesOnline = nodes.filter(n => n.online).length;
+  const rank = freshUser?.rank;
+  const maxServers = rank ? rank.max_servers : (freshUser?.role === 'admin' ? -1 : 1);
+  const limitText = maxServers === -1 ? 'Unlimited' : `${servers.length} / ${maxServers}`;
+  const limitColor = maxServers !== -1 && servers.length >= maxServers ? 'var(--danger)' : 'inherit';
 
   document.getElementById('statsRow').innerHTML = `
     <div class="stat-card">
-      <div class="stat-label">Total Servers</div>
-      <div class="stat-value">${total}</div>
+      <div class="stat-label">Servers Used</div>
+      <div class="stat-value" style="color:${limitColor}">${limitText}</div>
+      ${rank ? `<div class="stat-sub" style="color:${rank.color || 'var(--text-muted)'};margin-top:4px;font-weight:600">${esc(rank.name)}</div>` : ''}
     </div>
     <div class="stat-card">
       <div class="stat-label">Running</div>
-      <div class="stat-value" style="color:var(--success)">${running}</div>
+      <div class="stat-value text-success">${running}</div>
     </div>
-    ${user?.role === 'admin' ? `
     <div class="stat-card">
       <div class="stat-label">Nodes Online</div>
       <div class="stat-value" style="color:${nodesOnline ? 'var(--success)' : 'var(--danger)'}">${nodesOnline}/${nodes.length}</div>
-    </div>` : ''}`;
+    </div>`;
+}
+
+function renderPresets() {
+  const el = document.getElementById('presetsSection');
+  if (!presets.length) { el.innerHTML = ''; return; }
+
+  el.innerHTML = `
+    <div class="section-header mb-4">
+      <div>
+        <div class="section-title">Available Presets</div>
+        <div class="section-sub">Pick a preset to deploy a new server</div>
+      </div>
+    </div>
+    <div class="grid-3 mb-6">
+      ${presets.map(p => `
+        <div class="preset-card">
+          <div>
+            <div class="preset-card-name">${esc(p.name)}</div>
+            ${p.description ? `<div class="preset-card-desc mt-2">${esc(p.description)}</div>` : ''}
+          </div>
+          <div class="preset-card-image">${esc(p.image)}</div>
+          <div class="preset-card-meta">
+            <span>${p.memory_limit} MB RAM</span>
+            <span>${p.cpu_limit} CPU</span>
+            ${p.port_mappings?.length ? `<span>${p.port_mappings.length} port(s)</span>` : ''}
+          </div>
+          <div class="preset-card-footer">
+            <button class="btn btn-primary btn-sm w-full" style="justify-content:center" onclick="openDeployModal('${esc(p.id)}', '${esc(p.name)}')">
+              Deploy
+            </button>
+          </div>
+        </div>`).join('')}
+    </div>`;
 }
 
 function renderServers() {
-  const grid = document.getElementById('serverGrid');
+  const el = document.getElementById('serverSection');
   if (!servers.length) {
-    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
-      <div class="empty-icon">🦕</div>
-      <p>No servers yet. ${user?.role === 'admin' ? 'Click "+ New Server" to create one.' : 'Ask an admin to create a server for you.'}</p>
-    </div>`;
+    el.innerHTML = `
+      <div class="section-header"><div class="section-title">My Servers</div></div>
+      <div class="empty-state">
+        <div class="empty-icon" style="font-size:28px">—</div>
+        <p>No servers yet.${presets.length ? ' Choose a preset above to get started.' : ' Ask an admin to create presets.'}</p>
+      </div>`;
     return;
   }
 
-  grid.innerHTML = servers.map(s => `
-    <a href="/server/${s.id}" class="server-card">
-      <div class="server-card-top">
-        <div>
-          <div class="server-name">${esc(s.name)}</div>
-          <div class="server-image">${esc(s.image)}</div>
-        </div>
-        ${badgeHtml(s.status)}
-      </div>
-      <div class="server-node">
-        🖥️ ${esc(s.node_name || 'Unknown node')}
-        ${!s.node_online ? ' <span style="color:var(--danger);font-size:10px">OFFLINE</span>' : ''}
-      </div>
-      <div class="server-mini-stats">
-        <div class="server-mini-stat">Memory: <span>${s.memory_limit} MB</span></div>
-        <div class="server-mini-stat">CPU: <span>${s.cpu_limit} cores</span></div>
-        ${s.port_mappings?.length ? `<div class="server-mini-stat">Ports: <span>${s.port_mappings.length}</span></div>` : ''}
-      </div>
-    </a>`).join('');
+  el.innerHTML = `
+    <div class="section-header mb-4"><div class="section-title">My Servers</div></div>
+    <div class="grid-2">
+      ${servers.map(s => `
+        <a href="/server/${s.id}" class="server-card">
+          <div class="server-card-top">
+            <div>
+              <div class="server-name">${esc(s.name)}</div>
+              <div class="server-image">${esc(s.image)}</div>
+            </div>
+            ${badgeHtml(s.status)}
+          </div>
+          <div class="server-node">
+            <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>
+            ${esc(s.node_name || 'Unknown')}
+            ${!s.node_online ? '<span class="text-danger text-xs"> — offline</span>' : ''}
+          </div>
+          <div class="server-mini-stats">
+            <div class="server-mini-stat">RAM: <span>${s.memory_limit} MB</span></div>
+            <div class="server-mini-stat">CPU: <span>${s.cpu_limit}</span></div>
+            ${s.port_mappings?.length ? `<div class="server-mini-stat">Ports: <span>${s.port_mappings.length}</span></div>` : ''}
+          </div>
+        </a>`).join('')}
+    </div>`;
 }
 
-function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// ── Deploy from preset ────────────────────────────────────────────────────────
+let _autoNodeId = null;
 
-// ── Create modal ──────────────────────────────────────────────────────────────
+function openDeployModal(presetId, presetName) {
+  deployPresetId = presetId;
+  _autoNodeId = null;
+  document.getElementById('deployPresetName').textContent = presetName;
+  document.getElementById('d_name').value = '';
+  document.getElementById('deployError').classList.remove('show');
+
+  const onlineNodes = nodes.filter(n => n.online);
+  const nodeGroup = document.getElementById('d_nodeGroup');
+  const nodeSelect = document.getElementById('d_node');
+
+  if (onlineNodes.length === 1) {
+    // Only one node — auto-select, hide the picker
+    _autoNodeId = onlineNodes[0].id;
+    nodeGroup.style.display = 'none';
+  } else if (onlineNodes.length > 1) {
+    _autoNodeId = null;
+    nodeGroup.style.display = '';
+    nodeSelect.innerHTML = onlineNodes.map(n => `<option value="${n.id}">${esc(n.name)}</option>`).join('');
+  } else {
+    _autoNodeId = null;
+    nodeGroup.style.display = '';
+    nodeSelect.innerHTML = '<option value="">— No nodes online —</option>';
+  }
+
+  document.getElementById('deployModal').classList.add('open');
+}
+
+function closeDeployModal() {
+  document.getElementById('deployModal').classList.remove('open');
+  deployPresetId = null;
+  _autoNodeId = null;
+}
+
+async function deployServer() {
+  const errEl = document.getElementById('deployError');
+  errEl.classList.remove('show');
+  const btn = document.getElementById('deployBtn');
+  const name = document.getElementById('d_name').value.trim();
+  const node_id = _autoNodeId || document.getElementById('d_node').value;
+  if (!name) { errEl.textContent = 'Server name is required.'; errEl.classList.add('show'); return; }
+  if (!node_id) { errEl.textContent = 'No node available.'; errEl.classList.add('show'); return; }
+
+  btn.innerHTML = '<span class="spinner"></span> Deploying...';
+  btn.disabled = true;
+  try {
+    await API.post('/servers/from-preset', { name, preset_id: deployPresetId, node_id });
+    closeDeployModal();
+    await loadData();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.add('show');
+  } finally {
+    btn.innerHTML = 'Deploy';
+    btn.disabled = false;
+  }
+}
+
+// ── Admin custom create ───────────────────────────────────────────────────────
 let portCount = 0, envCount = 0;
+let _createAutoNodeId = null;
 
-function openCreate() {
+function openCreateModal() {
   document.getElementById('portList').innerHTML = '';
   document.getElementById('envList').innerHTML = '';
-  document.getElementById('c_name').value = '';
-  document.getElementById('c_image').value = '';
-  document.getElementById('c_desc').value = '';
+  ['c_name','c_image','c_desc'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('c_memory').value = 512;
   document.getElementById('c_cpu').value = 1;
   portCount = 0; envCount = 0;
+  _createAutoNodeId = null;
 
   const onlineNodes = nodes.filter(n => n.online);
-  document.getElementById('c_node').innerHTML = onlineNodes.length
-    ? onlineNodes.map(n => `<option value="${n.id}">${esc(n.name)}</option>`).join('')
-    : '<option value="">— No nodes online —</option>';
+  const nodeGroup = document.getElementById('c_nodeGroup');
+  const nodeSelect = document.getElementById('c_node');
+
+  if (onlineNodes.length === 1) {
+    _createAutoNodeId = onlineNodes[0].id;
+    nodeGroup.style.display = 'none';
+  } else if (onlineNodes.length > 1) {
+    nodeGroup.style.display = '';
+    nodeSelect.innerHTML = onlineNodes.map(n => `<option value="${n.id}">${esc(n.name)}</option>`).join('');
+  } else {
+    nodeGroup.style.display = '';
+    nodeSelect.innerHTML = '<option value="">— No nodes online —</option>';
+  }
 
   document.getElementById('createError').classList.remove('show');
   document.getElementById('createModal').classList.add('open');
 }
 
-function closeModal() {
-  document.getElementById('createModal').classList.remove('open');
-}
+function closeCreateModal() { document.getElementById('createModal').classList.remove('open'); }
 
 function addPort() {
   const id = ++portCount;
   const div = document.createElement('div');
-  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:8px';
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:6px';
   div.innerHTML = `
-    <input type="number" class="form-input" id="ph_${id}" placeholder="Host port" style="flex:1">
-    <span style="color:var(--text-muted)">:</span>
-    <input type="number" class="form-input" id="pc_${id}" placeholder="Container port" style="flex:1">
-    <select class="form-select" id="pp_${id}" style="width:80px"><option>tcp</option><option>udp</option></select>
-    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0">✕</button>`;
+    <input type="number" class="form-input" id="ph_${id}" placeholder="Host" style="flex:1">
+    <span class="text-muted">:</span>
+    <input type="number" class="form-input" id="pc_${id}" placeholder="Container" style="flex:1">
+    <select class="form-select" id="pp_${id}" style="width:76px"><option>tcp</option><option>udp</option></select>
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">✕</button>`;
   document.getElementById('portList').appendChild(div);
 }
 
 function addEnv() {
   const id = ++envCount;
   const div = document.createElement('div');
-  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:8px';
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:6px';
   div.innerHTML = `
     <input type="text" class="form-input" id="ek_${id}" placeholder="KEY" style="flex:1">
-    <span style="color:var(--text-muted)">=</span>
+    <span class="text-muted">=</span>
     <input type="text" class="form-input" id="ev_${id}" placeholder="value" style="flex:2">
-    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0">✕</button>`;
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">✕</button>`;
   document.getElementById('envList').appendChild(div);
 }
 
@@ -241,19 +383,18 @@ async function createServer() {
   const btn = document.getElementById('createBtn');
   btn.innerHTML = '<span class="spinner"></span> Creating...';
   btn.disabled = true;
-
   try {
     await API.post('/servers', {
       name: document.getElementById('c_name').value,
       description: document.getElementById('c_desc').value,
       image: document.getElementById('c_image').value,
-      node_id: document.getElementById('c_node').value,
+      node_id: _createAutoNodeId || document.getElementById('c_node').value,
       memory_limit: parseInt(document.getElementById('c_memory').value),
       cpu_limit: parseFloat(document.getElementById('c_cpu').value),
       port_mappings: getPortMappings(),
       env_vars: getEnvVars(),
     });
-    closeModal();
+    closeCreateModal();
     await loadData();
   } catch (e) {
     errEl.textContent = e.message;
@@ -264,10 +405,8 @@ async function createServer() {
   }
 }
 
-// close modal on overlay click
-document.getElementById('createModal').addEventListener('click', e => {
-  if (e.target === e.currentTarget) closeModal();
-});
+document.getElementById('deployModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeDeployModal(); });
+document.getElementById('createModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeCreateModal(); });
 
 init();
 </script>

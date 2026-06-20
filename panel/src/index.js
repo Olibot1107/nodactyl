@@ -17,6 +17,10 @@ async function main() {
   const authRoutes = require('./routes/auth');
   const nodeRoutes = require('./routes/nodes');
   const serverRoutes = require('./routes/servers');
+  const userRoutes = require('./routes/users');
+  const presetRoutes = require('./routes/presets');
+  const rankRoutes = require('./routes/ranks');
+  const settingsRoutes = require('./routes/settings');
 
   const app = express();
   const httpServer = http.createServer(app);
@@ -32,12 +36,25 @@ async function main() {
   app.use('/api/auth', authRoutes);
   app.use('/api/nodes', nodeRoutes);
   app.use('/api/servers', serverRoutes);
+  app.use('/api/users', userRoutes);
+  app.use('/api/presets', presetRoutes);
+  app.use('/api/ranks', rankRoutes);
+  app.use('/api/settings', settingsRoutes);
 
+  const pub = (f) => path.join(__dirname, '..', 'public', f);
   app.get('/', (req, res) => res.redirect('/login'));
-  app.get('/login', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'login.html')));
-  app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'dashboard.html')));
-  app.get('/nodes', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'nodes.html')));
-  app.get('/server/:id', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'server.html')));
+  app.get('/login', (req, res) => res.sendFile(pub('login.html')));
+  app.get('/register', (req, res) => res.sendFile(pub('register.html')));
+  app.get('/dashboard', (req, res) => res.sendFile(pub('dashboard.html')));
+  app.get('/nodes', (req, res) => res.sendFile(pub('nodes.html')));
+  app.get('/server/:id', (req, res) => res.sendFile(pub('server.html')));
+  app.get('/server/:id/files', (req, res) => res.sendFile(pub('files.html')));
+  app.get('/server/:id/settings', (req, res) => res.sendFile(pub('server-settings.html')));
+  app.get('/admin/users', (req, res) => res.sendFile(pub('admin/users.html')));
+  app.get('/admin/presets', (req, res) => res.sendFile(pub('admin/presets.html')));
+  app.get('/admin/servers', (req, res) => res.sendFile(pub('admin/servers.html')));
+  app.get('/admin/ranks', (req, res) => res.sendFile(pub('admin/ranks.html')));
+  app.get('/admin/settings', (req, res) => res.sendFile(pub('admin/settings.html')));
 
   // ── Daemon WebSocket endpoint ────────────────────────────────────────────────
   const daemonWss = new WebSocket.Server({ noServer: true });
@@ -105,14 +122,14 @@ async function main() {
   });
 
   io.on('connection', (socket) => {
-    socket.on('subscribe-logs', ({ serverId }) => {
+    socket.on('subscribe-logs', ({ serverId, tail }) => {
       const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(serverId);
       if (!server) return socket.emit('error', 'Server not found');
       if (server.owner_id !== socket.user.id && socket.user.role !== 'admin') return socket.emit('error', 'Forbidden');
       if (!nodeManager.isOnline(server.node_id)) return socket.emit('log', { serverId, line: '[Node is offline]\n' });
 
       nodeManager.subscribeToLogs(serverId, socket);
-      nodeManager.emit(server.node_id, { type: 'subscribe-logs', serverId, containerId: server.container_id });
+      nodeManager.emit(server.node_id, { type: 'subscribe-logs', serverId, containerId: server.container_id, tail });
     });
 
     socket.on('unsubscribe-logs', ({ serverId }) => {

@@ -15,7 +15,6 @@ function scheduleSave() {
   }, 300);
 }
 
-// Thin better-sqlite3-compatible wrapper around sql.js
 function prepare(sql) {
   return {
     get(...args) {
@@ -51,7 +50,6 @@ function exec(sql) {
   scheduleSave();
 }
 
-// Export a proxy so callers can do db.prepare(...) / db.exec(...)
 const db = new Proxy({}, {
   get(_, prop) {
     if (prop === 'prepare') return prepare;
@@ -72,12 +70,28 @@ async function init() {
   }
 
   _db.exec(`
+    CREATE TABLE IF NOT EXISTS ranks (
+      id TEXT PRIMARY KEY,
+      name TEXT UNIQUE NOT NULL,
+      color TEXT DEFAULT '#6366f1',
+      max_servers INTEGER DEFAULT 1,
+      memory_limit INTEGER DEFAULT 0,
+      disk_limit INTEGER DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      created_at INTEGER DEFAULT (strftime('%s','now'))
+    );
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       username TEXT UNIQUE NOT NULL,
       email TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
       role TEXT DEFAULT 'user',
+      suspended INTEGER DEFAULT 0,
+      rank_id TEXT DEFAULT NULL,
       created_at INTEGER DEFAULT (strftime('%s','now'))
     );
     CREATE TABLE IF NOT EXISTS nodes (
@@ -106,7 +120,55 @@ async function init() {
       status TEXT DEFAULT 'installing',
       created_at INTEGER DEFAULT (strftime('%s','now'))
     );
+    CREATE TABLE IF NOT EXISTS presets (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      image TEXT NOT NULL,
+      port_mappings TEXT DEFAULT '[]',
+      env_vars TEXT DEFAULT '[]',
+      memory_limit INTEGER DEFAULT 512,
+      cpu_limit REAL DEFAULT 1.0,
+      created_at INTEGER DEFAULT (strftime('%s','now'))
+    );
   `);
+
+  // Migrations for existing databases
+  try { _db.exec(`ALTER TABLE users ADD COLUMN suspended INTEGER DEFAULT 0`); } catch {}
+  try { _db.exec(`ALTER TABLE users ADD COLUMN rank_id TEXT DEFAULT NULL`); } catch {}
+  try { _db.exec(`ALTER TABLE servers ADD COLUMN startup_command TEXT DEFAULT ''`); } catch {}
+  try { _db.exec(`ALTER TABLE servers ADD COLUMN home_dir TEXT DEFAULT '/home/container'`); } catch {}
+  try { _db.exec(`ALTER TABLE presets ADD COLUMN startup_command TEXT DEFAULT ''`); } catch {}
+  try { _db.exec(`ALTER TABLE servers ADD COLUMN disk_limit INTEGER DEFAULT 0`); } catch {}
+  try { _db.exec(`ALTER TABLE nodes ADD COLUMN disk_limit INTEGER DEFAULT 0`); } catch {}
+  try { _db.exec(`ALTER TABLE ranks ADD COLUMN memory_limit INTEGER DEFAULT 0`); } catch {}
+  try { _db.exec(`ALTER TABLE ranks ADD COLUMN disk_limit INTEGER DEFAULT 0`); } catch {}
+
+  // Seed default ranks
+  const rankCount = prepare('SELECT COUNT(*) as count FROM ranks').get();
+  if (!rankCount || rankCount.count === 0) {
+    const defaultRanks = [
+      { name: 'Basic',    color: '#64748b', max_servers: 1,  memory_limit: 512,  disk_limit: 5120,  sort_order: 0 },
+      { name: 'Standard', color: '#3b82f6', max_servers: 3,  memory_limit: 1024, disk_limit: 10240, sort_order: 1 },
+      { name: 'Premium',  color: '#6366f1', max_servers: 10, memory_limit: 2048, disk_limit: 20480, sort_order: 2 },
+      { name: 'VIP',      color: '#f59e0b', max_servers: -1, memory_limit: 4096, disk_limit: 0,     sort_order: 3 },
+    ];
+    for (const r of defaultRanks) {
+      prepare('INSERT INTO ranks (id, name, color, max_servers, memory_limit, disk_limit, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(uuidv4(), r.name, r.color, r.max_servers, r.memory_limit, r.disk_limit, r.sort_order);
+    }
+    console.log('  Seeded default ranks: Basic, Standard, Premium, VIP');
+  }
+
+  // Seed default settings
+  const defaultSettings = {
+    panel_name: 'Nodactyl',
+    panel_logo: 'N',
+  };
+  for (const [key, value] of Object.entries(defaultSettings)) {
+    const existing = prepare('SELECT key FROM settings WHERE key = ?').get(key);
+    if (!existing) prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(key, value);
+  }
 
   // Seed default admin
   const row = prepare('SELECT COUNT(*) as count FROM users').get();

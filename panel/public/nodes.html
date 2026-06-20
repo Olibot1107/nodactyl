@@ -13,11 +13,11 @@
 <div class="modal-overlay" id="createModal">
   <div class="modal">
     <div class="modal-header">
-      <h2 class="modal-title">Add Node</h2>
-      <button class="modal-close" onclick="closeModal()">✕</button>
+      <h2 class="modal-title" id="createModalTitle">Add Node</h2>
+      <button class="modal-close" onclick="closeCreateModal()">✕</button>
     </div>
     <div class="modal-body">
-      <div id="createError" class="login-error"></div>
+      <div class="alert alert-error" id="createError"></div>
       <div class="form-group">
         <label class="form-label">Node Name *</label>
         <input type="text" class="form-input" id="n_name" placeholder="Node 1 — My VPS">
@@ -28,17 +28,62 @@
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Memory (GB)</label>
+          <label class="form-label">Total Memory <span class="text-muted">(GB)</span></label>
           <input type="number" class="form-input" id="n_mem" value="8" min="1">
+          <div class="form-hint">Total RAM on the node</div>
         </div>
         <div class="form-group">
           <label class="form-label">CPU Cores</label>
           <input type="number" class="form-input" id="n_cpu" value="4" min="1">
         </div>
       </div>
+      <div class="form-group">
+        <label class="form-label">Disk Limit <span class="text-muted">(GB — 0 = unlimited tracking)</span></label>
+        <input type="number" class="form-input" id="n_disk" value="0" min="0">
+        <div class="form-hint">Set to track how much disk is allocated across servers on this node. 0 = don't track.</div>
+      </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-ghost" onclick="closeCreateModal()">Cancel</button>
         <button class="btn btn-primary" id="createBtn" onclick="createNode()">Add Node</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Node Modal -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Edit Node</h2>
+      <button class="modal-close" onclick="closeEditModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-error" id="editError"></div>
+      <div class="form-group">
+        <label class="form-label">Node Name *</label>
+        <input type="text" class="form-input" id="e_name" placeholder="Node 1 — My VPS">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <input type="text" class="form-input" id="e_desc" placeholder="Optional">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Total Memory <span class="text-muted">(GB)</span></label>
+          <input type="number" class="form-input" id="e_mem" value="8" min="1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">CPU Cores</label>
+          <input type="number" class="form-input" id="e_cpu" value="4" min="1">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Disk Limit <span class="text-muted">(GB — 0 = unlimited tracking)</span></label>
+        <input type="number" class="form-input" id="e_disk" value="0" min="0">
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="closeEditModal()">Cancel</button>
+        <button class="btn btn-primary" id="editBtn" onclick="saveEdit()">Save Changes</button>
       </div>
     </div>
   </div>
@@ -64,26 +109,32 @@
 <script src="/js/api.js"></script>
 <script>
 requireAuth();
-const user = getUser();
-if (user?.role !== 'admin') window.location.href = '/dashboard';
+
+const currentUser = getUser();
+const isAdmin = currentUser?.role === 'admin';
 
 let nodes = [];
+let editNodeId = null;
 
 async function init() {
+  await loadPanelSettings();
+
+  const addNodeBtn = isAdmin ? `<button class="btn btn-primary" onclick="openCreate()">+ Add Node</button>` : '';
+
   document.getElementById('app').innerHTML = `
     ${renderSidebar('nodes')}
     <div class="main">
       <div class="topbar">
         <div>
           <div class="page-title">Nodes</div>
-          <div class="page-sub">Connected daemons that run your containers</div>
+          <div class="page-sub">${isAdmin ? 'Connected daemons that run your containers' : 'Infrastructure status'}</div>
         </div>
-        <button class="btn btn-primary" onclick="openCreate()">+ Add Node</button>
+        ${addNodeBtn}
       </div>
       <div class="content">
         <div class="grid-stats mb-6" id="statsRow"></div>
         <div class="grid-2" id="nodeGrid">
-          <div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>
+          <div class="empty-state"><span class="spinner"></span></div>
         </div>
       </div>
     </div>`;
@@ -105,6 +156,8 @@ async function loadData() {
 
 function renderStats() {
   const online = nodes.filter(n => n.online).length;
+  const totalMem = nodes.reduce((s, n) => s + (n.memory || 0), 0);
+  const usedMem  = nodes.reduce((s, n) => s + (n.used_memory || 0), 0);
   document.getElementById('statsRow').innerHTML = `
     <div class="stat-card">
       <div class="stat-label">Total Nodes</div>
@@ -117,22 +170,67 @@ function renderStats() {
     <div class="stat-card">
       <div class="stat-label">Offline</div>
       <div class="stat-value" style="color:${nodes.length - online ? 'var(--danger)' : 'var(--text-muted)'}">${nodes.length - online}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">RAM Allocated</div>
+      <div class="stat-value">${fmtMb(usedMem)} <small style="font-size:13px;color:var(--text-muted)">/ ${fmtMb(totalMem)}</small></div>
+      <div class="bar-wrap"><div class="bar-fill ${totalMem > 0 && usedMem / totalMem > 0.8 ? 'danger' : usedMem / totalMem > 0.6 ? 'warn' : ''}" style="width:${totalMem > 0 ? Math.min(100, usedMem / totalMem * 100).toFixed(1) : 0}%"></div></div>
     </div>`;
 }
 
-function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtMb(mb) {
+  if (!mb) return '0 MB';
+  if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
+  return mb + ' MB';
+}
+
+function allocBar(used, total, unit) {
+  if (!total) return '';
+  const pct = Math.min(100, (used / total) * 100);
+  const cls = pct > 80 ? 'danger' : pct > 60 ? 'warn' : '';
+  return `
+    <div style="margin-top:10px">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:3px">
+        <span>${unit}</span>
+        <span>${fmtMb(used)} / ${fmtMb(total)} (${pct.toFixed(0)}%)</span>
+      </div>
+      <div class="bar-wrap"><div class="bar-fill ${cls}" style="width:${pct.toFixed(1)}%"></div></div>
+    </div>`;
+}
 
 function renderNodes() {
   const grid = document.getElementById('nodeGrid');
   if (!nodes.length) {
     grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
       <div class="empty-icon">🖥️</div>
-      <p>No nodes yet. Click "+ Add Node" to register one, then run the daemon on your server.</p>
+      <p>${isAdmin ? 'No nodes yet. Click "+ Add Node" to register one, then run the daemon on your server.' : 'No nodes configured yet.'}</p>
     </div>`;
     return;
   }
 
-  grid.innerHTML = nodes.map(n => `
+  grid.innerHTML = nodes.map(n => isAdmin ? renderAdminCard(n) : renderUserCard(n)).join('');
+}
+
+function renderUserCard(n) {
+  const count = n.server_count || 0;
+  return `
+    <div class="node-card">
+      <div class="node-header">
+        <div>
+          <div class="node-name">${esc(n.name)}</div>
+          ${n.description ? `<div class="node-meta">${esc(n.description)}</div>` : ''}
+        </div>
+        ${badgeHtml(n.online ? 'online' : 'offline')}
+      </div>
+      <div class="node-meta" style="margin-top:10px">
+        ${count} server${count !== 1 ? 's' : ''} hosted
+      </div>
+      ${!n.online ? `<div class="node-meta" style="color:var(--danger);margin-top:6px;font-size:12px">This node is currently offline. Your servers may be unavailable.</div>` : ''}
+    </div>`;
+}
+
+function renderAdminCard(n) {
+  return `
     <div class="node-card">
       <div class="node-header">
         <div>
@@ -144,34 +242,42 @@ function renderNodes() {
         </div>
       </div>
 
-      <div class="node-meta">
-        💾 ${n.memory} GB RAM · ⚡ ${n.cpu} CPU cores
+      <div class="node-meta" style="margin-top:8px">
+        ${fmtMb(n.memory)} RAM · ${n.cpu} CPU cores · ${n.server_count || 0} server${(n.server_count || 0) !== 1 ? 's' : ''}
+        ${n.disk_limit > 0 ? ` · ${fmtMb(n.disk_limit)} disk` : ''}
       </div>
-      <div class="node-meta">Last seen: ${n.last_seen ? new Date(n.last_seen * 1000).toLocaleString() : 'Never'}</div>
 
-      <div class="node-token">
-        <span id="tok_${n.id}">${n.token.slice(0, 8)}••••••••••••••••••••••••••••••••••••••••••••••••••••••••••${n.token.slice(-4)}</span>
+      ${allocBar(n.used_memory || 0, n.memory, 'RAM Allocated')}
+      ${n.disk_limit > 0 ? allocBar(n.used_disk || 0, n.disk_limit, 'Disk Allocated') : ''}
+
+      <div class="node-meta" style="margin-top:8px">Last seen: ${n.last_seen ? new Date(n.last_seen * 1000).toLocaleString() : 'Never'}</div>
+
+      <div class="node-token" style="margin-top:10px">
+        <span>${n.token.slice(0, 8)}••••••••••••••••••••••••••••••••••••••••••••••••••••••••••${n.token.slice(-4)}</span>
       </div>
 
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-        <button class="btn btn-ghost btn-sm" onclick="showToken('${n.id}','${n.token}')">👁 Show Token</button>
-        <button class="btn btn-warning btn-sm" onclick="resetToken('${n.id}')">🔄 New Token</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteNode('${n.id}','${esc(n.name)}')">🗑 Delete</button>
+        <button class="btn btn-ghost btn-sm" onclick="openEdit('${n.id}')">Edit</button>
+        <button class="btn btn-ghost btn-sm" onclick="showToken('${n.id}','${n.token}')">Show Token</button>
+        <button class="btn btn-warning btn-sm" onclick="resetToken('${n.id}')">New Token</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteNode('${n.id}','${esc(n.name)}')">Delete</button>
       </div>
 
       <div class="node-meta" style="margin-top:8px;font-size:11px">
         ID: <span class="chip">${n.id}</span>
       </div>
-    </div>`).join('');
+    </div>`;
 }
 
 function showToken(id, token) {
+  if (!isAdmin) return;
   document.getElementById('tokenDisplay').textContent = token;
   document.getElementById('tokenModal').classList.add('open');
 }
 
 async function resetToken(id) {
-  if (!confirm('Generate a new token? The daemon will need to be reconfigured.')) return;
+  if (!isAdmin) return;
+  if (!confirm('Generate a new token? The daemon will need to be reconfigured with it.')) return;
   try {
     const data = await API.post(`/nodes/${id}/reset-token`, {});
     showToken(id, data.token);
@@ -180,6 +286,7 @@ async function resetToken(id) {
 }
 
 async function deleteNode(id, name) {
+  if (!isAdmin) return;
   if (!confirm(`Delete node "${name}"? This will fail if servers are assigned to it.`)) return;
   try {
     await API.delete(`/nodes/${id}`);
@@ -188,15 +295,17 @@ async function deleteNode(id, name) {
 }
 
 function openCreate() {
+  if (!isAdmin) return;
   document.getElementById('n_name').value = '';
   document.getElementById('n_desc').value = '';
   document.getElementById('n_mem').value = 8;
   document.getElementById('n_cpu').value = 4;
+  document.getElementById('n_disk').value = 0;
   document.getElementById('createError').classList.remove('show');
   document.getElementById('createModal').classList.add('open');
 }
 
-function closeModal() {
+function closeCreateModal() {
   document.getElementById('createModal').classList.remove('open');
 }
 
@@ -211,12 +320,12 @@ async function createNode() {
     const node = await API.post('/nodes', {
       name: document.getElementById('n_name').value,
       description: document.getElementById('n_desc').value,
-      memory: parseInt(document.getElementById('n_mem').value) * 1024,
+      memory: parseInt(document.getElementById('n_mem').value) * 1024,  // GB → MB
       cpu: parseInt(document.getElementById('n_cpu').value),
+      disk_limit: parseInt(document.getElementById('n_disk').value) * 1024, // GB → MB
     });
-    closeModal();
+    closeCreateModal();
     await loadData();
-    // Show the token immediately
     setTimeout(() => showToken(node.id, node.token), 100);
   } catch (e) {
     errEl.textContent = e.message;
@@ -227,8 +336,55 @@ async function createNode() {
   }
 }
 
+function openEdit(id) {
+  const n = nodes.find(x => x.id === id);
+  if (!n) return;
+  editNodeId = id;
+  document.getElementById('e_name').value = n.name;
+  document.getElementById('e_desc').value = n.description || '';
+  document.getElementById('e_mem').value = (n.memory / 1024).toFixed(1);  // MB → GB
+  document.getElementById('e_cpu').value = n.cpu;
+  document.getElementById('e_disk').value = n.disk_limit > 0 ? (n.disk_limit / 1024).toFixed(1) : 0;
+  document.getElementById('editError').classList.remove('show');
+  document.getElementById('editModal').classList.add('open');
+}
+
+function closeEditModal() {
+  document.getElementById('editModal').classList.remove('open');
+  editNodeId = null;
+}
+
+async function saveEdit() {
+  const btn = document.getElementById('editBtn');
+  const errEl = document.getElementById('editError');
+  errEl.classList.remove('show');
+  btn.innerHTML = '<span class="spinner"></span> Saving...';
+  btn.disabled = true;
+
+  try {
+    await API.patch(`/nodes/${editNodeId}`, {
+      name: document.getElementById('e_name').value,
+      description: document.getElementById('e_desc').value,
+      memory: Math.round(parseFloat(document.getElementById('e_mem').value) * 1024),  // GB → MB
+      cpu: parseInt(document.getElementById('e_cpu').value),
+      disk_limit: Math.round(parseFloat(document.getElementById('e_disk').value) * 1024), // GB → MB
+    });
+    closeEditModal();
+    await loadData();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.add('show');
+  } finally {
+    btn.innerHTML = 'Save Changes';
+    btn.disabled = false;
+  }
+}
+
 document.getElementById('createModal').addEventListener('click', e => {
-  if (e.target === e.currentTarget) closeModal();
+  if (e.target === e.currentTarget) closeCreateModal();
+});
+document.getElementById('editModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeEditModal();
 });
 document.getElementById('tokenModal').addEventListener('click', e => {
   if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');

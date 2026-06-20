@@ -1,5 +1,9 @@
 version: "3.9"
 
+networks:
+  nodactyl:
+    driver: bridge
+
 services:
   panel:
     build: ./panel
@@ -9,18 +13,28 @@ services:
       - panel_data:/app/data
     environment:
       - PORT=3000
-      - JWT_SECRET=change-me-to-a-long-random-string
+      - JWT_SECRET=${JWT_SECRET:-change-me-to-a-long-random-string}
+    networks:
+      - nodactyl
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/settings/public || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
-  # Example daemon running on the same machine (for local dev / single-host setup)
-  # For a real multi-server setup, run the daemon separately on each machine.
   daemon:
     build: ./daemon
     volumes:
       - ./daemon/config.json:/app/config.json:ro
       - /var/run/docker.sock:/var/run/docker.sock
+      - /srv/nodactyl:/srv/nodactyl
+    networks:
+      - nodactyl
     depends_on:
-      - panel
+      panel:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

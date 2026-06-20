@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nodactyl — Users</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="layout" id="app"></div>
+
+<script src="/js/api.js"></script>
+<script>
+requireAdmin();
+let users = [], ranks = [];
+
+async function init() {
+  await loadPanelSettings();
+  document.getElementById('app').innerHTML = `
+    ${renderSidebar('admin-users')}
+    <div class="main">
+      <div class="topbar">
+        <div>
+          <div class="page-title">Users</div>
+          <div class="page-sub">Manage accounts, roles, and ranks</div>
+        </div>
+      </div>
+      <div class="content">
+        <div class="alert alert-error" id="pageError"></div>
+        <div class="alert alert-success" id="pageSuccess"></div>
+        <div class="card">
+          <div class="table-wrap" id="tableWrap">
+            <div class="empty-state"><span class="spinner"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  [users, ranks] = await Promise.all([
+    API.get('/users').catch(() => []),
+    API.get('/ranks').catch(() => []),
+  ]);
+  renderTable();
+}
+
+function rankOptions(currentId) {
+  const none = `<option value="">— No rank —</option>`;
+  return none + ranks.map(r => `<option value="${r.id}" ${r.id === currentId ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+}
+
+function renderTable() {
+  const me = getUser();
+  document.getElementById('tableWrap').innerHTML = users.length ? `
+    <table>
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Rank</th>
+          <th>Status</th>
+          <th>Joined</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${users.map(u => `
+          <tr>
+            <td style="color:var(--text);font-weight:600">${esc(u.username)}</td>
+            <td class="text-dim">${esc(u.email)}</td>
+            <td>
+              ${u.role === 'admin' && u.id === me.id
+                ? '<span class="badge badge-admin">admin (you)</span>'
+                : `<select class="form-select" style="width:90px;padding:3px 7px;font-size:12px" onchange="changeRole('${u.id}', this.value)" ${u.id === me.id ? 'disabled' : ''}>
+                    <option value="user" ${u.role === 'user' ? 'selected' : ''}>user</option>
+                    <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>admin</option>
+                  </select>`
+              }
+            </td>
+            <td>
+              <select class="form-select" style="width:110px;padding:3px 7px;font-size:12px" onchange="changeRank('${u.id}', this.value)">
+                ${rankOptions(u.rank_id)}
+              </select>
+              ${u.rank_name ? `<div style="margin-top:3px"><span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px;background:${u.rank_color || '#6366f1'}22;color:${u.rank_color || '#6366f1'};border:1px solid ${u.rank_color || '#6366f1'}44">${esc(u.rank_name)}</span></div>` : ''}
+            </td>
+            <td>
+              ${u.suspended
+                ? '<span class="badge badge-suspended">Suspended</span>'
+                : '<span class="badge badge-online">Active</span>'}
+            </td>
+            <td class="text-muted text-sm">${new Date(u.created_at * 1000).toLocaleDateString()}</td>
+            <td>
+              <div class="flex gap-2">
+                ${u.id !== me.id && u.role !== 'admin' ? `
+                  ${u.suspended
+                    ? `<button class="btn btn-success btn-xs" onclick="unsuspend('${u.id}')">Unsuspend</button>`
+                    : `<button class="btn btn-warning btn-xs" onclick="suspend('${u.id}')">Suspend</button>`}
+                  <button class="btn btn-danger btn-xs" onclick="deleteUser('${u.id}', '${esc(u.username)}')">Delete</button>
+                ` : '<span class="text-muted text-xs">—</span>'}
+              </div>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>` : `<div class="empty-state"><p>No users found.</p></div>`;
+}
+
+async function suspend(id) {
+  try { await API.post(`/users/${id}/suspend`); showOk('User suspended.'); await reload(); }
+  catch (e) { showErr(e.message); }
+}
+async function unsuspend(id) {
+  try { await API.post(`/users/${id}/unsuspend`); showOk('User unsuspended.'); await reload(); }
+  catch (e) { showErr(e.message); }
+}
+async function changeRole(id, role) {
+  try { await API.patch(`/users/${id}/role`, { role }); showOk('Role updated.'); await reload(); }
+  catch (e) { showErr(e.message); await reload(); }
+}
+async function changeRank(id, rank_id) {
+  try { await API.patch(`/users/${id}/rank`, { rank_id: rank_id || null }); showOk('Rank updated.'); await reload(); }
+  catch (e) { showErr(e.message); await reload(); }
+}
+async function deleteUser(id, name) {
+  if (!confirm(`Delete user "${name}"? This will also delete their servers.`)) return;
+  try { await API.delete(`/users/${id}`); showOk('User deleted.'); await reload(); }
+  catch (e) { showErr(e.message); }
+}
+
+async function reload() {
+  [users, ranks] = await Promise.all([API.get('/users').catch(() => []), API.get('/ranks').catch(() => [])]);
+  renderTable();
+}
+
+function showErr(msg) { const el = document.getElementById('pageError'); el.textContent = msg; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 4000); }
+function showOk(msg)  { const el = document.getElementById('pageSuccess'); el.textContent = msg; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 3000); }
+
+init();
+</script>
+</body>
+</html>

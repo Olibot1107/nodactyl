@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nodactyl - Files</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .file-list.drag-over { outline: 2px dashed var(--primary,#6366f1); outline-offset: -2px; background: rgba(99,102,241,.04); }
+    #editorArea { display: none; flex: 1; min-height: 0; }
+    #editorArea.open { display: block; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+</head>
+<body>
+<div class="layout" id="app"></div>
+<input type="file" id="fileUploadInput" multiple style="display:none">
+
+<!-- Context menu -->
+<div class="ctx-menu" id="ctxMenu">
+  <button class="ctx-item" id="ctxOpen">Open</button>
+  <div class="ctx-divider"></div>
+  <button class="ctx-item" id="ctxRename">Rename</button>
+  <button class="ctx-item" id="ctxMove">Move to…</button>
+  <button class="ctx-item ctx-item-danger" id="ctxDelete">Delete</button>
+  <div class="ctx-divider" id="ctxDlDivider"></div>
+  <button class="ctx-item" id="ctxDownload">Download</button>
+</div>
+
+<!-- Modal: new file / folder -->
+<div class="modal-overlay" id="newItemModal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <div class="modal-title" id="newItemTitle">New File</div>
+      <button class="modal-close" onclick="closeModal('newItemModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group mb-2">
+        <label class="form-label" id="newItemLabel">File name</label>
+        <input class="form-input" id="newItemInput" placeholder="e.g. config.yml" autocomplete="off">
+        <div class="form-hint mt-2" id="newItemHint"></div>
+      </div>
+      <div id="newItemError" class="alert alert-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('newItemModal')">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="newItemSubmit" onclick="submitNewItem()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: move -->
+<div class="modal-overlay" id="moveModal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <div class="modal-title">Move</div>
+      <button class="modal-close" onclick="closeModal('moveModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group mb-2">
+        <label class="form-label">Destination path</label>
+        <input class="form-input font-mono" id="moveInput" placeholder="/home/container/subdir/file.txt" autocomplete="off">
+        <div class="form-hint mt-2" id="moveHint"></div>
+      </div>
+      <div id="moveError" class="alert alert-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('moveModal')">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="moveSubmit" onclick="submitMove()">Move</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: rename -->
+<div class="modal-overlay" id="renameModal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <div class="modal-title">Rename</div>
+      <button class="modal-close" onclick="closeModal('renameModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group mb-2">
+        <label class="form-label">New name</label>
+        <input class="form-input" id="renameInput" placeholder="New name" autocomplete="off">
+      </div>
+      <div id="renameError" class="alert alert-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('renameModal')">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="renameSubmit" onclick="submitRename()">Rename</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+requireAuth();
+
+const match = location.pathname.match(/^\/server\/([^/]+)\/files/);
+const serverId = match ? match[1] : '';
+
+// Root from the user's perspective
+const HOME = '/home/container';
+
+let server = null;
+let currentPath = HOME;
+let openFile = null;
+let modified = false;
+let ctxTarget = null;
+let newItemType = 'file';
+let renameTarget = null;
+let moveTarget = null;
+let monacoEditor = null;
+let monacoReady = false;
+
+// ── Icons ─────────────────────────────────────────────────────────────────────
+const UI = {
+  back:     `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>`,
+  folder:   `<svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24" width="15" height="15"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>`,
+  up:       `<svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" width="14" height="14"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>`,
+  refresh:  `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-2.64-6.36"/><path d="M21 3v6h-6"/></svg>`,
+  save:     `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M5 3h12l2 2v16H5V3z"/><path d="M8 3v6h8V3"/><path d="M8 21v-7h8v7"/></svg>`,
+  close:    `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>`,
+  download: `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
+  upload:   `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
+  plus:     `<svg class="icon" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
+  dots:     `<svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" width="12" height="12"><circle cx="12" cy="5" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/></svg>`,
+  info:     `<svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24" width="13" height="13" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`,
+  home:     `<svg fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24" width="11" height="11"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
+};
+
+// ── File type badges ──────────────────────────────────────────────────────────
+function fileIcon(name, isDir) {
+  if (isDir) return `<span class="ftype-dir">${UI.folder}</span>`;
+  const ext = name.includes('.') ? name.toLowerCase().split('.').pop() : '';
+  const lname = name.toLowerCase();
+  const colors = {
+    js:'#f7c948', cjs:'#f7c948', mjs:'#f7c948',
+    ts:'#60a5fa', tsx:'#61dafb', jsx:'#61dafb',
+    json:'#fb923c', yaml:'#ef4444', yml:'#ef4444',
+    py:'#60a5fa', rb:'#e53e3e', php:'#818cf8', go:'#00acd7',
+    sh:'#4ade80', bash:'#4ade80', zsh:'#4ade80',
+    css:'#38bdf8', scss:'#c96fad', sass:'#c96fad',
+    html:'#f97316', htm:'#f97316', xml:'#f97316',
+    md:'#a1a1aa', txt:'#71717a', log:'#52525b',
+    env:'#a78bfa', toml:'#c2410c', ini:'#6b7280', conf:'#6b7280', cfg:'#6b7280',
+    jar:'#f59e0b', zip:'#a855f7', gz:'#a855f7', tar:'#a855f7', rar:'#a855f7',
+    png:'#34d399', jpg:'#34d399', jpeg:'#34d399', gif:'#34d399', svg:'#34d399', webp:'#34d399',
+  };
+  const specials = { dockerfile:'#2496ed', '.env':'#a78bfa', '.gitignore':'#f05032', '.gitkeep':'#6b7280' };
+  const color = specials[lname] || colors[ext] || '#6b7280';
+  const raw = specials[lname]
+    ? (lname === 'dockerfile' ? 'D' : ext.slice(0, 3))
+    : (ext.slice(0, 3) || '•');
+  return `<span class="ftype-badge" style="color:${color};background:${color}18;border-color:${color}2e">${raw.toUpperCase()}</span>`;
+}
+
+// ── Monaco language detection ─────────────────────────────────────────────────
+function detectLanguage(filename) {
+  const ext = filename.includes('.') ? filename.toLowerCase().split('.').pop() : '';
+  const lname = filename.toLowerCase();
+  const specials = { 'dockerfile':'dockerfile', '.env':'shell', '.gitignore':'shell', '.npmrc':'ini', '.editorconfig':'ini' };
+  const map = {
+    js:'javascript', cjs:'javascript', mjs:'javascript', jsx:'javascript',
+    ts:'typescript', tsx:'typescript',
+    json:'json', html:'html', htm:'html',
+    css:'css', scss:'scss', sass:'scss',
+    py:'python', rb:'ruby', php:'php', go:'go', rs:'rust', java:'java',
+    sh:'shell', bash:'shell', zsh:'shell',
+    yml:'yaml', yaml:'yaml',
+    toml:'ini', ini:'ini', conf:'ini', cfg:'ini', env:'shell',
+    md:'markdown', xml:'xml', sql:'sql', dockerfile:'dockerfile',
+    c:'c', cpp:'cpp', h:'c', cs:'csharp', kt:'kotlin', swift:'swift',
+    lua:'lua', r:'r', scala:'scala', pl:'perl',
+  };
+  return specials[lname] || map[ext] || 'plaintext';
+}
+
+// ── Breadcrumb: shows ~ for HOME, relative segments below ─────────────────────
+function renderBreadcrumb(path) {
+  const el = document.getElementById('breadcrumb');
+  if (!el) return;
+  const isHome = path === HOME || path === HOME + '/';
+  const rel = isHome ? '' : (path.startsWith(HOME + '/') ? path.slice(HOME.length) : path);
+  const parts = rel.split('/').filter(Boolean);
+
+  let html = `<span class="bc-seg" onclick="listDir(HOME)" title="${HOME}">${UI.home}&thinsp;~</span>`;
+  let acc = HOME;
+  for (const p of parts) {
+    acc += '/' + p;
+    const target = acc;
+    html += `<span class="bc-sep">›</span><span class="bc-seg" onclick="listDir('${esc(target)}')" title="${esc(acc)}">${esc(p)}</span>`;
+  }
+  el.innerHTML = html;
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  await loadPanelSettings();
+  document.getElementById('app').innerHTML = buildShell();
+
+  // Boot Monaco asynchronously after the DOM is ready
+  require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
+  require(['vs/editor/editor.main'], () => {
+    monacoEditor = monaco.editor.create(document.getElementById('editorArea'), {
+      value: '',
+      theme: 'vs-dark',
+      language: 'plaintext',
+      automaticLayout: true,
+      minimap: { enabled: false },
+      scrollBeyondLastLine: false,
+      fontSize: 13,
+      fontFamily: 'Consolas, "Cascadia Code", "Fira Code", Menlo, monospace',
+      lineNumbers: 'on',
+      wordWrap: 'off',
+      renderWhitespace: 'selection',
+      tabSize: 2,
+      padding: { top: 8, bottom: 8 },
+    });
+    monacoEditor.onDidChangeModelContent(() => {
+      if (!openFile) return;
+      modified = true;
+      document.getElementById('editorFilename').classList.add('modified');
+      document.getElementById('saveBtn').disabled = false;
+      updateStatusBar();
+    });
+    monacoReady = true;
+  });
+
+  document.getElementById('fileUploadInput').addEventListener('change', function () {
+    uploadFiles(Array.from(this.files));
+    this.value = '';
+  });
+  setupDragDrop();
+  document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#ctxMenu') && !e.target.closest('.file-row-dots')) closeCtx();
+  });
+
+  try {
+    server = await API.get(`/servers/${serverId}`);
+    renderHeader();
+    syncBanner();
+    await listDir(HOME);
+  } catch (e) {
+    showDirError(e.message);
+  }
+}
+
+function buildShell() {
+  return `
+    ${renderSidebar('dashboard')}
+    <div class="main main-flex">
+      <div class="topbar" id="topbar">
+        <div class="flex-center gap-2">
+          <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
+          <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+          <span class="page-title">Loading…</span>
+          <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+          <span class="text-muted" style="font-size:13px">Files</span>
+        </div>
+      </div>
+      ${renderServerNav(serverId, 'files')}
+      <div class="file-shell">
+
+        <aside class="file-sidebar">
+          <div class="file-sidebar-head">
+            <div class="file-headline">
+              <div class="file-title">Explorer</div>
+              <button class="btn btn-ghost btn-xs" onclick="refreshDirectory()" title="Refresh">${UI.refresh}</button>
+            </div>
+            <div class="file-breadcrumb" id="breadcrumb"></div>
+          </div>
+
+          <div class="file-toolbar">
+            <button class="btn btn-ghost btn-xs" onclick="openNewItemModal('file')" title="New file">${UI.plus} File</button>
+            <button class="btn btn-ghost btn-xs" onclick="openNewItemModal('dir')" title="New folder">${UI.plus} Folder</button>
+            <button class="btn btn-ghost btn-xs" onclick="triggerUpload()" title="Upload files">${UI.upload} Upload</button>
+          </div>
+
+          <div class="file-banner" id="fileBanner"></div>
+          <div class="file-list" id="fileList"><div class="file-state"><span class="spinner"></span></div></div>
+          <div class="upload-progress" id="uploadProgress">
+            <span id="uploadLabel" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Uploading...</span>
+            <div class="upload-bar-outer" style="width:80px"><div class="upload-bar-inner" id="uploadBar" style="width:0%"></div></div>
+          </div>
+        </aside>
+
+        <main class="editor-pane">
+          <div class="editor-toolbar">
+            <div class="editor-file-meta">
+              <div class="editor-filename" id="editorFilename">No file open</div>
+              <div class="editor-subline" id="editorSubline">Select a file from the explorer</div>
+            </div>
+            <div class="flex-center gap-2">
+              <button class="btn btn-ghost btn-sm" id="downloadBtn" onclick="downloadOpenFile()" disabled title="Download">${UI.download}</button>
+              <button class="btn btn-ghost btn-sm" id="closeBtn" onclick="closeFile()" disabled>${UI.close} Close</button>
+              <button class="btn btn-primary btn-sm" id="saveBtn" onclick="saveFile()" disabled>${UI.save} Save</button>
+            </div>
+          </div>
+
+          <div class="editor-empty" id="editorEmpty">
+            <div style="text-align:center">
+              <div style="font-size:32px;opacity:.12;margin-bottom:12px">📄</div>
+              <div style="font-size:13px;color:var(--text-muted)">Select a file to view or edit</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:6px;opacity:.6">Ctrl+S to save &nbsp;·&nbsp; drag files onto the explorer to upload</div>
+            </div>
+          </div>
+
+          <div id="editorArea"></div>
+
+          <div class="status-bar" id="statusBar">
+            <span id="statusPath" style="min-width:0;overflow:hidden;text-overflow:ellipsis">~</span>
+            <span id="statusLines"></span>
+            <span style="flex:1"></span>
+            <span id="statusLang" style="letter-spacing:.4px;text-transform:uppercase;font-size:10px"></span>
+            <span id="statusState">Ready</span>
+          </div>
+        </main>
+
+      </div>
+    </div>`;
+}
+
+// ── Header & banner ───────────────────────────────────────────────────────────
+function renderHeader() {
+  document.getElementById('topbar').innerHTML = `
+    <div class="flex-center gap-2">
+      <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
+      <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+      <a class="topbar-link" href="/server/${serverId}">${esc(server.name)}</a>
+      <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+      <span class="page-title">Files</span>
+    </div>
+    <div class="flex-center gap-2">
+      ${badgeHtml(server.status)}
+      ${!server.node_online ? badgeHtml('offline') : ''}
+    </div>`;
+}
+
+function syncBanner() {
+  const el = document.getElementById('fileBanner');
+  if (!el || !server) return;
+  const stopped = server.status !== 'running' && !!server.container_id && server.node_online;
+  if (stopped) {
+    el.className = 'file-banner file-banner-info show';
+    el.innerHTML = `${UI.info} <span>Container stopped — you can still browse and edit files.</span>`;
+  } else {
+    el.className = 'file-banner';
+    el.innerHTML = '';
+  }
+}
+
+// ── Directory listing ─────────────────────────────────────────────────────────
+async function listDir(dirPath) {
+  currentPath = normalizePath(dirPath);
+  // Clamp: never go above HOME
+  if (!currentPath.startsWith(HOME)) currentPath = HOME;
+  renderBreadcrumb(currentPath);
+  document.getElementById('fileList').innerHTML = '<div class="file-state"><span class="spinner"></span></div>';
+  setStatusState('Loading...');
+  try {
+    const { files } = await API.get(`/servers/${serverId}/files?path=${encodeURIComponent(currentPath)}`);
+    renderFileList(files || [], currentPath);
+    setStatusState('Ready');
+  } catch (e) {
+    showDirError(e.message);
+    setStatusState('Error');
+  }
+}
+
+async function refreshDirectory() { await listDir(currentPath); }
+
+// ── File list ─────────────────────────────────────────────────────────────────
+function renderFileList(files, dirPath) {
+  const dirs = files.filter(f => f.type === 'dir').sort((a, b) => a.name.localeCompare(b.name));
+  const docs = files.filter(f => f.type !== 'dir').sort((a, b) => a.name.localeCompare(b.name));
+  const rows = [];
+
+  // ".." only shown when we're below the home root
+  if (dirPath !== HOME) {
+    rows.push(`
+      <button class="file-row" data-dir-path="${esc(parentPath(dirPath))}">
+        <span class="file-row-icon ftype-dir">${UI.up}</span>
+        <span class="file-row-name">..</span>
+        <span class="file-row-meta"></span>
+        <span class="file-row-dots"></span>
+      </button>`);
+  }
+
+  for (const f of [...dirs, ...docs]) {
+    const fullPath = joinPath(dirPath, f.name);
+    const isDir = f.type === 'dir';
+    rows.push(`
+      <button class="file-row ${openFile === fullPath ? 'active' : ''}"
+        ${isDir ? `data-dir-path="${esc(fullPath)}"` : `data-file-path="${esc(fullPath)}"`}
+        data-ctx-path="${esc(fullPath)}"
+        data-ctx-isdir="${isDir}"
+        data-ctx-name="${esc(f.name)}">
+        <span class="file-row-icon">${fileIcon(f.name, isDir)}</span>
+        <span class="file-row-name">${esc(f.name)}</span>
+        <span class="file-row-meta">${isDir ? '' : formatBytes(f.size)}</span>
+        <button class="file-row-dots" onclick="openCtxFromDots(event,'${esc(fullPath)}',${isDir},'${esc(f.name)}')" title="More">${UI.dots}</button>
+      </button>`);
+  }
+
+  if (!rows.length) {
+    document.getElementById('fileList').innerHTML = `
+      <div class="file-state">
+        <div style="text-align:center">
+          <div style="font-size:24px;opacity:.15;margin-bottom:8px">📁</div>
+          <div>Empty directory</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Drop files here to upload</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  document.getElementById('fileList').innerHTML = rows.join('');
+
+  document.querySelectorAll('[data-dir-path]').forEach(el => {
+    el.addEventListener('click', e => { if (e.target.closest('.file-row-dots')) return; listDir(el.dataset.dirPath); });
+  });
+  document.querySelectorAll('[data-file-path]').forEach(el => {
+    el.addEventListener('click', e => { if (e.target.closest('.file-row-dots')) return; openFileForEdit(el.dataset.filePath); });
+  });
+  document.querySelectorAll('[data-ctx-path]').forEach(el => {
+    el.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      showCtx(e, el.dataset.ctxPath, el.dataset.ctxIsdir === 'true', el.dataset.ctxName);
+    });
+  });
+}
+
+// ── Editor ────────────────────────────────────────────────────────────────────
+async function openFileForEdit(filePath) {
+  if (modified && openFile && !confirm('You have unsaved changes. Discard them?')) return;
+  setActiveRow(filePath);
+  setStatusState('Loading...');
+
+  let waited = 0;
+  while (!monacoReady) {
+    await new Promise(r => setTimeout(r, 100));
+    if ((waited += 100) > 15000) { setStatusState('Editor failed to load'); return; }
+  }
+
+  try {
+    const { content } = await API.get(`/servers/${serverId}/files/read?path=${encodeURIComponent(filePath)}`);
+    openFile = filePath;
+    modified = false;
+
+    const fname = filePath.split('/').filter(Boolean).pop();
+    const lang = detectLanguage(fname);
+    const relPath = filePath.startsWith(HOME + '/') ? '~/' + filePath.slice(HOME.length + 1) : filePath;
+
+    document.getElementById('editorFilename').textContent = fname;
+    document.getElementById('editorFilename').classList.remove('modified');
+    document.getElementById('editorSubline').textContent = relPath;
+    document.getElementById('editorEmpty').style.display = 'none';
+
+    const area = document.getElementById('editorArea');
+    area.classList.add('open');
+
+    monaco.editor.setModelLanguage(monacoEditor.getModel(), lang);
+    monacoEditor.setValue(content);
+    monacoEditor.setScrollPosition({ scrollTop: 0 });
+    // Force Monaco to recalculate its size now the div is visible
+    requestAnimationFrame(() => { monacoEditor.layout(); monacoEditor.focus(); });
+
+    document.getElementById('saveBtn').disabled = true;
+    document.getElementById('closeBtn').disabled = false;
+    document.getElementById('downloadBtn').disabled = false;
+    document.getElementById('statusLang').textContent = lang !== 'plaintext' ? lang : '';
+    setStatusState('Ready');
+    updateStatusBar();
+  } catch (e) {
+    setStatusState('Error');
+    document.getElementById('editorSubline').textContent = e.message;
+  }
+}
+
+async function saveFile() {
+  if (!openFile || !monacoReady) return;
+  const btn = document.getElementById('saveBtn');
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled = true;
+  setStatusState('Saving...');
+  try {
+    await API.put(`/servers/${serverId}/files/write`, { path: openFile, content: monacoEditor.getValue() });
+    modified = false;
+    document.getElementById('editorFilename').classList.remove('modified');
+    setStatusState('Saved');
+    setTimeout(() => { if (!modified) setStatusState('Ready'); }, 1500);
+  } catch (e) {
+    setStatusState('Error: ' + e.message);
+    btn.disabled = false;
+  } finally {
+    btn.innerHTML = `${UI.save} Save`;
+  }
+}
+
+function closeFile() {
+  if (modified && !confirm('You have unsaved changes. Discard them?')) return;
+  openFile = null;
+  modified = false;
+  setActiveRow(null);
+  document.getElementById('editorFilename').textContent = 'No file open';
+  document.getElementById('editorFilename').classList.remove('modified');
+  document.getElementById('editorSubline').textContent = 'Select a file from the explorer';
+  document.getElementById('editorEmpty').style.display = 'flex';
+  document.getElementById('editorArea').classList.remove('open');
+  document.getElementById('saveBtn').disabled = true;
+  document.getElementById('closeBtn').disabled = true;
+  document.getElementById('downloadBtn').disabled = true;
+  document.getElementById('statusLang').textContent = '';
+  if (monacoReady) monacoEditor.setValue('');
+  updateStatusBar();
+}
+
+async function downloadOpenFile() {
+  if (!openFile) return;
+  const content = (monacoReady && monacoEditor) ? monacoEditor.getValue()
+    : (await API.get(`/servers/${serverId}/files/read?path=${encodeURIComponent(openFile)}`)).content;
+  const blob = new Blob([content]);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = openFile.split('/').filter(Boolean).pop();
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ── Upload ────────────────────────────────────────────────────────────────────
+function triggerUpload() { document.getElementById('fileUploadInput').click(); }
+
+function setupDragDrop() {
+  const list = document.getElementById('fileList');
+  if (!list) return;
+  let counter = 0;
+  list.addEventListener('dragenter', e => { e.preventDefault(); if (++counter === 1) list.classList.add('drag-over'); });
+  list.addEventListener('dragleave', () => { if (--counter <= 0) { counter = 0; list.classList.remove('drag-over'); } });
+  list.addEventListener('dragover', e => e.preventDefault());
+  list.addEventListener('drop', e => {
+    e.preventDefault(); counter = 0; list.classList.remove('drag-over');
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length) uploadFiles(files);
+  });
+}
+
+async function uploadFiles(files) {
+  if (!files.length) return;
+  const progress = document.getElementById('uploadProgress');
+  const label = document.getElementById('uploadLabel');
+  const bar = document.getElementById('uploadBar');
+  progress.classList.add('show');
+  const errors = [];
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    label.textContent = files.length > 1 ? `${file.name} (${i + 1}/${files.length})` : file.name;
+    bar.style.width = '0%';
+    try {
+      await uploadSingleFile(file, joinPath(currentPath, file.name), pct => { bar.style.width = pct + '%'; });
+    } catch (e) {
+      errors.push(`${file.name}: ${e.message}`);
+    }
+  }
+
+  bar.style.width = '100%';
+  label.textContent = errors.length ? `${files.length - errors.length}/${files.length} uploaded` : `Done`;
+  await listDir(currentPath);
+  setTimeout(() => { progress.classList.remove('show'); bar.style.width = '0%'; }, 2000);
+  if (errors.length) alert('Some uploads failed:\n' + errors.join('\n'));
+}
+
+function uploadSingleFile(file, filePath, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/api/servers/${serverId}/files/upload?path=${encodeURIComponent(filePath)}`);
+    xhr.setRequestHeader('Authorization', 'Bearer ' + getToken());
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100));
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) return resolve();
+      try { reject(new Error(JSON.parse(xhr.responseText).error || 'Upload failed')); }
+      catch { reject(new Error(`HTTP ${xhr.status}`)); }
+    });
+    xhr.addEventListener('error', () => reject(new Error('Network error')));
+    xhr.send(file);
+  });
+}
+
+// ── Context menu ──────────────────────────────────────────────────────────────
+function showCtx(e, path, isDir, name) {
+  ctxTarget = { path, isDir, name };
+  const menu = document.getElementById('ctxMenu');
+  document.getElementById('ctxOpen').textContent = isDir ? 'Open folder' : 'Open file';
+  document.getElementById('ctxOpen').onclick = () => { closeCtx(); if (isDir) listDir(path); else openFileForEdit(path); };
+  document.getElementById('ctxRename').onclick = () => { closeCtx(); startRename({ path, name }); };
+  document.getElementById('ctxMove').onclick = () => { closeCtx(); startMove({ path, name }); };
+  document.getElementById('ctxDelete').onclick = () => { closeCtx(); confirmDelete({ path, isDir, name }); };
+
+  const dlBtn = document.getElementById('ctxDownload');
+  const dlDiv = document.getElementById('ctxDlDivider');
+  dlBtn.style.display = isDir ? 'none' : '';
+  dlDiv.style.display = isDir ? 'none' : '';
+  dlBtn.onclick = () => {
+    closeCtx();
+    API.get(`/servers/${serverId}/files/read?path=${encodeURIComponent(path)}`).then(({ content }) => {
+      const blob = new Blob([content]);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = name; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+  };
+
+  menu.style.display = 'block';
+  const rx = e.clientX, ry = e.clientY;
+  menu.style.left = '0'; menu.style.top = '0';
+  requestAnimationFrame(() => {
+    let x = rx, y = ry;
+    if (x + menu.offsetWidth  > window.innerWidth  - 8) x = window.innerWidth  - menu.offsetWidth  - 8;
+    if (y + menu.offsetHeight > window.innerHeight - 8) y = window.innerHeight - menu.offsetHeight - 8;
+    menu.style.left = x + 'px'; menu.style.top = y + 'px';
+  });
+}
+
+function openCtxFromDots(e, path, isDir, name) { e.stopPropagation(); showCtx(e, path, isDir, name); }
+function closeCtx() { document.getElementById('ctxMenu').style.display = 'none'; ctxTarget = null; }
+
+// ── File operations ───────────────────────────────────────────────────────────
+function openNewItemModal(type) {
+  newItemType = type;
+  document.getElementById('newItemTitle').textContent = type === 'dir' ? 'New Folder' : 'New File';
+  document.getElementById('newItemLabel').textContent = type === 'dir' ? 'Folder name' : 'File name';
+  document.getElementById('newItemInput').value = '';
+  const rel = currentPath.startsWith(HOME + '/') ? '~/' + currentPath.slice(HOME.length + 1) : '~';
+  document.getElementById('newItemHint').textContent = 'In: ' + rel;
+  document.getElementById('newItemError').classList.remove('show');
+  document.getElementById('newItemModal').classList.add('open');
+  setTimeout(() => document.getElementById('newItemInput').focus(), 60);
+}
+
+async function submitNewItem() {
+  const name = document.getElementById('newItemInput').value.trim();
+  const errEl = document.getElementById('newItemError');
+  errEl.classList.remove('show');
+  if (!name) { errEl.textContent = 'Name is required'; errEl.classList.add('show'); return; }
+  if (name.includes('/') || name.includes('..')) { errEl.textContent = 'Name cannot contain / or ..'; errEl.classList.add('show'); return; }
+  const fullPath = joinPath(currentPath, name);
+  const btn = document.getElementById('newItemSubmit');
+  btn.disabled = true;
+  try {
+    if (newItemType === 'dir') {
+      await API.post(`/servers/${serverId}/files/mkdir`, { path: fullPath });
+    } else {
+      await API.put(`/servers/${serverId}/files/write`, { path: fullPath, content: '' });
+    }
+    closeModal('newItemModal');
+    await listDir(currentPath);
+    if (newItemType === 'file') openFileForEdit(fullPath);
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.add('show');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function startRename({ path, name }) {
+  renameTarget = { path, name };
+  const input = document.getElementById('renameInput');
+  input.value = name;
+  document.getElementById('renameError').classList.remove('show');
+  document.getElementById('renameModal').classList.add('open');
+  setTimeout(() => {
+    input.focus();
+    const dot = name.lastIndexOf('.');
+    input.setSelectionRange(0, dot > 0 ? dot : name.length);
+  }, 60);
+}
+
+async function submitRename() {
+  const newName = document.getElementById('renameInput').value.trim();
+  const errEl = document.getElementById('renameError');
+  errEl.classList.remove('show');
+  if (!newName) { errEl.textContent = 'Name is required'; errEl.classList.add('show'); return; }
+  if (newName.includes('/') || newName.includes('..')) { errEl.textContent = 'Invalid name'; errEl.classList.add('show'); return; }
+  const btn = document.getElementById('renameSubmit');
+  btn.disabled = true;
+  const newPath = joinPath(parentPath(renameTarget.path), newName);
+  try {
+    await API.post(`/servers/${serverId}/files/rename`, { oldPath: renameTarget.path, newPath });
+    if (openFile === renameTarget.path) closeFile();
+    closeModal('renameModal');
+    await listDir(currentPath);
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.add('show');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function startMove({ path, name }) {
+  moveTarget = { path, name };
+  const input = document.getElementById('moveInput');
+  input.value = path;
+  const rel = path.startsWith(HOME + '/') ? '~/' + path.slice(HOME.length + 1) : path;
+  document.getElementById('moveHint').textContent = 'Moving: ' + rel;
+  document.getElementById('moveError').classList.remove('show');
+  document.getElementById('moveModal').classList.add('open');
+  setTimeout(() => { input.focus(); input.select(); }, 60);
+}
+
+async function submitMove() {
+  let dest = document.getElementById('moveInput').value.trim();
+  const errEl = document.getElementById('moveError');
+  errEl.classList.remove('show');
+  if (!dest) { errEl.textContent = 'Destination is required'; errEl.classList.add('show'); return; }
+  if (dest.startsWith('~/')) dest = HOME + '/' + dest.slice(2);
+  else if (dest === '~') dest = HOME;
+  if (dest === moveTarget.path) { closeModal('moveModal'); return; }
+  const btn = document.getElementById('moveSubmit');
+  btn.disabled = true;
+  try {
+    await API.post(`/servers/${serverId}/files/rename`, { oldPath: moveTarget.path, newPath: dest });
+    if (openFile === moveTarget.path) closeFile();
+    closeModal('moveModal');
+    await listDir(currentPath);
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.add('show');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function confirmDelete({ path, isDir, name }) {
+  const what = isDir ? `folder "${name}" and all its contents` : `"${name}"`;
+  if (!confirm(`Delete ${what}?\n\nThis cannot be undone.`)) return;
+  setStatusState('Deleting...');
+  try {
+    await API.delete(`/servers/${serverId}/files?path=${encodeURIComponent(path)}`);
+    if (openFile === path || (isDir && openFile?.startsWith(path + '/'))) closeFile();
+    await listDir(currentPath);
+    setStatusState('Ready');
+  } catch (e) {
+    setStatusState('Error');
+    alert('Delete failed: ' + e.message);
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function setActiveRow(filePath) {
+  document.querySelectorAll('[data-file-path]').forEach(el => {
+    el.classList.toggle('active', !!filePath && el.dataset.filePath === filePath);
+  });
+}
+
+function showDirError(message) {
+  document.getElementById('fileList').innerHTML = `
+    <div class="file-state">
+      <div style="text-align:center">
+        <div style="font-size:12.5px;color:var(--danger);margin-bottom:8px">${esc(message)}</div>
+        <button class="btn btn-ghost btn-sm" onclick="refreshDirectory()">${UI.refresh} Retry</button>
+      </div>
+    </div>`;
+}
+
+function onKeyDown(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's' && openFile) { e.preventDefault(); saveFile(); }
+  if (e.key === 'Escape') {
+    closeCtx();
+    document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+  }
+  if (e.key === 'Enter') {
+    if (document.getElementById('newItemModal').classList.contains('open')) { e.preventDefault(); submitNewItem(); }
+    else if (document.getElementById('renameModal').classList.contains('open')) { e.preventDefault(); submitRename(); }
+    else if (document.getElementById('moveModal').classList.contains('open')) { e.preventDefault(); submitMove(); }
+  }
+}
+
+function updateStatusBar() {
+  if (!openFile) {
+    document.getElementById('statusPath').textContent = '~';
+    document.getElementById('statusLines').textContent = '';
+    return;
+  }
+  const rel = openFile.startsWith(HOME + '/') ? '~/' + openFile.slice(HOME.length + 1) : openFile;
+  document.getElementById('statusPath').textContent = rel;
+  if (monacoReady && monacoEditor) {
+    const lines = monacoEditor.getModel()?.getLineCount() ?? 0;
+    document.getElementById('statusLines').textContent = `${lines}L`;
+  }
+  if (modified) setStatusState('Unsaved');
+}
+
+function setStatusState(t) {
+  const el = document.getElementById('statusState');
+  if (el) el.textContent = t;
+}
+
+// Normalize and clamp paths to HOME
+function normalizePath(p) {
+  const parts = String(p || HOME).replace(/\\/g, '/').split('/').filter(Boolean);
+  return parts.length ? '/' + parts.join('/') : '/';
+}
+function joinPath(dir, name) { return dir === '/' ? '/' + name : dir.replace(/\/$/, '') + '/' + name; }
+function parentPath(p) {
+  const parts = normalizePath(p).split('/').filter(Boolean);
+  parts.pop();
+  const result = parts.length ? '/' + parts.join('/') : '/';
+  // Never go above HOME
+  return result.startsWith(HOME) ? result : HOME;
+}
+function formatBytes(size) {
+  const n = Number(size);
+  if (!Number.isFinite(n) || size == null) return '';
+  if (n < 1024) return `${n}B`;
+  if (n < 1048576) return `${(n / 1024).toFixed(1)}K`;
+  return `${(n / 1048576).toFixed(1)}M`;
+}
+
+init();
+</script>
+</body>
+</html>

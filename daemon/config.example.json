@@ -1,4 +1,6 @@
 {
-  "panelUrl": "http://localhost:3000",
-  "token": "paste-the-token-from-the-nodes-page-here"
+  "panelUrl": "http://panel:3000",
+  "token": "paste-the-token-from-the-nodes-page-here",
+  "dataPath": "/srv/nodactyl",
+  "hostDataPath": "/srv/nodactyl"
 }
