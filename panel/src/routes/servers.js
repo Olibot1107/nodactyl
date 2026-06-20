@@ -468,6 +468,46 @@ router.post('/:id/files/git', async (req, res) => {
   } catch (err) { sendFileError(res, err); }
 });
 
+router.post('/:id/files/git-pull', async (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
+  const accessError = fileAccessError(server);
+  if (accessError) return res.status(accessError.status).json({ error: accessError.error });
+  const { path: targetPath, strategy } = req.body;
+  const validStrategies = ['ff-only', 'merge', 'rebase'];
+  const pullStrategy = validStrategies.includes(strategy) ? strategy : 'ff-only';
+  try {
+    const result = await nodeManager.send(
+      server.node_id,
+      fileMsg(server, { type: 'git-pull', path: targetPath || '/home/container', strategy: pullStrategy }),
+      { timeout: 300000 }
+    );
+    res.json(result);
+  } catch (err) { sendFileError(res, err); }
+});
+
+router.post('/:id/files/git-reset', async (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
+  const accessError = fileAccessError(server);
+  if (accessError) return res.status(accessError.status).json({ error: accessError.error });
+  const { path: targetPath, commit, mode } = req.body;
+  const validModes = ['soft', 'mixed', 'hard'];
+  const resetMode = validModes.includes(mode) ? mode : 'mixed';
+  try {
+    const result = await nodeManager.send(
+      server.node_id,
+      fileMsg(server, { type: 'git-reset', path: targetPath || '/home/container', commit: commit || 'HEAD~1', mode: resetMode }),
+      { timeout: 30000 }
+    );
+    res.json(result);
+  } catch (err) { sendFileError(res, err); }
+});
+
 router.post('/:id/files/rename', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
@@ -574,14 +614,19 @@ router.post('/:id/packages', async (req, res) => {
   if (!nodeManager.isOnline(server.node_id)) return res.status(503).json({ error: 'Node is offline' });
 
   const VALID_MANAGERS = ['npm', 'yarn', 'pip', 'pip3', 'composer', 'gem', 'cargo'];
-  const { manager, pkg } = req.body;
+  const { manager, pkg = '' } = req.body;
 
   if (!manager || !VALID_MANAGERS.includes(manager))
     return res.status(400).json({ error: 'Invalid package manager' });
-  if (!pkg || typeof pkg !== 'string' || pkg.length > 500)
-    return res.status(400).json({ error: 'Invalid package name' });
-  if (/[;&|`$!'"\\{}()\n\r]/.test(pkg))
-    return res.status(400).json({ error: 'Invalid characters in package name' });
+
+  const isManifestInstall = !pkg || pkg.trim() === '';
+  // Manifest installs (npm install, pip install -r requirements.txt, etc.) are safe — no user pkg string
+  if (!isManifestInstall) {
+    if (typeof pkg !== 'string' || pkg.length > 500)
+      return res.status(400).json({ error: 'Invalid package name' });
+    if (/[;&|`$!'"\\{}()\n\r]/.test(pkg))
+      return res.status(400).json({ error: 'Invalid characters in package name' });
+  }
 
   let envVars = [];
   try { envVars = JSON.parse(server.env_vars || '[]'); } catch {}
@@ -594,7 +639,7 @@ router.post('/:id/packages', async (req, res) => {
       envVars,
       memoryLimit: server.memory_limit,
       manager,
-      pkg: pkg.trim(),
+      pkg: isManifestInstall ? '' : pkg.trim(),
     }, { timeout: 300000 });
     res.json({ ok: true });
   } catch (err) {

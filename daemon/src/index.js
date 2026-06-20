@@ -259,7 +259,11 @@ async function handleMessage(msg) {
       try {
         const stats = await docker.getStats(containerId);
         if (dataPath && serverId) {
-          stats.diskUsed = hostfs.getDiskUsage(serverDataDir(serverId));
+          const hostDisk = hostfs.getDiskUsage(serverDataDir(serverId));
+          // Sum hostfs data dir + container writable overlay layer
+          stats.diskUsed = hostDisk + (stats.containerDiskUsed || 0);
+        } else if (stats.containerDiskUsed) {
+          stats.diskUsed = stats.containerDiskUsed;
         }
         respond(requestId, stats);
       } catch (err) {
@@ -335,17 +339,19 @@ async function handleMessage(msg) {
 
     case 'install-package': {
       const { requestId, serverId, image, envVars, memoryLimit, manager, pkg } = msg;
+      const isManifest = !pkg || pkg.trim() === '';
+      // pkg='' → install from manifest file (package.json, requirements.txt, etc.)
       const CMDS = {
-        npm: `npm install ${pkg}`,
-        yarn: `yarn add ${pkg}`,
-        pip: `pip install ${pkg}`,
-        pip3: `pip3 install ${pkg}`,
-        composer: `composer require ${pkg}`,
-        gem: `gem install ${pkg}`,
-        cargo: `cargo add ${pkg}`,
+        npm:      isManifest ? 'npm install'                     : `npm install ${pkg}`,
+        yarn:     isManifest ? 'yarn install'                    : `yarn add ${pkg}`,
+        pip:      isManifest ? 'pip install -r requirements.txt' : `pip install ${pkg}`,
+        pip3:     isManifest ? 'pip3 install -r requirements.txt': `pip3 install ${pkg}`,
+        composer: isManifest ? 'composer install'                : `composer require ${pkg}`,
+        gem:      isManifest ? null                              : `gem install ${pkg}`,
+        cargo:    isManifest ? 'cargo build'                     : `cargo add ${pkg}`,
       };
       if (!CMDS[manager]) {
-        respond(requestId, {}, new Error(`Unknown package manager: ${manager}`));
+        respond(requestId, {}, new Error(isManifest ? `${manager} does not support manifest installs` : `Unknown package manager: ${manager}`));
         break;
       }
       let pkgContainer = null;
@@ -534,6 +540,79 @@ async function handleMessage(msg) {
       // Exit after response is sent — process manager (Docker restart policy, PM2 etc.) restarts with new code
       console.log('[daemon] Update pulled — restarting...');
       setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    case 'git-pull': {
+      const { requestId, serverId: pullServerId, path: pullTargetPath, strategy } = msg;
+      if (!dataPath || !pullServerId) { respond(requestId, {}, new Error('No data path configured on this node')); break; }
+      try {
+        const dataDir = serverDataDir(pullServerId);
+        const hostTarget = toHostPath(pullTargetPath || HOME_CONTAINER);
+        const targetFull = nodePath.resolve(nodePath.join(dataDir, hostTarget.replace(/^\//, '')));
+        if (!targetFull.startsWith(nodePath.resolve(dataDir) + nodePath.sep) && targetFull !== nodePath.resolve(dataDir)) {
+          respond(requestId, {}, new Error('Path traversal detected'));
+          break;
+        }
+        if (!fs.existsSync(nodePath.join(targetFull, '.git'))) {
+          respond(requestId, {}, new Error('Not a git repository. Use Git Clone to clone a repo first.'));
+          break;
+        }
+        const pullArgs = ['-C', targetFull, 'pull'];
+        if (strategy === 'rebase') pullArgs.push('--rebase');
+        else if (strategy === 'merge') { /* default git pull merge */ }
+        else pullArgs.push('--ff-only');
+        console.log(`[server:${pullServerId.slice(0,8)}] Git pull (${strategy || 'ff-only'}) in ${targetFull}`);
+        const result = spawnSync('git', pullArgs, {
+          timeout: 270000, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        });
+        if (result.error) { respond(requestId, {}, result.error); break; }
+        if (result.status !== 0) {
+          respond(requestId, {}, new Error((result.stderr || result.stdout || 'git pull failed').trim()));
+          break;
+        }
+        const output = (result.stdout + result.stderr).trim() || 'Already up to date.';
+        respond(requestId, { output });
+      } catch (err) {
+        respond(requestId, {}, err);
+      }
+      break;
+    }
+
+    case 'git-reset': {
+      const { requestId, serverId: resetServerId, path: resetPath, commit, mode } = msg;
+      if (!dataPath || !resetServerId) { respond(requestId, {}, new Error('No data path configured on this node')); break; }
+      try {
+        const dataDir = serverDataDir(resetServerId);
+        const hostTarget = toHostPath(resetPath || HOME_CONTAINER);
+        const targetFull = nodePath.resolve(nodePath.join(dataDir, hostTarget.replace(/^\//, '')));
+        if (!targetFull.startsWith(nodePath.resolve(dataDir) + nodePath.sep) && targetFull !== nodePath.resolve(dataDir)) {
+          respond(requestId, {}, new Error('Path traversal detected'));
+          break;
+        }
+        if (!fs.existsSync(nodePath.join(targetFull, '.git'))) {
+          respond(requestId, {}, new Error('Not a git repository.'));
+          break;
+        }
+        const resetArgs = ['-C', targetFull, 'reset'];
+        if (mode === 'soft') resetArgs.push('--soft');
+        else if (mode === 'hard') resetArgs.push('--hard');
+        else resetArgs.push('--mixed');
+        resetArgs.push(commit || 'HEAD~1');
+        console.log(`[server:${resetServerId.slice(0,8)}] Git reset --${mode || 'mixed'} ${commit || 'HEAD~1'} in ${targetFull}`);
+        const result = spawnSync('git', resetArgs, {
+          timeout: 30000, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        });
+        if (result.error) { respond(requestId, {}, result.error); break; }
+        if (result.status !== 0) {
+          respond(requestId, {}, new Error((result.stderr || result.stdout || 'git reset failed').trim()));
+          break;
+        }
+        const output = (result.stdout + result.stderr).trim() || 'Reset complete.';
+        respond(requestId, { output });
+      } catch (err) {
+        respond(requestId, {}, err);
+      }
       break;
     }
 

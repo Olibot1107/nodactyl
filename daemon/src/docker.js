@@ -89,12 +89,21 @@ async function getStats(containerId) {
       }), { rx: 0, tx: 0 })
     : { rx: 0, tx: 0 };
 
+  // Container writable-layer size (bytes written on top of the image).
+  // inspect({size:true}) is slightly slower but gives accurate overlay usage.
+  let containerDiskUsed = 0;
+  try {
+    const info = await c.inspect({ size: true });
+    containerDiskUsed = info.SizeRw || 0;
+  } catch {}
+
   return {
     cpu: parseFloat(cpu),
     memory: parseFloat((memUsage / 1024 / 1024).toFixed(1)),
     memoryLimit: parseFloat((memLimit / 1024 / 1024).toFixed(0)),
     pids: stats.pids_stats?.current ?? 0,
     network,
+    containerDiskUsed,
   };
 }
 

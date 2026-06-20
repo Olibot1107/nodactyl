@@ -70,13 +70,13 @@ function statusBadge(status) {
 
 // Which managers support live search and how to fetch results
 const SEARCH = {
-  npm:      { search: npmSearch,       placeholder: 'Search npm packages…',      hint: 'e.g. express   @types/node@^18   lodash@4' },
-  yarn:     { search: npmSearch,       placeholder: 'Search npm packages…',      hint: 'e.g. express   @types/node@^18   lodash@4' },
-  pip:      { search: pypiSearch,      placeholder: 'Search PyPI packages…',     hint: 'e.g. flask   requests==2.31   numpy>=1.0' },
-  pip3:     { search: pypiSearch,      placeholder: 'Search PyPI packages…',     hint: 'e.g. flask   requests==2.31   numpy>=1.0' },
-  composer: { search: composerSearch,  placeholder: 'Search Packagist…',         hint: 'e.g. laravel/framework   monolog/monolog' },
-  gem:      { search: null,            placeholder: 'Enter gem name…',           hint: 'e.g. rails   sinatra   puma' },
-  cargo:    { search: cargoSearch,     placeholder: 'Search crates.io…',         hint: 'e.g. serde   tokio   clap@4' },
+  npm:      { search: npmSearch,       placeholder: 'Search npm packages…',    hint: 'e.g. express   @types/node@^18   lodash@4',   manifestCmd: 'npm install',                   manifestHint: 'Reads package.json in /home/container' },
+  yarn:     { search: npmSearch,       placeholder: 'Search npm packages…',    hint: 'e.g. express   @types/node@^18   lodash@4',   manifestCmd: 'yarn install',                  manifestHint: 'Reads package.json in /home/container' },
+  pip:      { search: pypiSearch,      placeholder: 'Search PyPI packages…',   hint: 'e.g. flask   requests==2.31   numpy>=1.0',   manifestCmd: 'pip install -r requirements.txt', manifestHint: 'Reads requirements.txt in /home/container' },
+  pip3:     { search: pypiSearch,      placeholder: 'Search PyPI packages…',   hint: 'e.g. flask   requests==2.31   numpy>=1.0',   manifestCmd: 'pip3 install -r requirements.txt', manifestHint: 'Reads requirements.txt in /home/container' },
+  composer: { search: composerSearch,  placeholder: 'Search Packagist…',       hint: 'e.g. laravel/framework   monolog/monolog',    manifestCmd: 'composer install',              manifestHint: 'Reads composer.json in /home/container' },
+  gem:      { search: null,            placeholder: 'Enter gem name…',         hint: 'e.g. rails   sinatra   puma',                 manifestCmd: null },
+  cargo:    { search: cargoSearch,     placeholder: 'Search crates.io…',       hint: 'e.g. serde   tokio   clap@4',                 manifestCmd: 'cargo build',                   manifestHint: 'Reads Cargo.toml in /home/container' },
 };
 
 async function npmSearch(q) {
@@ -214,6 +214,12 @@ function buildContent() {
             </div>
             <div id="pkgResults" style="display:none" class="pkg-results"></div>
             <div id="hintText" style="font-size:11.5px;color:var(--muted);margin-top:6px">${esc(cfg.hint)}</div>
+            <div id="manifestSection" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);${cfg.manifestCmd ? '' : 'display:none'}">
+              <button id="manifestBtn" class="btn btn-ghost btn-sm" ${disabled || !cfg.manifestCmd ? 'disabled' : ''} style="font-size:12px">
+                Install from file
+              </button>
+              <span id="manifestCmdLabel" style="font-size:11px;color:var(--muted);margin-left:8px">${esc(cfg.manifestCmd || '')} &mdash; ${esc(cfg.manifestHint || '')}</span>
+            </div>
           </div>
 
         </div>
@@ -246,6 +252,13 @@ function attachListeners() {
       if (input) { input.placeholder = cfg.placeholder; input.value = ''; }
       const hint = document.getElementById('hintText');
       if (hint) hint.textContent = cfg.hint;
+      // Update manifest section for the newly selected manager
+      const manifestSection = document.getElementById('manifestSection');
+      const manifestCmdLabel = document.getElementById('manifestCmdLabel');
+      const mBtn = document.getElementById('manifestBtn');
+      if (manifestSection) manifestSection.style.display = cfg.manifestCmd ? '' : 'none';
+      if (manifestCmdLabel) manifestCmdLabel.textContent = cfg.manifestCmd ? `${cfg.manifestCmd} — ${cfg.manifestHint || ''}` : '';
+      if (mBtn) mBtn.disabled = !cfg.manifestCmd || !canInstall();
       hideResults();
     });
   });
@@ -269,7 +282,11 @@ function attachListeners() {
     });
   }
 
-  document.getElementById('installBtn').addEventListener('click', doInstall);
+  const installBtn = document.getElementById('installBtn');
+  if (installBtn) installBtn.addEventListener('click', () => doInstall(false));
+
+  const manifestBtn = document.getElementById('manifestBtn');
+  if (manifestBtn) manifestBtn.addEventListener('click', () => doInstall(true));
 }
 
 async function runSearch(q) {
@@ -359,18 +376,23 @@ function showStatus(ok, msg) {
   tag.textContent = (ok ? '✓ ' : '✗ ') + msg;
 }
 
-async function doInstall() {
+async function doInstall(fromManifest = false) {
   if (installing || !canInstall()) return;
-  const pkg = (document.getElementById('pkgInput')?.value || '').trim();
-  if (!pkg) { document.getElementById('pkgInput')?.focus(); return; }
+  const pkg = fromManifest ? '' : (document.getElementById('pkgInput')?.value || '').trim();
+  if (!fromManifest && !pkg) { document.getElementById('pkgInput')?.focus(); return; }
   hideResults();
+
+  const cfg = SEARCH[selectedManager];
+  const displayCmd = fromManifest ? (cfg.manifestCmd || `${selectedManager} install`) : `${selectedManager} install ${pkg}`;
 
   installing = true;
   const btn = document.getElementById('installBtn');
+  const mBtn = document.getElementById('manifestBtn');
   if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spinner" style="width:11px;height:11px;border-width:2px;margin-right:6px"></span>Installing…`; }
+  if (mBtn) mBtn.disabled = true;
 
   clearOutput();
-  appendOutput(`$ ${selectedManager} install ${pkg}`);
+  appendOutput(`$ ${displayCmd}`);
 
   subscribeToLogs();
 
@@ -382,6 +404,7 @@ async function doInstall() {
   } finally {
     installing = false;
     if (btn) { btn.disabled = !canInstall(); btn.textContent = 'Install'; }
+    if (mBtn) mBtn.disabled = !canInstall() || !SEARCH[selectedManager]?.manifestCmd;
     unsubscribeLogs();
   }
 }
@@ -400,12 +423,16 @@ function connectSocket() {
     const btn = document.getElementById('installBtn');
     const input = document.getElementById('pkgInput');
 
+    const mBtn = document.getElementById('manifestBtn');
+    const hasMf = !!SEARCH[selectedManager]?.manifestCmd;
     if (canInstall()) {
       if (notice) notice.style.display = 'none';
       if (btn && !installing) btn.disabled = false;
+      if (mBtn && !installing) mBtn.disabled = !hasMf;
       if (input) input.disabled = false;
     } else {
       if (btn && !installing) btn.disabled = true;
+      if (mBtn && !installing) mBtn.disabled = true;
       if (input) input.disabled = true;
     }
   });

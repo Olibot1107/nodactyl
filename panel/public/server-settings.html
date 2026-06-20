@@ -34,8 +34,8 @@ async function init() {
       document.getElementById('content').innerHTML = `<div class="empty-state"><div class="empty-icon" style="font-size:28px">⚠</div><p>This server is suspended. Settings are unavailable until an admin unsuspends it.</p></div>`;
       return;
     }
-    populateForm();
     document.getElementById('content').innerHTML = buildContent();
+    populateForm();
     attachListeners();
   } catch (e) {
     document.getElementById('content').innerHTML = `<div class="empty-state"><p>${esc(e.message)}</p></div>`;
@@ -93,8 +93,8 @@ function buildContent() {
         </div>
         <div class="form-group mb-0">
           <label class="form-label">Startup Command <span class="text-muted">(optional)</span></label>
-          <input class="form-input font-mono" id="fieldStartup" value="${esc(server.startup_command || '')}" placeholder="e.g. java -jar server.jar">
-          <div class="form-hint mt-2">${UI.info} Overrides the Docker image's default entrypoint. Leave blank to use the image default.</div>
+          <input class="form-input font-mono" id="fieldStartup" value="${esc(server.startup_command || '')}" placeholder="e.g. node server.js">
+          <div class="form-hint mt-2">${UI.info} Runs as <code style="font-size:11px;background:var(--bg3);padding:1px 4px;border-radius:3px">/bin/sh -c &lt;command&gt;</code> inside the container. Leave blank to use the image default. You can chain commands: <code style="font-size:11px;background:var(--bg3);padding:1px 4px;border-radius:3px">cd subfolder &amp;&amp; node index.js</code> or use npm scripts: <code style="font-size:11px;background:var(--bg3);padding:1px 4px;border-radius:3px">npm start</code></div>
         </div>
       </div>
 

@@ -107,8 +107,16 @@ function render() {
       </div>
       <div class="stat-card">
         <div class="stat-label">Disk</div>
-        <div class="stat-value" id="statDisk">— MB</div>
+        <div class="stat-value" id="statDisk">—</div>
         <div class="bar-wrap"><div class="bar-fill" id="diskBar" style="width:0%"></div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Net ↓ Rx</div>
+        <div class="stat-value" id="statNetRx" style="font-size:16px">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Net ↑ Tx</div>
+        <div class="stat-value" id="statNetTx" style="font-size:16px">—</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Memory Limit</div>
@@ -489,6 +497,11 @@ function updateStats(stats) {
     diskBar.style.width = Math.min(diskPct, 100) + '%';
     diskBar.className = `bar-fill${diskPct > 80 ? ' danger' : diskPct > 60 ? ' warn' : ''}`;
   }
+
+  const rxEl = document.getElementById('statNetRx');
+  const txEl = document.getElementById('statNetTx');
+  if (rxEl) rxEl.textContent = stats.network ? fmtBytes(stats.network.rx) : '—';
+  if (txEl) txEl.textContent = stats.network ? fmtBytes(stats.network.tx) : '—';
 }
 
 window.addEventListener('beforeunload', () => {
