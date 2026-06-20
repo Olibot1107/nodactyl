@@ -243,7 +243,6 @@ function updateLiveBits() {
 
   if (server.status !== 'running') {
     updateStats({ cpu: 0, memory: 0, memoryLimit: server.memory_limit });
-    isTerminalMode = false;
   }
 
   const termBtn = document.getElementById('terminalModeBtn');
@@ -347,7 +346,7 @@ function connectSocket() {
     if (sid !== serverId) return;
     server.status = status;
     if (status === 'running') { server.started_at = Math.floor(Date.now() / 1000); startUptimeTicker(); }
-    else if (status === 'stopped' || status === 'error') { server.started_at = null; stopUptimeTicker(); }
+    else if (status === 'stopped' || status === 'error') { server.started_at = null; stopUptimeTicker(); isTerminalMode = false; }
     updateLiveBits();
 
     if (status === 'running') {
@@ -432,8 +431,8 @@ async function doAction(action) {
 
 async function doTerminal() {
   if (server.status !== 'stopped') return;
-  isTerminalMode = true;
   server.status = 'starting';
+  isTerminalMode = true;
   updateLiveBits();
   try {
     await API.post(`/servers/${serverId}/action`, { action: 'start', terminalMode: true });
