@@ -300,6 +300,7 @@ router.post('/:id/action', async (req, res) => {
   if (action === 'start') {
     const terminalMode = req.body.terminalMode === true;
     msg.startupCommand = terminalMode ? 'sh' : (server.startup_command || '');
+    db.prepare('UPDATE servers SET terminal_mode = ? WHERE id = ?').run(terminalMode ? 1 : 0, server.id);
     msg.serverConfig = {
       image: server.image,
       portMappings: JSON.parse(server.port_mappings),

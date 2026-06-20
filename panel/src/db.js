@@ -154,6 +154,7 @@ async function init() {
   try { _db.exec(`ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT NULL`); } catch {}
   try { _db.exec(`ALTER TABLE servers ADD COLUMN discord_config TEXT DEFAULT NULL`); } catch {}
   try { _db.exec(`ALTER TABLE presets ADD COLUMN disk_limit INTEGER DEFAULT 0`); } catch {}
+  try { _db.exec(`ALTER TABLE servers ADD COLUMN terminal_mode INTEGER NOT NULL DEFAULT 0`); } catch {}
 
   // Seed default ranks
   const rankCount = prepare('SELECT COUNT(*) as count FROM ranks').get();

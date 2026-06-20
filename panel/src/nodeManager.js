@@ -154,7 +154,7 @@ class NodeManager {
           }
           db.prepare(`UPDATE servers SET status = ?, started_at = strftime('%s','now') WHERE id = ?`).run(msg.status, msg.serverId);
         } else if (msg.status === 'stopped' || msg.status === 'error') {
-          db.prepare(`UPDATE servers SET status = ?, started_at = NULL WHERE id = ?`).run(msg.status, msg.serverId);
+          db.prepare(`UPDATE servers SET status = ?, started_at = NULL, terminal_mode = 0 WHERE id = ?`).run(msg.status, msg.serverId);
         } else {
           db.prepare(`UPDATE servers SET status = ? WHERE id = ?`).run(msg.status, msg.serverId);
         }
