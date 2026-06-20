@@ -98,41 +98,32 @@ function render() {
       <div class="stat-card">
         <div class="stat-label">CPU</div>
         <div class="stat-value" id="statCpu">0.0%</div>
+        <div class="stat-sub">${server.cpu_limit} core limit</div>
         <div class="bar-wrap"><div class="bar-fill" id="cpuBar" style="width:0%"></div></div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Memory</div>
         <div class="stat-value" id="statMem">0 MB</div>
+        <div class="stat-sub">of ${server.memory_limit} MB</div>
         <div class="bar-wrap"><div class="bar-fill" id="memBar" style="width:0%"></div></div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Disk</div>
         <div class="stat-value" id="statDisk">—</div>
+        <div class="stat-sub">${server.disk_limit > 0 ? `of ${server.disk_limit} MB` : 'unlimited'}</div>
         <div class="bar-wrap"><div class="bar-fill" id="diskBar" style="width:0%"></div></div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Net ↓ Rx</div>
-        <div class="stat-value" id="statNetRx" style="font-size:16px">—</div>
+        <div class="stat-value" id="statNetRx">—</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Net ↑ Tx</div>
-        <div class="stat-value" id="statNetTx" style="font-size:16px">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Memory Limit</div>
-        <div class="stat-value">${server.memory_limit} <small style="font-size:14px">MB</small></div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">CPU Limit</div>
-        <div class="stat-value">${server.cpu_limit} <small style="font-size:14px">cores</small></div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Disk Limit</div>
-        <div class="stat-value">${server.disk_limit > 0 ? server.disk_limit + ' <small style="font-size:14px">MB</small>' : '<span style="font-size:14px;color:var(--text-muted)">Unlimited</span>'}</div>
+        <div class="stat-value" id="statNetTx">—</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Uptime</div>
-        <div class="stat-value" id="statUptime" style="font-size:16px">${server.started_at ? '—' : '<span style="font-size:13px;color:var(--text-muted)">Offline</span>'}</div>
+        <div class="stat-value" id="statUptime">${server.started_at ? '—' : '<span style="color:var(--text-muted)">Offline</span>'}</div>
       </div>
     </div>
 
