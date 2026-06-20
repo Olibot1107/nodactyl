@@ -147,6 +147,11 @@ class NodeManager {
         if (!server || server.node_id !== nodeId) break;
 
         if (msg.status === 'running') {
+          // Update container_id first so subscribe-logs (triggered by the Socket.IO emit below)
+          // reads the correct container ID from DB — avoids "no such container" on log subscription.
+          if (msg.containerId) {
+            db.prepare('UPDATE servers SET container_id = ? WHERE id = ?').run(msg.containerId, msg.serverId);
+          }
           db.prepare(`UPDATE servers SET status = ?, started_at = strftime('%s','now') WHERE id = ?`).run(msg.status, msg.serverId);
         } else if (msg.status === 'stopped' || msg.status === 'error') {
           db.prepare(`UPDATE servers SET status = ?, started_at = NULL WHERE id = ?`).run(msg.status, msg.serverId);

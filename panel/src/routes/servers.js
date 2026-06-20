@@ -546,6 +546,62 @@ router.delete('/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+router.post('/:id/stdin', async (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (!nodeManager.isOnline(server.node_id)) return res.status(503).json({ error: 'Node is offline' });
+  if (server.status !== 'running') return res.status(400).json({ error: 'Server is not running' });
+  const { data } = req.body;
+  if (!data || typeof data !== 'string' || data.length > 256) return res.status(400).json({ error: 'Invalid data' });
+  try {
+    await nodeManager.send(server.node_id, {
+      type: 'send-stdin', serverId: server.id, containerId: server.container_id, data,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/packages', async (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  const suspErr = suspendedBlock(server, req.user);
+  if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
+  if (server.status !== 'stopped') return res.status(400).json({ error: 'Server must be stopped to install packages' });
+  if (!nodeManager.isOnline(server.node_id)) return res.status(503).json({ error: 'Node is offline' });
+
+  const VALID_MANAGERS = ['npm', 'yarn', 'pip', 'pip3', 'composer', 'gem', 'cargo'];
+  const { manager, pkg } = req.body;
+
+  if (!manager || !VALID_MANAGERS.includes(manager))
+    return res.status(400).json({ error: 'Invalid package manager' });
+  if (!pkg || typeof pkg !== 'string' || pkg.length > 500)
+    return res.status(400).json({ error: 'Invalid package name' });
+  if (/[;&|`$!'"\\{}()\n\r]/.test(pkg))
+    return res.status(400).json({ error: 'Invalid characters in package name' });
+
+  let envVars = [];
+  try { envVars = JSON.parse(server.env_vars || '[]'); } catch {}
+
+  try {
+    await nodeManager.send(server.node_id, {
+      type: 'install-package',
+      serverId: server.id,
+      image: server.image,
+      envVars,
+      memoryLimit: server.memory_limit,
+      manager,
+      pkg: pkg.trim(),
+    }, { timeout: 300000 });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/:id/stats', async (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });

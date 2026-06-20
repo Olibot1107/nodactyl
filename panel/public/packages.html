@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nodactyl - Packages</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .pm-pills { display:flex; gap:6px; flex-wrap:wrap; }
+    .pm-pill {
+      padding:5px 14px; border-radius:20px; border:1px solid var(--border2);
+      background:var(--bg2); color:var(--muted); font-size:12px; font-weight:500;
+      cursor:pointer; transition:all .15s; user-select:none;
+    }
+    .pm-pill:hover { border-color:var(--primary); color:var(--primary); }
+    .pm-pill.active { background:var(--primary); border-color:var(--primary); color:#fff; }
+
+    .pkg-search-wrap { position:relative; }
+    .pkg-search-input {
+      width:100%; box-sizing:border-box; padding:9px 36px 9px 12px;
+      background:var(--bg3); border:1px solid var(--border2); border-radius:8px;
+      color:var(--text); font-size:13px; outline:none; transition:border-color .15s;
+    }
+    .pkg-search-input:focus { border-color:var(--primary); }
+    .pkg-search-input:disabled { opacity:.5; cursor:not-allowed; }
+    .pkg-search-icon {
+      position:absolute; right:10px; top:50%; transform:translateY(-50%);
+      color:var(--muted); pointer-events:none;
+    }
+
+    .pkg-results {
+      margin-top:6px; border:1px solid var(--border2); border-radius:8px;
+      background:var(--bg2); overflow:hidden;
+    }
+    .pkg-result {
+      padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border);
+      transition:background .1s; display:flex; justify-content:space-between; align-items:flex-start; gap:12px;
+    }
+    .pkg-result:last-child { border-bottom:none; }
+    .pkg-result:hover, .pkg-result.selected { background:var(--bg3); }
+    .pkg-result-name { font-size:13px; font-weight:600; color:var(--text); font-family:monospace; }
+    .pkg-result-version { font-size:11px; color:var(--primary); background:rgba(99,102,241,.12); padding:1px 6px; border-radius:10px; white-space:nowrap; flex-shrink:0; }
+    .pkg-result-desc { font-size:11.5px; color:var(--muted); margin-top:2px; line-height:1.4; }
+    .pkg-no-search { padding:12px 14px; font-size:12px; color:var(--muted); text-align:center; }
+
+    .pkg-output-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+    .pkg-status-ok  { color:#4ade80; background:rgba(34,197,94,.1);  border:1px solid rgba(34,197,94,.2);  padding:6px 12px; border-radius:6px; font-size:12.5px; font-weight:500; }
+    .pkg-status-err { color:#f87171; background:rgba(239,68,68,.1);  border:1px solid rgba(239,68,68,.2);  padding:6px 12px; border-radius:6px; font-size:12.5px; font-weight:500; }
+  </style>
+</head>
+<body>
+<div class="layout" id="app"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/api.js"></script>
+<script>
+requireAuth();
+
+const serverId = location.pathname.match(/^\/server\/([^/]+)/)?.[1] || '';
+let server = null;
+let socket = null;
+let installing = false;
+let selectedManager = 'npm';
+let selectedPkg = '';
+let searchTimer = null;
+
+function statusBadge(status) {
+  return badgeHtml(status).replace('<span ', '<span data-status-badge ');
+}
+
+// Which managers support live search and how to fetch results
+const SEARCH = {
+  npm:      { search: npmSearch,       placeholder: 'Search npm packages…',      hint: 'e.g. express   @types/node@^18   lodash@4' },
+  yarn:     { search: npmSearch,       placeholder: 'Search npm packages…',      hint: 'e.g. express   @types/node@^18   lodash@4' },
+  pip:      { search: pypiSearch,      placeholder: 'Search PyPI packages…',     hint: 'e.g. flask   requests==2.31   numpy>=1.0' },
+  pip3:     { search: pypiSearch,      placeholder: 'Search PyPI packages…',     hint: 'e.g. flask   requests==2.31   numpy>=1.0' },
+  composer: { search: composerSearch,  placeholder: 'Search Packagist…',         hint: 'e.g. laravel/framework   monolog/monolog' },
+  gem:      { search: null,            placeholder: 'Enter gem name…',           hint: 'e.g. rails   sinatra   puma' },
+  cargo:    { search: cargoSearch,     placeholder: 'Search crates.io…',         hint: 'e.g. serde   tokio   clap@4' },
+};
+
+async function npmSearch(q) {
+  const r = await fetch(`https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(q)}&size=7`);
+  const d = await r.json();
+  return (d.objects || []).map(o => ({
+    name: o.package.name,
+    version: o.package.version,
+    description: o.package.description || '',
+  }));
+}
+
+async function pypiSearch(q) {
+  try {
+    const r = await fetch(`https://pypi.org/pypi/${encodeURIComponent(q)}/json`);
+    if (!r.ok) return [];
+    const d = await r.json();
+    return [{ name: d.info.name, version: d.info.version, description: d.info.summary || '' }];
+  } catch { return []; }
+}
+
+async function composerSearch(q) {
+  const r = await fetch(`https://packagist.org/search.json?q=${encodeURIComponent(q)}&per_page=7`);
+  const d = await r.json();
+  return (d.results || []).map(p => ({
+    name: p.name, version: p.latest_version || '', description: p.description || '',
+  }));
+}
+
+async function cargoSearch(q) {
+  const r = await fetch(`https://crates.io/api/v1/crates?q=${encodeURIComponent(q)}&per_page=7`, {
+    headers: { 'User-Agent': 'Nodactyl/1.0' },
+  });
+  const d = await r.json();
+  return (d.crates || []).map(c => ({
+    name: c.name, version: c.newest_version || c.max_version || '', description: c.description || '',
+  }));
+}
+
+const UI = {
+  back:   `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>`,
+  search: `<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>`,
+  spin:   `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin-icon" style="animation:spin .7s linear infinite"><circle cx="12" cy="12" r="9" stroke-dasharray="28 56" stroke-linecap="round"/></svg>`,
+};
+
+async function init() {
+  await loadPanelSettings();
+  document.getElementById('app').innerHTML = buildShell();
+  try {
+    server = await API.get(`/servers/${serverId}`);
+    renderTopbar();
+    document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'packages');
+    document.getElementById('content').innerHTML = buildContent();
+    attachListeners();
+    connectSocket();
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty-state"><p>${esc(e.message)}</p></div>`;
+  }
+}
+
+function buildShell() {
+  return `
+    ${renderSidebar('dashboard')}
+    <div class="main">
+      <div class="topbar" id="topbar">
+        <div class="flex-center gap-2">
+          <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
+          <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+          <span class="page-title">Loading…</span>
+        </div>
+      </div>
+      <div id="serverNavSlot"></div>
+      <div class="content" id="content">
+        <div class="empty-state"><span class="spinner"></span></div>
+      </div>
+    </div>`;
+}
+
+function renderTopbar() {
+  document.getElementById('topbar').innerHTML = `
+    <div class="flex-center gap-2">
+      <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
+      <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+      <a class="topbar-link" href="/server/${serverId}">${esc(server.name)}</a>
+      <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+      <span class="page-title">Packages</span>
+    </div>
+    <div class="flex-center gap-2">
+      ${statusBadge(server.status)}
+      ${server.suspended ? '<span class="badge badge-warn">Suspended</span>' : ''}
+    </div>`;
+}
+
+function canInstall() {
+  return server.status === 'stopped' && !(server.suspended && getUser()?.role !== 'admin');
+}
+
+function buildContent() {
+  const pills = Object.keys(SEARCH).map(m =>
+    `<button class="pm-pill${m === selectedManager ? ' active' : ''}" data-pm="${m}">${m}</button>`
+  ).join('');
+
+  const cfg = SEARCH[selectedManager];
+  const disabled = !canInstall();
+
+  return `
+    <div style="max-width:820px;display:flex;flex-direction:column;gap:16px">
+
+      ${!canInstall() ? `
+        <div class="notice notice-warn" id="warningNotice">
+          ${server.suspended && getUser()?.role !== 'admin'
+            ? 'This server is suspended.'
+            : 'Server must be <strong>stopped</strong> to install packages.'}
+        </div>` : ''}
+
+      <div class="card">
+        <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
+
+          <div>
+            <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Package Manager</div>
+            <div class="pm-pills">${pills}</div>
+          </div>
+
+          <div>
+            <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Package</div>
+            <div style="display:flex;gap:10px;align-items:flex-start">
+              <div class="pkg-search-wrap" style="flex:1">
+                <input id="pkgInput" class="pkg-search-input" placeholder="${esc(cfg.placeholder)}"
+                  autocomplete="off" spellcheck="false" ${disabled ? 'disabled' : ''}>
+                <span class="pkg-search-icon" id="searchIcon">${UI.search}</span>
+              </div>
+              <button id="installBtn" class="btn btn-primary" style="height:38px;white-space:nowrap;padding:0 18px" ${disabled ? 'disabled' : ''}>
+                Install
+              </button>
+            </div>
+            <div id="pkgResults" style="display:none" class="pkg-results"></div>
+            <div id="hintText" style="font-size:11.5px;color:var(--muted);margin-top:6px">${esc(cfg.hint)}</div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="card" id="outputCard" style="display:none">
+        <div class="card-body" style="padding-bottom:12px">
+          <div class="pkg-output-header">
+            <span style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase">Output</span>
+            <div style="display:flex;gap:8px;align-items:center">
+              <span id="statusTag" style="display:none"></span>
+              <button class="btn" style="font-size:11px;padding:3px 10px" onclick="clearOutput()">Clear</button>
+            </div>
+          </div>
+          <div class="console-wrap" id="outputLog" style="height:320px;overflow-y:auto;font-size:12.5px"></div>
+        </div>
+      </div>
+
+    </div>`;
+}
+
+function attachListeners() {
+  document.querySelectorAll('.pm-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      selectedManager = pill.dataset.pm;
+      selectedPkg = '';
+      document.querySelectorAll('.pm-pill').forEach(p => p.classList.toggle('active', p === pill));
+      const cfg = SEARCH[selectedManager];
+      const input = document.getElementById('pkgInput');
+      if (input) { input.placeholder = cfg.placeholder; input.value = ''; }
+      const hint = document.getElementById('hintText');
+      if (hint) hint.textContent = cfg.hint;
+      hideResults();
+    });
+  });
+
+  const input = document.getElementById('pkgInput');
+  if (input) {
+    input.addEventListener('input', () => {
+      selectedPkg = input.value.trim();
+      clearTimeout(searchTimer);
+      const q = input.value.trim();
+      if (q.length < 2) { hideResults(); return; }
+      showSearchIcon(true);
+      searchTimer = setTimeout(() => runSearch(q), 380);
+    });
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); doInstall(); }
+      if (e.key === 'Escape') hideResults();
+    });
+    document.addEventListener('click', e => {
+      if (!e.target.closest('.pkg-search-wrap') && !e.target.closest('.pkg-results')) hideResults();
+    });
+  }
+
+  document.getElementById('installBtn').addEventListener('click', doInstall);
+}
+
+async function runSearch(q) {
+  const fn = SEARCH[selectedManager]?.search;
+  if (!fn) { showSearchIcon(false); return; }
+  try {
+    const results = await fn(q);
+    showSearchIcon(false);
+    renderResults(results, q);
+  } catch { showSearchIcon(false); }
+}
+
+function renderResults(results, q) {
+  const el = document.getElementById('pkgResults');
+  if (!el) return;
+  if (!results.length) {
+    el.style.display = '';
+    el.innerHTML = `<div class="pkg-no-search">No results for "<strong>${esc(q)}</strong>"</div>`;
+    return;
+  }
+  el.style.display = '';
+  el.innerHTML = results.map(r => `
+    <div class="pkg-result" data-name="${esc(r.name)}" data-version="${esc(r.version)}">
+      <div>
+        <div class="pkg-result-name">${esc(r.name)}</div>
+        ${r.description ? `<div class="pkg-result-desc">${esc(r.description.slice(0, 80))}${r.description.length > 80 ? '…' : ''}</div>` : ''}
+      </div>
+      ${r.version ? `<span class="pkg-result-version">${esc(r.version)}</span>` : ''}
+    </div>`).join('');
+  el.querySelectorAll('.pkg-result').forEach(row => {
+    row.addEventListener('click', () => {
+      const name = row.dataset.name;
+      const version = row.dataset.version;
+      const input = document.getElementById('pkgInput');
+      if (input) { input.value = name; selectedPkg = name; }
+      hideResults();
+    });
+  });
+}
+
+function hideResults() {
+  clearTimeout(searchTimer);
+  showSearchIcon(false);
+  const el = document.getElementById('pkgResults');
+  if (el) el.style.display = 'none';
+}
+
+function showSearchIcon(loading) {
+  const el = document.getElementById('searchIcon');
+  if (el) el.innerHTML = loading ? UI.spin : UI.search;
+}
+
+function clearOutput() {
+  const log = document.getElementById('outputLog');
+  if (log) log.innerHTML = '';
+  const tag = document.getElementById('statusTag');
+  if (tag) tag.style.display = 'none';
+}
+
+function appendOutput(raw) {
+  const card = document.getElementById('outputCard');
+  const log = document.getElementById('outputLog');
+  if (!log) return;
+  if (card) card.style.display = '';
+
+  const normalized = String(raw).replace(/\r\n/g, '\n');
+  const lines = normalized.split('\n');
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < lines.length; i++) {
+    if (i === lines.length - 1 && lines[i] === '') continue;
+    const parts = lines[i].split('\r');
+    const line = parts[parts.length - 1];
+    const div = document.createElement('div');
+    div.className = 'log-line';
+    div.innerHTML = ansiToHtml(line);
+    frag.appendChild(div);
+  }
+  log.appendChild(frag);
+  log.scrollTop = log.scrollHeight;
+}
+
+function showStatus(ok, msg) {
+  const tag = document.getElementById('statusTag');
+  if (!tag) return;
+  tag.style.display = '';
+  tag.className = ok ? 'pkg-status-ok' : 'pkg-status-err';
+  tag.textContent = (ok ? '✓ ' : '✗ ') + msg;
+}
+
+async function doInstall() {
+  if (installing || !canInstall()) return;
+  const pkg = (document.getElementById('pkgInput')?.value || '').trim();
+  if (!pkg) { document.getElementById('pkgInput')?.focus(); return; }
+  hideResults();
+
+  installing = true;
+  const btn = document.getElementById('installBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spinner" style="width:11px;height:11px;border-width:2px;margin-right:6px"></span>Installing…`; }
+
+  clearOutput();
+  appendOutput(`$ ${selectedManager} install ${pkg}`);
+
+  subscribeToLogs();
+
+  try {
+    await API.post(`/servers/${serverId}/packages`, { manager: selectedManager, pkg });
+    showStatus(true, 'Install complete');
+  } catch (e) {
+    showStatus(false, e.message || 'Install failed');
+  } finally {
+    installing = false;
+    if (btn) { btn.disabled = !canInstall(); btn.textContent = 'Install'; }
+    unsubscribeLogs();
+  }
+}
+
+// ── Socket.IO ──────────────────────────────────────────────────────────────────
+
+function connectSocket() {
+  socket = io({ auth: { token: getToken() } });
+
+  socket.on('server-status', ({ serverId: sid, status }) => {
+    if (sid !== serverId) return;
+    server.status = status;
+    renderTopbar();
+
+    const notice = document.getElementById('warningNotice');
+    const btn = document.getElementById('installBtn');
+    const input = document.getElementById('pkgInput');
+
+    if (canInstall()) {
+      if (notice) notice.style.display = 'none';
+      if (btn && !installing) btn.disabled = false;
+      if (input) input.disabled = false;
+    } else {
+      if (btn && !installing) btn.disabled = true;
+      if (input) input.disabled = true;
+    }
+  });
+
+  socket.on('log', ({ serverId: sid, line }) => {
+    if (sid !== serverId || !installing) return;
+    appendOutput(line);
+  });
+}
+
+function subscribeToLogs() {
+  if (socket?.connected) socket.emit('subscribe-logs', { serverId, tail: 0 });
+}
+
+function unsubscribeLogs() {
+  if (socket?.connected) socket.emit('unsubscribe-logs', { serverId });
+}
+
+init();
+</script>
+<style>
+@keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</body>
+</html>

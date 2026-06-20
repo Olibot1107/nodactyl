@@ -51,6 +51,7 @@ async function main() {
   app.get('/server/:id', (req, res) => res.sendFile(pub('server.html')));
   app.get('/server/:id/files', (req, res) => res.sendFile(pub('files.html')));
   app.get('/server/:id/settings', (req, res) => res.sendFile(pub('server-settings.html')));
+  app.get('/server/:id/packages', (req, res) => res.sendFile(pub('packages.html')));
   app.get('/account', (req, res) => res.sendFile(pub('account.html')));
   app.get('/admin/users', (req, res) => res.sendFile(pub('admin/users.html')));
   app.get('/admin/presets', (req, res) => res.sendFile(pub('admin/presets.html')));

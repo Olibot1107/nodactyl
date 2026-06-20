@@ -261,23 +261,14 @@ const MAX_LOG_LINES = 1500;
 let _logQueue = [];
 let _logRafPending = false;
 
-function stripAnsi(str) {
-  return str
-    .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')   // CSI sequences (colour, cursor, etc.)
-    .replace(/\x1B\][^\x07\x1B]*(\x07|\x1B\\)/g, '') // OSC sequences
-    .replace(/\x1B[()][A-Z0-9]/g, '')          // Charset designations
-    .replace(/\x1B[@-_]/g, '');                // 2-char escape sequences
-}
-
 function appendLog(raw, isErr) {
-  const clean = stripAnsi(String(raw));
-  // Split on newline; within each segment handle \r by keeping only the last part
-  // (simulates terminal carriage-return overwrite / progress bars)
-  const newlines = clean.split('\n');
+  // Normalize \r\n → \n; bare \r (progress overwrites) → keep final segment
+  const normalized = String(raw).replace(/\r\n/g, '\n');
+  const newlines = normalized.split('\n');
   for (let i = 0; i < newlines.length; i++) {
     if (i === newlines.length - 1 && newlines[i] === '') continue;
     const parts = newlines[i].split('\r');
-    const line = parts[parts.length - 1]; // \r overwrites — keep final value
+    const line = parts[parts.length - 1];
     _logQueue.push({ line, isErr: !!isErr });
   }
   if (!_logRafPending) {
@@ -298,7 +289,7 @@ function _flushLogs() {
   for (const { line, isErr } of batch) {
     const div = document.createElement('div');
     div.className = 'log-line' + (isErr ? ' stderr' : '');
-    div.textContent = line;
+    div.innerHTML = ansiToHtml(line);
     frag.appendChild(div);
   }
   el.appendChild(frag);
@@ -343,11 +334,18 @@ function connectSocket() {
     else if (status === 'stopped' || status === 'error') { server.started_at = null; stopUptimeTicker(); }
     updateLiveBits();
 
-    if (status === 'running') subscribeToLogs();
+    if (status === 'running') {
+      clearConsole();
+      logsTailDone = false;
+      logsSubscribed = false;
+      // Small delay so the daemon's activeContainers map is always up-to-date
+      // before subscribe-logs fires, regardless of panel-DB update timing.
+      setTimeout(subscribeToLogs, 800);
+    }
     if (status !== 'running' && logsSubscribed) {
       socket.emit('unsubscribe-logs', { serverId });
       logsSubscribed = false;
-      logsTailDone = false; // next start after a stop shows tail:100 so startup output is visible
+      logsTailDone = false;
     }
   });
 
@@ -383,17 +381,15 @@ function sendCommand() {
 async function sendSignal() {
   if (server.status !== 'running') return;
   appendLog('$ ^C');
-  try { await API.post(`/servers/${serverId}/action`, { action: 'sigint' }); }
+  // Write \x03 (ETX) to the container's TTY stdin — the terminal discipline converts
+  // it to SIGINT for the foreground process group, same as pressing Ctrl+C in a terminal.
+  // This interrupts the current command without sending kill signals to the whole container.
+  try { await API.post(`/servers/${serverId}/stdin`, { data: '\x03' }); }
   catch (e) { appendLog(`[Error: ${e.message}]`, true); }
 }
 
 async function doAction(action) {
-  // Fresh start: clear old log history so previous run output doesn't flood in
-  if (action === 'start') {
-    clearConsole();          // also clears _logQueue
-    logsTailDone = false;    // show startup tail on next subscribe
-    logsSubscribed = false;
-  }
+  // Console is cleared by the server-status:'running' event handler (covers start, restart, crash-recovery)
   // Optimistic status — disables buttons immediately
   const expectStopped = new Set(['stop', 'kill', 'sigint', 'sigterm']);
   if (expectStopped.has(action)) server.status = 'stopping';

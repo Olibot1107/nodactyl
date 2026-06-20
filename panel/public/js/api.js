@@ -132,6 +132,43 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// Convert ANSI escape sequences to HTML <span> elements.
+// Handles SGR codes: reset (0), bold (1), dim (2), standard + bright foreground colours.
+// HTML special characters in the text are escaped so it's safe for innerHTML.
+function ansiToHtml(raw) {
+  const FG = {
+    30:'#555e6d', 31:'#f87171', 32:'#4ade80', 33:'#facc15',
+    34:'#60a5fa', 35:'#c084fc', 36:'#22d3ee', 37:'#c8d3e0',
+    90:'#6b7280', 91:'#fca5a5', 92:'#86efac', 93:'#fde68a',
+    94:'#93c5fd', 95:'#d8b4fe', 96:'#67e8f9', 97:'#f9fafb',
+  };
+  const s = String(raw);
+  let html = '';
+  let open = 0;
+  let i = 0;
+  while (i < s.length) {
+    if (s.charCodeAt(i) === 0x1b && s[i + 1] === '[') {
+      const end = s.indexOf('m', i + 2);
+      if (end === -1) { i++; continue; }
+      const codes = s.slice(i + 2, end).split(';').map(Number);
+      i = end + 1;
+      for (const n of codes) {
+        if (n === 0 || isNaN(n)) { html += '</span>'.repeat(open); open = 0; }
+        else if (FG[n])  { html += `<span style="color:${FG[n]}">`;     open++; }
+        else if (n === 1){ html += `<span style="font-weight:700">`;     open++; }
+        else if (n === 2){ html += `<span style="opacity:.6">`;          open++; }
+      }
+    } else {
+      const c = s[i++];
+      if      (c === '&') html += '&amp;';
+      else if (c === '<') html += '&lt;';
+      else if (c === '>') html += '&gt;';
+      else                html += c;
+    }
+  }
+  return html + '</span>'.repeat(open);
+}
+
 function badgeHtml(status) {
   const map = {
     running:     'badge-running',
@@ -168,6 +205,8 @@ function renderServerNav(serverId, active) {
       icon: `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>` },
     { key: 'files',   label: 'Files',   href: `/server/${serverId}/files`,
       icon: `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>` },
+    { key: 'packages', label: 'Packages', href: `/server/${serverId}/packages`,
+      icon: `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M21 10V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l2-1.14"/><path d="M16.5 9.4l-9-5.19M12 12l-9-5.19M12 12v9"/><circle cx="18.5" cy="15.5" r="2.5"/><path d="M20.27 17.27L22 19"/></svg>` },
     { key: 'settings',label: 'Settings',href: `/server/${serverId}/settings`,
       icon: `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>` },
   ];
