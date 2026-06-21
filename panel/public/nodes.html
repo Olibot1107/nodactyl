@@ -529,7 +529,13 @@ async function saveEdit() {
     closeEditModal();
     await loadData();
     if (result.ports_reassigned > 0) {
-      alert('Port range updated. ' + result.ports_reassigned + ' server' + (result.ports_reassigned !== 1 ? 's were' : ' was') + ' reassigned to new ports within the range. Servers will use the new ports on next start.');
+      var msg = 'Port range updated. ' + result.ports_reassigned + ' server' + (result.ports_reassigned !== 1 ? 's were' : ' was') + ' reassigned to new ports.';
+      if (result.servers_restarted > 0) {
+        msg += ' ' + result.servers_restarted + ' running server' + (result.servers_restarted !== 1 ? 's are' : ' is') + ' being restarted to apply the new port binding.';
+      } else if (result.ports_reassigned > 0) {
+        msg += ' Stopped servers will use the new port on next start.';
+      }
+      alert(msg);
     }
   } catch(e) {
     errEl.textContent = e.message;

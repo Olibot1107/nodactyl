@@ -75,9 +75,10 @@ router.patch('/:id', requireAdmin, (req, res) => {
 
   // If the port range changed, reassign any server ports that now fall outside it
   let portsReassigned = 0;
+  let serversRestarted = 0;
   if (rangeChanged) {
     const { port_range_start: rangeStart, port_range_end: rangeEnd } = updatedNode;
-    const servers = db.prepare('SELECT id, port_mappings FROM servers WHERE node_id = ?').all(req.params.id);
+    const servers = db.prepare('SELECT id, port_mappings, status, container_id, image, env_vars, memory_limit, cpu_limit, startup_command FROM servers WHERE node_id = ?').all(req.params.id);
 
     // First pass: collect ports that are already in range (don't touch them)
     const portsInUse = new Set();
@@ -90,11 +91,12 @@ router.patch('/:id', requireAdmin, (req, res) => {
       if (hostPort >= rangeStart && hostPort <= rangeEnd) {
         portsInUse.add(Number(hostPort));
       } else {
-        needsReassign.push({ id: s.id, mappings });
+        needsReassign.push({ ...s, mappings });
       }
     }
 
-    // Second pass: assign new in-range ports to out-of-range servers
+    // Second pass: assign new in-range ports and collect which were running
+    const toRestart = [];
     for (const s of needsReassign) {
       let newPort = null;
       for (let p = rangeStart; p <= rangeEnd; p++) {
@@ -105,10 +107,39 @@ router.patch('/:id', requireAdmin, (req, res) => {
       const newMappings = s.mappings.map(m => ({ ...m, hostPort: newPort, containerPort: newPort }));
       db.prepare('UPDATE servers SET port_mappings = ? WHERE id = ?').run(JSON.stringify(newMappings), s.id);
       portsReassigned++;
+      if (s.status === 'running') toRestart.push({ ...s, newMappings });
+    }
+
+    // Background: restart running servers so Docker picks up the new port binding
+    if (nodeManager.isOnline(req.params.id)) {
+      for (const s of toRestart) {
+        serversRestarted++;
+        const msg = {
+          type: 'server-action',
+          serverId: s.id,
+          containerId: s.container_id,
+          action: 'start',
+          startupCommand: s.startup_command || '',
+          serverConfig: {
+            image: s.image,
+            portMappings: s.newMappings,
+            envVars: JSON.parse(s.env_vars),
+            memoryLimit: s.memory_limit,
+            cpuLimit: s.cpu_limit,
+          },
+        };
+        nodeManager.send(s.node_id || req.params.id, msg).then(result => {
+          if (result?.containerId && result.containerId !== s.container_id) {
+            db.prepare('UPDATE servers SET container_id = ? WHERE id = ?').run(result.containerId, s.id);
+          }
+        }).catch(err => {
+          console.error(`[port-reassign] restart failed for ${s.id}:`, err.message);
+        });
+      }
     }
   }
 
-  res.json({ ...updatedNode, ports_reassigned: portsReassigned });
+  res.json({ ...updatedNode, ports_reassigned: portsReassigned, servers_restarted: serversRestarted });
 });
 
 router.delete('/:id', requireAdmin, (req, res) => {
