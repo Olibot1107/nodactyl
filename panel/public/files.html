@@ -72,6 +72,8 @@
   <button class="ctx-item ctx-item-danger" id="ctxDelete">Delete</button>
   <div class="ctx-divider" id="ctxDlDivider"></div>
   <button class="ctx-item" id="ctxDownload">Download</button>
+  <div class="ctx-divider" id="ctxExtractDivider" style="display:none"></div>
+  <button class="ctx-item" id="ctxExtract" style="display:none">Extract here</button>
 </div>
 
 <!-- Modal: new file / folder -->
@@ -272,6 +274,7 @@ const UI = {
   upload:   `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
   plus:     `<svg class="icon" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
   dots:     `<svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" width="12" height="12"><circle cx="12" cy="5" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/></svg>`,
+  extract:  `<svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" width="13" height="13"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/><path d="M9 3h6"/></svg>`,
   info:     `<svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24" width="13" height="13" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`,
   home:     `<svg fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24" width="11" height="11"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
 };
@@ -328,6 +331,13 @@ const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','bmp','ico','tiff','
 
 function getExt(name) { return name.includes('.') ? name.toLowerCase().split('.').pop() : ''; }
 function isImageFile(name) { return IMAGE_EXTS.has(getExt(name)); }
+const ARCHIVE_EXTS = new Set(['zip','tar','gz','bz2','xz','zst','7z','tgz','tbz2','txz']);
+function isArchiveFile(name) {
+  const low = name.toLowerCase();
+  return ARCHIVE_EXTS.has(getExt(name))
+    || low.endsWith('.tar.gz') || low.endsWith('.tar.bz2')
+    || low.endsWith('.tar.xz') || low.endsWith('.tar.zst');
+}
 function isBinaryFile(name) {
   const ext = getExt(name);
   const BINARY_EXTS = new Set([...IMAGE_EXTS,
@@ -372,7 +382,8 @@ async function openImageViewer(filePath) {
   document.getElementById('editorSubline').textContent = relPath;
   document.getElementById('editorEmpty').style.display = 'none';
   document.getElementById('editorArea').classList.remove('open');
-  document.getElementById('sqliteViewer').classList.remove('open');
+  const _bv = document.getElementById('binaryViewer');
+  if (_bv) _bv.style.display = 'none';
   document.getElementById('saveBtn').disabled = true;
   document.getElementById('closeBtn').disabled = false;
   document.getElementById('downloadBtn').disabled = false;
@@ -391,6 +402,30 @@ async function openImageViewer(filePath) {
   }
 }
 
+
+// ── Binary viewer ─────────────────────────────────────────────────────────────
+function openBinaryViewer(filePath, fname) {
+  if (modified && openFile && !confirm('You have unsaved changes. Discard them?')) return;
+  openFile = filePath;
+  modified = false;
+  setActiveRow(filePath);
+  const relPath = filePath.startsWith(HOME + '/') ? '~/' + filePath.slice(HOME.length + 1) : filePath;
+  document.getElementById('editorFilename').textContent = fname;
+  document.getElementById('editorFilename').classList.remove('modified');
+  document.getElementById('editorSubline').textContent = relPath;
+  document.getElementById('editorEmpty').style.display = 'none';
+  document.getElementById('editorArea').classList.remove('open');
+  document.getElementById('imageViewer').classList.remove('open');
+  document.getElementById('imageViewerImg').src = '';
+  const bv = document.getElementById('binaryViewer');
+  bv.style.display = 'flex';
+  document.getElementById('saveBtn').disabled = true;
+  document.getElementById('closeBtn').disabled = false;
+  document.getElementById('downloadBtn').disabled = false;
+  document.getElementById('statusLang').textContent = 'binary';
+  setStatusState('Ready');
+  updateStatusBar();
+}
 
 // ── Breadcrumb: shows ~ for HOME, relative segments below ─────────────────────
 function renderBreadcrumb(path) {
@@ -542,6 +577,11 @@ function buildShell() {
 
           <div id="editorArea"></div>
           <div id="imageViewer"><img id="imageViewerImg" src="" alt=""></div>
+          <div id="binaryViewer" style="display:none;flex:1;min-height:0;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:var(--bg2);color:var(--text-muted);font-size:13px">
+            <div style="font-size:36px;opacity:.15">📦</div>
+            <div>Binary file — cannot display as text</div>
+            <button class="btn btn-ghost btn-sm" id="binaryDownloadBtn" onclick="downloadOpenFile()">Download</button>
+          </div>
 
           <div class="status-bar" id="statusBar">
             <span id="statusPath" style="min-width:0;overflow:hidden;text-overflow:ellipsis">~</span>
@@ -689,11 +729,15 @@ async function openFileForEdit(filePath) {
 
   if (isImageFile(fname)) { openFile = null; modified = false; return openImageViewer(filePath); }
 
+  if (isBinaryFile(fname)) { return openBinaryViewer(filePath, fname); }
+
   setActiveRow(filePath);
   setStatusState('Loading...');
 
-  // Close image viewer if open
+  // Close image/binary viewers if open
   document.getElementById('imageViewer').classList.remove('open');
+  const _bvEdit = document.getElementById('binaryViewer');
+  if (_bvEdit) _bvEdit.style.display = 'none';
 
   let waited = 0;
   while (!monacoReady) {
@@ -771,6 +815,7 @@ function closeFile() {
   document.getElementById('editorArea').classList.remove('open');
   document.getElementById('imageViewer').classList.remove('open');
   document.getElementById('imageViewerImg').src = '';
+  document.getElementById('binaryViewer').style.display = 'none';
   document.getElementById('saveBtn').disabled = true;
   document.getElementById('closeBtn').disabled = true;
   document.getElementById('downloadBtn').disabled = true;
@@ -945,6 +990,7 @@ function uploadSingleFile(file, filePath, onProgress) {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `/api/servers/${serverId}/files/upload?path=${encodeURIComponent(filePath)}`);
     xhr.setRequestHeader('Authorization', 'Bearer ' + getToken());
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
     xhr.upload.addEventListener('progress', e => {
       if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100));
     });
@@ -985,6 +1031,13 @@ function showCtx(e, path, isDir, name) {
       });
     }
   };
+
+  const extractBtn = document.getElementById('ctxExtract');
+  const extractDiv = document.getElementById('ctxExtractDivider');
+  const showExtract = !isDir && isArchiveFile(name);
+  extractBtn.style.display = showExtract ? '' : 'none';
+  extractDiv.style.display = showExtract ? '' : 'none';
+  extractBtn.onclick = () => { closeCtx(); extractArchive(path, name); };
 
   menu.style.display = 'block';
   const rx = e.clientX, ry = e.clientY;
@@ -1120,6 +1173,35 @@ async function confirmDelete({ path, isDir, name }) {
   } catch (e) {
     setStatusState('Error');
     alert('Delete failed: ' + e.message);
+  }
+}
+
+// ── Extract archive ───────────────────────────────────────────────────────────
+async function extractArchive(archivePath, name) {
+  setStatusState(`Extracting ${name}…`);
+  try {
+    const res = await API.post(`/servers/${serverId}/files/extract`, { path: archivePath });
+    setStatusState('Extracted');
+    await listDir(currentPath);
+    setTimeout(() => { if (document.getElementById('statusState')?.textContent === 'Extracted') setStatusState('Ready'); }, 2000);
+    if (res.output && res.output !== 'Extraction complete.') {
+      console.log('[extract]', res.output);
+    }
+  } catch (e) {
+    setStatusState('Ready');
+    const msg = e.message || 'Extraction failed';
+    // Show inline error below status bar instead of blocking alert
+    const sb = document.getElementById('statusBar');
+    if (sb) {
+      const toast = document.createElement('div');
+      toast.style.cssText = 'position:absolute;bottom:32px;left:0;right:0;background:var(--danger,#ef4444);color:#fff;font-size:12px;padding:7px 14px;z-index:50;';
+      toast.textContent = 'Extract failed: ' + msg;
+      sb.parentElement.style.position = 'relative';
+      sb.parentElement.appendChild(toast);
+      setTimeout(() => toast.remove(), 5000);
+    } else {
+      alert('Extract failed: ' + msg);
+    }
   }
 }
 

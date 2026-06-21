@@ -2,6 +2,7 @@ const WebSocket = require('ws');
 const nodePath = require('path');
 const fs = require('fs');
 const os = require('os');
+const zlib = require('zlib');
 const { spawnSync } = require('child_process');
 const docker = require('./docker');
 const hostfs = require('./hostfs');
@@ -577,6 +578,111 @@ async function handleMessage(msg) {
         }
         respond(requestId, {});
       } catch (err) {
+        respond(requestId, {}, err);
+      }
+      break;
+    }
+
+    case 'extract-archive': {
+      const { requestId, serverId, containerId, path: archivePath, dest: destDir } = msg;
+      try {
+        const low = (archivePath || '').toLowerCase();
+
+        // Run a command, throw a clean error on failure or missing executable
+        const runCmd = (cmd, args, opts = {}) => {
+          const r = spawnSync(cmd, args, { timeout: 120000, encoding: 'utf8', ...opts });
+          if (r.error) {
+            if (r.error.code === 'ENOENT') throw new Error(`${cmd} is not installed on this node`);
+            throw r.error;
+          }
+          if (r.status !== 0) throw new Error((r.stderr || r.stdout || `${cmd} failed`).trim());
+          return (r.stdout + (r.stderr || '')).trim();
+        };
+
+        // Try cmd, if not found try fallback, if neither throw msg
+        const runWithFallback = (primary, fallback, notFoundMsg) => {
+          const r = spawnSync(primary.cmd, primary.args, { timeout: 120000, encoding: 'utf8' });
+          if (!r.error) {
+            if (r.status !== 0) throw new Error((r.stderr || r.stdout || `${primary.cmd} failed`).trim());
+            return (r.stdout + (r.stderr || '')).trim();
+          }
+          if (r.error.code !== 'ENOENT') throw r.error;
+          // primary not found — try fallback
+          const r2 = spawnSync(fallback.cmd, fallback.args, { timeout: 120000, encoding: 'utf8' });
+          if (!r2.error) {
+            if (r2.status !== 0) throw new Error((r2.stderr || r2.stdout || `${fallback.cmd} failed`).trim());
+            return (r2.stdout + (r2.stderr || '')).trim();
+          }
+          if (r2.error.code !== 'ENOENT') throw r2.error;
+          throw new Error(notFoundMsg);
+        };
+
+        if (hasDataDir(serverId)) {
+          const dataDir = serverDataDir(serverId);
+          const hostArchive = toHostPath(archivePath);
+          const hostDest = destDir ? toHostPath(destDir) : nodePath.dirname(toHostPath(archivePath));
+          const archiveFull = hostfs.safePath(dataDir, hostArchive);
+          const destFull = hostfs.safePath(dataDir, hostDest);
+          if (!fs.existsSync(archiveFull)) throw new Error('Archive not found');
+          fs.mkdirSync(destFull, { recursive: true });
+          console.log(`[server:${serverId.slice(0,8)}] Extracting ${nodePath.basename(archiveFull)}`);
+
+          let output;
+          if (low.endsWith('.zip')) {
+            output = runWithFallback(
+              { cmd: 'unzip', args: ['-o', archiveFull, '-d', destFull] },
+              { cmd: 'python3', args: ['-m', 'zipfile', '-e', archiveFull, destFull] },
+              'Cannot extract zip: install unzip or python3 on this node'
+            );
+          } else if (low.endsWith('.tar.gz') || low.endsWith('.tgz')) {
+            output = runCmd('tar', ['-xzf', archiveFull, '-C', destFull]);
+          } else if (low.endsWith('.tar.bz2') || low.endsWith('.tbz2')) {
+            output = runCmd('tar', ['-xjf', archiveFull, '-C', destFull]);
+          } else if (low.endsWith('.tar.xz') || low.endsWith('.txz')) {
+            output = runCmd('tar', ['-xJf', archiveFull, '-C', destFull]);
+          } else if (low.endsWith('.tar.zst')) {
+            output = runCmd('tar', ['--zstd', '-xf', archiveFull, '-C', destFull]);
+          } else if (low.endsWith('.tar')) {
+            output = runCmd('tar', ['-xf', archiveFull, '-C', destFull]);
+          } else if (low.endsWith('.gz')) {
+            // single gzip — use built-in zlib, no system command needed
+            const outFull = nodePath.join(destFull, nodePath.basename(archiveFull, '.gz'));
+            const compressed = fs.readFileSync(archiveFull);
+            fs.writeFileSync(outFull, zlib.gunzipSync(compressed));
+            output = 'Extracted.';
+          } else if (low.endsWith('.7z')) {
+            output = runWithFallback(
+              { cmd: '7z',  args: ['x', archiveFull, `-o${destFull}`, '-y'] },
+              { cmd: '7za', args: ['x', archiveFull, `-o${destFull}`, '-y'] },
+              'Cannot extract 7z: install p7zip-full on this node (apt install p7zip-full)'
+            );
+          } else {
+            throw new Error('Unsupported archive format');
+          }
+          respond(requestId, { output: output || 'Extraction complete.' });
+        } else {
+          // Docker fallback — exec inside the running container
+          if (!containerId) throw new Error('No container ID — server must be running to extract files without a data path');
+          const sq = s => `'${String(s).replace(/'/g, "'\\''")}'`;
+          const srcEsc = sq(archivePath);
+          const dstContainerDir = destDir || nodePath.posix.dirname(archivePath);
+          const dstEsc = sq(dstContainerDir);
+          let shellCmd;
+          if (low.endsWith('.zip'))                                  shellCmd = `unzip -o ${srcEsc} -d ${dstEsc} || python3 -m zipfile -e ${srcEsc} ${dstEsc}`;
+          else if (low.endsWith('.tar.gz') || low.endsWith('.tgz')) shellCmd = `tar -xzf ${srcEsc} -C ${dstEsc}`;
+          else if (low.endsWith('.tar.bz2') || low.endsWith('.tbz2')) shellCmd = `tar -xjf ${srcEsc} -C ${dstEsc}`;
+          else if (low.endsWith('.tar.xz') || low.endsWith('.txz')) shellCmd = `tar -xJf ${srcEsc} -C ${dstEsc}`;
+          else if (low.endsWith('.tar.zst'))                         shellCmd = `tar --zstd -xf ${srcEsc} -C ${dstEsc}`;
+          else if (low.endsWith('.tar'))                             shellCmd = `tar -xf ${srcEsc} -C ${dstEsc}`;
+          else if (low.endsWith('.gz'))                              shellCmd = `gunzip -kf ${srcEsc}`;
+          else if (low.endsWith('.7z'))                              shellCmd = `7z x ${srcEsc} -o${dstEsc} -y || 7za x ${srcEsc} -o${dstEsc} -y`;
+          else throw new Error('Unsupported archive format');
+          const lines = [];
+          await docker.execCommand(containerId, `mkdir -p ${dstEsc} && (${shellCmd}) 2>&1`, l => lines.push(l), 120000);
+          respond(requestId, { output: lines.join('').trim() || 'Extraction complete.' });
+        }
+      } catch (err) {
+        console.error(`[daemon] extract-archive error:`, err.message);
         respond(requestId, {}, err);
       }
       break;

@@ -39,6 +39,7 @@ function sendFileError(res, err) {
   const message = err.message || 'File operation failed';
   if (/no such file|not found/i.test(message)) return res.status(404).json({ error: message });
   if (/is a directory|cannot read a directory/i.test(message)) return res.status(400).json({ error: message });
+  if (/unsupported archive|not installed on this node|cannot extract/i.test(message)) return res.status(400).json({ error: message });
   return res.status(500).json({ error: message });
 }
 
@@ -630,6 +631,26 @@ router.post('/:id/files/git-reset', async (req, res) => {
       { timeout: 30000 }
     );
     if (req.user.role !== 'admin') audit(req.user.id, server.id, 'file.git_reset', { commit: commit || 'HEAD~1', mode: resetMode }, req);
+    res.json(result);
+  } catch (err) { sendFileError(res, err); }
+});
+
+router.post('/:id/files/extract', async (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
+  const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
+  const accessError = fileAccessError(server);
+  if (accessError) return res.status(accessError.status).json({ error: accessError.error });
+  const { path: archivePath, dest } = req.body;
+  if (!archivePath) return res.status(400).json({ error: 'path is required' });
+  try {
+    const result = await nodeManager.send(
+      server.node_id,
+      fileMsg(server, { type: 'extract-archive', path: archivePath, dest: dest || null }),
+      { timeout: 120000 }
+    );
+    if (req.user.role !== 'admin') audit(req.user.id, server.id, 'file.extract', { path: archivePath }, req);
     res.json(result);
   } catch (err) { sendFileError(res, err); }
 });

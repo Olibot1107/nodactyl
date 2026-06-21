@@ -89,4 +89,4 @@ function getDiskUsage(dir) {
   return bytes;
 }
 
-module.exports = { listFiles, readFile, readFileBinary, writeFile, createDirectory, deleteFile, renameFile, getDiskUsage };
+module.exports = { safePath, listFiles, readFile, readFileBinary, writeFile, createDirectory, deleteFile, renameFile, getDiskUsage };

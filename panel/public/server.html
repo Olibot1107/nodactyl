@@ -23,6 +23,7 @@ let statsInterval = null;
 let logsSubscribed = false;
 let logsTailDone = false;
 let isTerminalMode = false;
+let liveScroll = true;
 
 const UI = {
   arrowLeft: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>',
@@ -36,6 +37,7 @@ const UI = {
   clear: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>',
   termMode: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 9l4 3-4 3"/><path d="M13 15h4"/></svg>',
   copy: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>',
+  live: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>',
   upload: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>',
   link: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>',
   edit: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
@@ -64,6 +66,7 @@ async function init() {
     if (server.status === 'running' && server.terminal_mode) isTerminalMode = true;
     document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'console');
     render();
+    setupConsoleScrollDetect();
     connectSocket();
     startStats();
     if (server.started_at) startUptimeTicker();
@@ -141,6 +144,7 @@ function render() {
           <div class="card-title">${UI.terminal} Console <span id="termModeBadge" style="display:none;font-size:10px;font-weight:600;background:var(--primary);color:#fff;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle;letter-spacing:.04em">TERMINAL MODE</span></div>
           <div class="console-header-actions">
             <button class="btn btn-ghost btn-sm" id="terminalModeBtn" onclick="doTerminal()">${UI.termMode} Terminal</button>
+            <button class="btn btn-ghost btn-sm" id="liveScrollBtn" onclick="toggleLiveScroll()" title="Toggle live scroll" style="color:var(--success,#22c55e)">${UI.live} Live</button>
             <button class="btn btn-ghost btn-sm" onclick="copyConsole()" title="Copy all output">${UI.copy} Copy</button>
             <button class="btn btn-ghost btn-sm" onclick="clearConsole()">${UI.clear} Clear</button>
             ${(user?.role === 'admin' || server?.owner_id === user?.id || (Array.isArray(server?.member_permissions) && server.member_permissions.includes('sharelog'))) ? `<button class="btn btn-ghost btn-sm" onclick="openLogShareModal()" title="Share logs">${UI.upload} Share</button>` : ''}
@@ -322,7 +326,7 @@ function _flushLogs() {
   // Prune oldest lines to stay under cap
   while (el.childElementCount > MAX_LOG_LINES) el.removeChild(el.firstChild);
 
-  if (nearBottom) el.scrollTop = el.scrollHeight;
+  if (nearBottom || liveScroll) el.scrollTop = el.scrollHeight;
   if (_logQueue.length) { _logRafPending = true; requestAnimationFrame(_flushLogs); }
 }
 
@@ -336,6 +340,35 @@ function clearConsole() {
   _logQueue = [];
   const el = document.getElementById('consoleOut');
   if (el) el.innerHTML = '';
+}
+
+function toggleLiveScroll() {
+  liveScroll = !liveScroll;
+  const btn = document.getElementById('liveScrollBtn');
+  if (btn) {
+    btn.style.color = liveScroll ? 'var(--success,#22c55e)' : '';
+    btn.title = liveScroll ? 'Live scroll ON — click to pause' : 'Live scroll OFF — click to follow';
+  }
+  if (liveScroll) {
+    const el = document.getElementById('consoleOut');
+    if (el) el.scrollTop = el.scrollHeight;
+  }
+}
+
+function setupConsoleScrollDetect() {
+  const el = document.getElementById('consoleOut');
+  if (!el) return;
+  el.addEventListener('scroll', () => {
+    const atBottom = el.scrollHeight - el.clientHeight - el.scrollTop < 150;
+    if (!atBottom && liveScroll) {
+      liveScroll = false;
+      const btn = document.getElementById('liveScrollBtn');
+      if (btn) {
+        btn.style.color = '';
+        btn.title = 'Live scroll OFF — click to follow';
+      }
+    }
+  }, { passive: true });
 }
 
 function connectSocket() {
