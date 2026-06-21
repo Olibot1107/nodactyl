@@ -22,6 +22,8 @@ function cookieOpts() { return { httpOnly: true, maxAge: 86400000, sameSite: 'st
 // ── Setup: generate secret + QR code ─────────────────────────────────────────
 router.post('/setup', requireAuth, async (req, res) => {
   try {
+    const setting = db.prepare("SELECT value FROM settings WHERE key = 'totp_enabled'").get()?.value;
+    if (setting === '0') return res.status(403).json({ error: '2FA has been disabled by the panel administrator' });
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
     if (user.totp_enabled) return res.status(400).json({ error: '2FA is already enabled' });
 

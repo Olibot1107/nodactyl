@@ -175,6 +175,25 @@
         </button>
       </form>
 
+      <!-- 2FA step (hidden until required) -->
+      <div id="mfaStep" style="display:none">
+        <div class="auth-divider"></div>
+        <p style="font-size:13px;color:var(--text-muted);margin:0 0 14px;text-align:center">
+          Enter the 6-digit code from your authenticator app.
+        </p>
+        <div class="form-group" style="margin-bottom:14px">
+          <label class="form-label">Authentication Code</label>
+          <input type="text" class="form-input" id="totpCode" inputmode="numeric" autocomplete="one-time-code"
+            placeholder="000000" maxlength="6" style="letter-spacing:.25em;font-size:18px;text-align:center">
+        </div>
+        <button class="btn btn-primary w-full" style="justify-content:center;padding:9px" id="totpBtn" onclick="submitTotp()">
+          Verify
+        </button>
+        <button class="btn btn-ghost w-full" style="justify-content:center;padding:7px;margin-top:6px" onclick="cancelMfa()">
+          Back
+        </button>
+      </div>
+
       <div id="passkeySection" style="display:none">
         <div class="auth-divider"></div>
         <button onclick="passkeyLogin()" class="btn btn-ghost passkey-btn" id="passkeyBtn">
@@ -264,7 +283,8 @@
     let showOauth = false;
     if (s.discord_enabled === '1') { document.getElementById('discordSection').style.display = ''; showOauth = true; }
     if (s.github_enabled  === '1') { document.getElementById('githubSection').style.display  = ''; showOauth = true; }
-    if (showOauth) document.getElementById('oauthSection').style.display = '';
+    if (showOauth) { document.getElementById('oauthSection').style.display = ''; document.getElementById('oauthSection').dataset.visible = '1'; }
+    if (s.passkeys_enabled !== '0' && window.PublicKeyCredential) document.getElementById('passkeySection').style.display = '';
   }).catch(() => {});
 
   function loginWithDiscord() {
@@ -275,8 +295,9 @@
     window.location.href = '/api/connectors/github/authorize?action=login';
   }
 
-  // Show passkey button if WebAuthn is supported
-  if (window.PublicKeyCredential) document.getElementById('passkeySection').style.display = '';
+  // Show passkey button if WebAuthn is supported AND passkeys not disabled by admin
+  // (passkeys_enabled is absent = default on; only hidden when explicitly '0')
+  // The settings fetch below handles this — don't show here
 
   function _b64ToBuf(b64url) {
     const pad = '='.repeat((4 - b64url.length % 4) % 4);
@@ -342,6 +363,45 @@
     }
   }
 
+  let _mfaToken = null;
+
+  function cancelMfa() {
+    _mfaToken = null;
+    document.getElementById('mfaStep').style.display = 'none';
+    document.getElementById('loginForm').style.display = '';
+    document.getElementById('passkeySection').style.display = window.PublicKeyCredential ? '' : 'none';
+    document.getElementById('oauthSection').style.display = document.getElementById('oauthSection').dataset.visible === '1' ? '' : 'none';
+  }
+
+  async function submitTotp() {
+    const btn = document.getElementById('totpBtn');
+    const err = document.getElementById('loginError');
+    const code = document.getElementById('totpCode').value.trim();
+    err.classList.remove('show');
+    if (!code) { err.textContent = 'Enter the 6-digit code.'; err.classList.add('show'); return; }
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Verifying…';
+    try {
+      const res = await fetch('/api/totp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mfaToken: _mfaToken, code }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      window.location.href = '/dashboard';
+    } catch (e) {
+      err.textContent = e.message;
+      err.classList.add('show');
+      btn.innerHTML = 'Verify';
+      btn.disabled = false;
+    }
+  }
+
+  document.getElementById('totpCode').addEventListener('keydown', e => { if (e.key === 'Enter') submitTotp(); });
+
   document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = document.getElementById('loginBtn');
@@ -361,6 +421,20 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+
+      if (data.requires2FA) {
+        _mfaToken = data.mfaToken;
+        document.getElementById('loginForm').style.display = 'none';
+        document.getElementById('passkeySection').style.display = 'none';
+        document.getElementById('oauthSection').style.display = 'none';
+        document.getElementById('mfaStep').style.display = '';
+        document.getElementById('totpCode').value = '';
+        document.getElementById('totpCode').focus();
+        btn.innerHTML = 'Sign In';
+        btn.disabled = false;
+        return;
+      }
+
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
       window.location.href = '/dashboard';

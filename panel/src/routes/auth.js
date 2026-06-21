@@ -41,6 +41,7 @@ function userWithRank(user) {
     role: user.role,
     avatar: user.avatar || null,
     rank: rank || null,
+    totp_enabled: user.totp_enabled === 1,
   };
 }
 
@@ -76,6 +77,12 @@ router.post('/login', loginLimiter, (req, res) => {
   }
   if (user.suspended) {
     return res.status(403).json({ error: 'Your account has been suspended. Contact an administrator.' });
+  }
+
+  const totpGloballyEnabled = db.prepare("SELECT value FROM settings WHERE key = 'totp_enabled'").get()?.value;
+  if (user.totp_enabled && totpGloballyEnabled !== '0') {
+    const mfaToken = jwt.sign({ id: user.id, scope: 'mfa' }, JWT_SECRET, { expiresIn: '5m' });
+    return res.json({ requires2FA: true, mfaToken });
   }
 
   const token = jwt.sign(

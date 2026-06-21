@@ -144,6 +144,12 @@ function render() {
         </div>
       </div>
 
+      <div class="card mb-4" id="totpCard">
+        <div class="card-title mb-1">Two-Factor Authentication</div>
+        <p style="font-size:13px;color:var(--text-muted);margin:0 0 16px">Add an extra layer of security with an authenticator app like Authy or Google Authenticator.</p>
+        <div id="totpStatus"></div>
+      </div>
+
       <div class="card mb-4" id="passkeyCard" style="display:none">
         <div class="card-title mb-1">Passkeys</div>
         <p style="font-size:13px;color:var(--text-muted);margin:0 0 16px">Sign in without a password using your device's biometrics or PIN.</p>
@@ -183,6 +189,7 @@ function render() {
     </div>`;
 
   document.getElementById('deleteModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeDeleteModal(); });
+  renderTotpCard();
   loadPasskeys();
   document.getElementById('avatarFile').addEventListener('change', function() {
     if (this.files[0]) handleFile(this.files[0]);
@@ -354,6 +361,95 @@ async function confirmDelete() {
   }
 }
 
+// ── Two-Factor Authentication ─────────────────────────────────────────────────
+function renderTotpCard() {
+  const s = getPanelSettings();
+  if (s.totp_enabled === '0') { document.getElementById('totpCard').style.display = 'none'; return; }
+  document.getElementById('totpCard').style.display = '';
+  const enabled = me.totp_enabled;
+  const el = document.getElementById('totpStatus');
+  if (!el) return;
+  if (enabled) {
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:3px 10px;border-radius:99px;background:rgba(34,197,94,.12);color:#22c55e;border:1px solid rgba(34,197,94,.25)">
+          <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          Enabled
+        </span>
+      </div>
+      <div class="alert alert-error" id="totpDisableErr"></div>
+      <div class="form-group mb-3">
+        <label class="form-label">Confirm password to disable</label>
+        <input type="password" class="form-input" id="totpDisablePw" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="disableTotp()">Disable 2FA</button>`;
+  } else {
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:3px 10px;border-radius:99px;background:rgba(239,68,68,.1);color:#f87171;border:1px solid rgba(239,68,68,.2)">
+          Not enabled
+        </span>
+      </div>
+      <div class="alert alert-error" id="totpSetupErr"></div>
+      <div id="totpSetupFlow"></div>
+      <button class="btn btn-primary btn-sm" id="totpSetupBtn" onclick="startTotpSetup()">Set up 2FA</button>`;
+  }
+}
+
+async function startTotpSetup() {
+  const btn = document.getElementById('totpSetupBtn');
+  const errEl = document.getElementById('totpSetupErr');
+  errEl?.classList.remove('show');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const { secret, qrCodeUrl } = await API.post('/totp/setup', {});
+    document.getElementById('totpSetupFlow').innerHTML = `
+      <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px">Scan this QR code with Authy, Google Authenticator, or any TOTP app, then enter the 6-digit code to confirm.</p>
+      <div style="margin-bottom:14px;display:flex;flex-direction:column;align-items:flex-start;gap:10px">
+        <img src="${esc(qrCodeUrl)}" style="width:180px;height:180px;border-radius:8px;border:1px solid var(--border)" alt="QR Code">
+        <details style="font-size:12px;color:var(--text-muted)">
+          <summary style="cursor:pointer">Can't scan? Enter key manually</summary>
+          <code style="display:block;margin-top:6px;padding:6px 10px;background:var(--bg2);border-radius:6px;font-size:11px;word-break:break-all;color:var(--text)">${esc(secret)}</code>
+        </details>
+      </div>
+      <div class="form-group mb-3">
+        <label class="form-label">Verification Code</label>
+        <input type="text" class="form-input" id="totpVerifyCode" inputmode="numeric" autocomplete="one-time-code"
+          placeholder="000000" maxlength="6" style="letter-spacing:.2em;font-size:18px;max-width:160px">
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="confirmTotpSetup()">Confirm &amp; Enable</button>`;
+    btn.style.display = 'none';
+  } catch (e) {
+    errEl.textContent = e.message; errEl.classList.add('show');
+    btn.disabled = false; btn.innerHTML = 'Set up 2FA';
+  }
+}
+
+async function confirmTotpSetup() {
+  const code = document.getElementById('totpVerifyCode').value.trim();
+  const errEl = document.getElementById('totpSetupErr');
+  errEl?.classList.remove('show');
+  if (!code) { errEl.textContent = 'Enter the 6-digit code.'; errEl.classList.add('show'); return; }
+  try {
+    await API.post('/totp/enable', { code });
+    me.totp_enabled = true;
+    renderTotpCard();
+  } catch (e) { errEl.textContent = e.message; errEl.classList.add('show'); }
+}
+
+async function disableTotp() {
+  const password = document.getElementById('totpDisablePw').value;
+  const errEl = document.getElementById('totpDisableErr');
+  errEl?.classList.remove('show');
+  if (!password) { errEl.textContent = 'Enter your password.'; errEl.classList.add('show'); return; }
+  try {
+    await API.post('/totp/disable', { password });
+    me.totp_enabled = false;
+    renderTotpCard();
+  } catch (e) { errEl.textContent = e.message; errEl.classList.add('show'); }
+}
+
 // ── Passkeys ──────────────────────────────────────────────────────────────────
 function _b64ToBuf(b64url) {
   const pad = '='.repeat((4 - b64url.length % 4) % 4);
@@ -365,7 +461,8 @@ function _bufToB64(buf) {
 }
 
 async function loadPasskeys() {
-  if (!window.PublicKeyCredential) return;
+  const s = getPanelSettings();
+  if (!window.PublicKeyCredential || s.passkeys_enabled === '0') return;
   document.getElementById('passkeyCard').style.display = '';
   try {
     const keys = await API.get('/passkey/list');

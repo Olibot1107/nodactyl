@@ -171,6 +171,8 @@ async function init() {
   try { _db.exec(`CREATE TABLE IF NOT EXISTS server_schedules (id TEXT PRIMARY KEY, server_id TEXT NOT NULL, action TEXT NOT NULL, hour INTEGER NOT NULL, minute INTEGER NOT NULL, days TEXT DEFAULT '[]', enabled INTEGER DEFAULT 1, last_run INTEGER DEFAULT NULL, created_at INTEGER DEFAULT (strftime('%s','now')))`); } catch {}
   try { _db.exec(`DROP TABLE IF EXISTS push_subscriptions`); } catch {}
   try { _db.exec(`DELETE FROM settings WHERE key IN ('vapid_public_key', 'vapid_private_key')`); } catch {}
+  try { _db.exec(`ALTER TABLE users ADD COLUMN totp_secret TEXT DEFAULT NULL`); } catch {}
+  try { _db.exec(`ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0`); } catch {}
   try { _db.exec(`CREATE TABLE IF NOT EXISTS passkeys (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, credential_id TEXT NOT NULL UNIQUE, public_key TEXT NOT NULL, counter INTEGER DEFAULT 0, name TEXT DEFAULT 'Passkey', created_at INTEGER DEFAULT (strftime('%s','now')))`); } catch {}
 
   // Seed default ranks

@@ -44,6 +44,7 @@ async function main() {
   const settingsRoutes = require('./routes/settings');
   const auditRoutes = require('./routes/audit');
   const passkeyRoutes = require('./routes/passkey');
+  const totpRoutes = require('./routes/totp');
   const app = express();
   const httpServer = http.createServer(app);
   const io = new SocketIO(httpServer);
@@ -68,6 +69,7 @@ async function main() {
   app.use('/api/settings', settingsRoutes);
   app.use('/api/audit', auditRoutes);
   app.use('/api/passkey', passkeyRoutes);
+  app.use('/api/totp', totpRoutes);
 
   app.get('/api/random-name', requireAuth, (req, res) => {
     const words = getWords();

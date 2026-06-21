@@ -78,6 +78,7 @@
     }
     .copy-hint:hover { border-color: var(--primary); }
     .copy-hint svg { width: 12px; height: 12px; flex-shrink: 0; opacity: .6; }
+    .toggle-switch.orange input:checked + .toggle-track { background: var(--primary); }
   </style>
 </head>
 <body>
@@ -152,9 +153,24 @@ function callbackUrl(provider) {
   return location.origin + '/api/connectors/' + provider + '/callback';
 }
 
+function totpBadge() {
+  const on = settings.totp_enabled !== '0';
+  return on
+    ? `<span style="display:inline-flex;align-items:center;font-size:11px;font-weight:600;color:#4ade80"><span class="status-dot ok"></span>Enabled</span>`
+    : `<span style="display:inline-flex;align-items:center;font-size:11px;font-weight:600;color:var(--text-dim)"><span class="status-dot off"></span>Disabled</span>`;
+}
+function passkeyBadge() {
+  const on = settings.passkeys_enabled !== '0';
+  return on
+    ? `<span style="display:inline-flex;align-items:center;font-size:11px;font-weight:600;color:#4ade80"><span class="status-dot ok"></span>Enabled</span>`
+    : `<span style="display:inline-flex;align-items:center;font-size:11px;font-weight:600;color:var(--text-dim)"><span class="status-dot off"></span>Disabled</span>`;
+}
+
 function render() {
   const discordEnabled = settings.discord_enabled === '1';
   const githubEnabled  = settings.github_enabled  === '1';
+  const totpEnabled    = settings.totp_enabled    !== '0';
+  const passkeysEnabled = settings.passkeys_enabled !== '0';
   const discordCb = esc(callbackUrl('discord'));
   const githubCb  = esc(callbackUrl('github'));
 
@@ -287,6 +303,64 @@ function render() {
         </div>
       </div>
     </div>
+    <div class="connector-admin-card">
+      <div class="connector-admin-header">
+        <div class="connector-service-icon" style="background:var(--primary)">
+          <svg width="22" height="22" fill="none" stroke="white" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+        </div>
+        <div class="connector-header-info">
+          <div class="connector-header-name">Two-Factor Authentication</div>
+          <div class="connector-header-sub">TOTP 2FA — Authy, Google Authenticator, etc.</div>
+        </div>
+        ${totpBadge()}
+      </div>
+      <div class="connector-admin-body">
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Allow users to enable 2FA</div>
+            <div class="toggle-sub">When off, the 2FA option is hidden from accounts and existing 2FA is bypassed at login</div>
+          </div>
+          <label class="toggle-switch orange">
+            <input type="checkbox" id="totp_enabled" ${totpEnabled ? 'checked' : ''}>
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);line-height:1.7;margin-bottom:18px">
+          Users can set up TOTP 2FA from their account page. Each user controls their own — this toggle enables or disables the feature panel-wide.
+        </div>
+        <button class="btn btn-primary" id="totpSaveBtn" onclick="saveTotp()">Save</button>
+      </div>
+    </div>
+
+    <div class="connector-admin-card">
+      <div class="connector-admin-header">
+        <div class="connector-service-icon" style="background:#6366f1">
+          <svg width="22" height="22" fill="none" stroke="white" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="8" cy="8" r="4"/><path d="M14 8h6m-3-3v6"/><path d="M2 20v-1a6 6 0 019.33-5"/></svg>
+        </div>
+        <div class="connector-header-info">
+          <div class="connector-header-name">Passkeys</div>
+          <div class="connector-header-sub">WebAuthn — biometric or device PIN login</div>
+        </div>
+        ${passkeyBadge()}
+      </div>
+      <div class="connector-admin-body">
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Allow users to register passkeys</div>
+            <div class="toggle-sub">When off, the passkey login button and account registration are hidden</div>
+          </div>
+          <label class="toggle-switch orange">
+            <input type="checkbox" id="passkeys_enabled" ${passkeysEnabled ? 'checked' : ''}>
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);line-height:1.7;margin-bottom:18px">
+          Passkeys let users sign in using Face ID, Touch ID, Windows Hello, or a hardware key — no password needed. Requires a modern browser.
+        </div>
+        <button class="btn btn-primary" id="passkeysSaveBtn" onclick="savePasskeys()">Save</button>
+      </div>
+    </div>
+
     </div>`;
 }
 
@@ -365,6 +439,28 @@ async function clearGithub() {
     render();
     showOk('GitHub connector cleared.');
   } catch (e) { showErr(e.message); }
+}
+
+async function saveTotp() {
+  const btn = document.getElementById('totpSaveBtn');
+  btn.innerHTML = '<span class="spinner"></span> Saving…'; btn.disabled = true;
+  try {
+    await API.patch('/settings', { totp_enabled: document.getElementById('totp_enabled').checked ? '1' : '0' });
+    settings = await API.get('/settings');
+    render();
+    showOk('2FA setting saved.');
+  } catch (e) { showErr(e.message); } finally { btn.innerHTML = 'Save'; btn.disabled = false; }
+}
+
+async function savePasskeys() {
+  const btn = document.getElementById('passkeysSaveBtn');
+  btn.innerHTML = '<span class="spinner"></span> Saving…'; btn.disabled = true;
+  try {
+    await API.patch('/settings', { passkeys_enabled: document.getElementById('passkeys_enabled').checked ? '1' : '0' });
+    settings = await API.get('/settings');
+    render();
+    showOk('Passkeys setting saved.');
+  } catch (e) { showErr(e.message); } finally { btn.innerHTML = 'Save'; btn.disabled = false; }
 }
 
 function showErr(msg) { const el = document.getElementById('pageError'); el.textContent = msg; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 5000); }

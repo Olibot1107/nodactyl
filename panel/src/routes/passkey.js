@@ -25,6 +25,8 @@ function origin(req) { return `${req.protocol}://${req.get('host')}`; }
 
 router.post('/register/options', requireAuth, async (req, res) => {
   try {
+    const globalOn = db.prepare("SELECT value FROM settings WHERE key = 'passkeys_enabled'").get()?.value;
+    if (globalOn === '0') return res.status(403).json({ error: 'Passkeys have been disabled by the administrator' });
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
     const existing = db.prepare('SELECT credential_id FROM passkeys WHERE user_id = ?').all(req.user.id);
 
@@ -54,6 +56,8 @@ router.post('/register/options', requireAuth, async (req, res) => {
 
 router.post('/register/verify', requireAuth, async (req, res) => {
   try {
+    const globalOn = db.prepare("SELECT value FROM settings WHERE key = 'passkeys_enabled'").get()?.value;
+    if (globalOn === '0') return res.status(403).json({ error: 'Passkeys have been disabled by the administrator' });
     const { credential, name } = req.body;
 
     let foundChallenge = null;
