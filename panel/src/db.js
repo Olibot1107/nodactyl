@@ -165,6 +165,9 @@ async function init() {
   try { _db.exec(`ALTER TABLE users ADD COLUMN github_username TEXT DEFAULT NULL`); } catch {}
   try { _db.exec(`ALTER TABLE presets ADD COLUMN images TEXT DEFAULT '[]'`); } catch {}
   try { _db.exec(`ALTER TABLE nodes ADD COLUMN ip_address TEXT DEFAULT ''`); } catch {}
+  try { _db.exec(`CREATE TABLE IF NOT EXISTS audit_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, server_id TEXT, action TEXT NOT NULL, metadata TEXT DEFAULT '{}', ip TEXT, created_at INTEGER DEFAULT (strftime('%s','now')))`); } catch {}
+  try { _db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at DESC)`); } catch {}
+  try { _db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id)`); } catch {}
 
   // Seed default ranks
   const rankCount = prepare('SELECT COUNT(*) as count FROM ranks').get();

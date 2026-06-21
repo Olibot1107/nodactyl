@@ -85,6 +85,7 @@ function toHostPath(containerPath) {
 // Map of serverId → { stream, containerId } so we can detect stale streams by container ID
 const activeLogStreams = new Map();
 const pendingLogSubs = new Set();
+let ownNodeId = null; // set on auth-result; used to ignore Docker events from other daemons
 // Ground truth: what container is currently running for each server.
 // Updated on every start action and Docker start event so subscribe-logs
 // always attaches to the real live container, not whatever stale ID the panel DB has.
@@ -147,8 +148,10 @@ function envWithPythonPath(serverId, envVars) {
 async function handleMessage(msg) {
   switch (msg.type) {
     case 'auth-result': {
-      if (msg.success) console.log(`[daemon] Authenticated as node "${msg.name}"`);
-      else { console.error('[daemon] Auth failed:', msg.error); process.exit(1); }
+      if (msg.success) {
+        ownNodeId = msg.nodeId;
+        console.log(`[daemon] Authenticated as node "${msg.name}" (${ownNodeId})`);
+      } else { console.error('[daemon] Auth failed:', msg.error); process.exit(1); }
       break;
     }
 
@@ -224,7 +227,7 @@ async function handleMessage(msg) {
         }
 
         const container = await docker.createContainer({
-          serverId, image, portMappings,
+          serverId, nodeId: ownNodeId, image, portMappings,
           envVars: envWithPythonPath(serverId, envVars),
           memoryLimit, cpuLimit, binds,
           startupCommand: startupCommand || '',
@@ -259,6 +262,7 @@ async function handleMessage(msg) {
 
           const newContainer = await docker.createContainer({
             serverId,
+            nodeId: ownNodeId,
             image: serverConfig.image,
             portMappings: serverConfig.portMappings || [],
             envVars: envWithPythonPath(serverId, serverConfig.envVars || []),
@@ -282,19 +286,19 @@ async function handleMessage(msg) {
 
     case 'delete-server': {
       const { requestId, serverId, containerId } = msg;
-      try {
-        await docker.containerAction(containerId, 'remove');
-        if (dataPath && serverId) {
-          const dir = serverDataDir(serverId);
-          if (fs.existsSync(dir)) {
-            fs.rmSync(dir, { recursive: true, force: true });
-            console.log(`[server:${serverId.slice(0, 8)}] Data dir deleted: ${dir}`);
-          }
-        }
-        respond(requestId, {});
-      } catch (err) {
-        respond(requestId, {}, err);
+      // Container removal is best-effort — it may already be gone
+      if (containerId) {
+        try { await docker.containerAction(containerId, 'remove'); } catch {}
       }
+      // Always clean up the data dir regardless of whether the container existed
+      if (dataPath && serverId) {
+        const dir = serverDataDir(serverId);
+        if (fs.existsSync(dir)) {
+          fs.rmSync(dir, { recursive: true, force: true });
+          console.log(`[server:${serverId.slice(0, 8)}] Data dir deleted: ${dir}`);
+        }
+      }
+      respond(requestId, {});
       break;
     }
 
@@ -697,6 +701,69 @@ async function handleMessage(msg) {
       break;
     }
 
+    case 'export-server': {
+      const { requestId, serverId: expServerId } = msg;
+      if (!dataPath || !expServerId) {
+        respond(requestId, { data: null, reason: 'no-datapath' });
+        break;
+      }
+      const expDir = serverDataDir(expServerId);
+      if (!fs.existsSync(expDir)) {
+        respond(requestId, { data: null, reason: 'no-data-dir' });
+        break;
+      }
+      try {
+        console.log(`[server:${expServerId.slice(0,8)}] Exporting data dir for migration...`);
+        const result = spawnSync('tar', ['-czf', '-', '-C', expDir, '.'], {
+          maxBuffer: 2 * 1024 * 1024 * 1024,
+          timeout: 300000,
+        });
+        if (result.error) { respond(requestId, {}, result.error); break; }
+        if (result.status !== 0) {
+          respond(requestId, {}, new Error((result.stderr?.toString() || 'tar export failed').trim()));
+          break;
+        }
+        console.log(`[server:${expServerId.slice(0,8)}] Export complete — ${result.stdout.length} bytes (compressed)`);
+        respond(requestId, { data: result.stdout.toString('base64') });
+      } catch (err) {
+        respond(requestId, {}, err);
+      }
+      break;
+    }
+
+    case 'import-server': {
+      const { requestId, serverId: impServerId, data } = msg;
+      if (!dataPath || !impServerId) {
+        respond(requestId, {}, new Error('No data path configured on this node'));
+        break;
+      }
+      if (!data) {
+        respond(requestId, {});
+        break;
+      }
+      const impDir = serverDataDir(impServerId);
+      fs.mkdirSync(impDir, { recursive: true });
+      try {
+        console.log(`[server:${impServerId.slice(0,8)}] Importing data dir from migration...`);
+        const buf = Buffer.from(data, 'base64');
+        const result = spawnSync('tar', ['-xzf', '-', '-C', impDir], {
+          input: buf,
+          maxBuffer: 2 * 1024 * 1024 * 1024,
+          timeout: 300000,
+        });
+        if (result.error) { respond(requestId, {}, result.error); break; }
+        if (result.status !== 0) {
+          respond(requestId, {}, new Error((result.stderr?.toString() || 'tar import failed').trim()));
+          break;
+        }
+        console.log(`[server:${impServerId.slice(0,8)}] Import complete`);
+        respond(requestId, {});
+      } catch (err) {
+        respond(requestId, {}, err);
+      }
+      break;
+    }
+
     case 'ping': {
       respond(msg.requestId, { pong: true });
       break;
@@ -792,6 +859,9 @@ async function watchDockerEvents() {
           const ev = JSON.parse(line);
           const serverId = ev.Actor?.Attributes?.['nodactyl.server-id'];
           if (!serverId) continue;
+          // Ignore events for containers created by a different daemon on the same Docker host
+          const evNodeId = ev.Actor?.Attributes?.['nodactyl.node-id'];
+          if (ownNodeId && evNodeId && evNodeId !== ownNodeId) continue;
           if (ev.Action === 'start') {
             // Destroy any stale log stream from a previous container. Without this, the
             // subscribe-logs guard (activeLogStreams.has check) silently drops the new

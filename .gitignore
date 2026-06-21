@@ -3,6 +3,7 @@ node_modules/
 
 # Config files with secrets
 daemon/config.json
+daemon/config2.json
 panel/data/
 
 # Logs

@@ -19,7 +19,7 @@ async function pullImage(image) {
   });
 }
 
-async function createContainer({ serverId, image, portMappings = [], envVars = [], memoryLimit = 512, cpuLimit = 1.0, binds = [], startupCommand = '' }) {
+async function createContainer({ serverId, nodeId = '', image, portMappings = [], envVars = [], memoryLimit = 512, cpuLimit = 1.0, binds = [], startupCommand = '' }) {
   const ExposedPorts = {};
   const PortBindings = {};
 
@@ -48,6 +48,7 @@ async function createContainer({ serverId, image, portMappings = [], envVars = [
       'nodactyl.server-id': serverId,
       'nodactyl.managed': 'true',
       'nodactyl.startup-command': startupCommand || '',
+      'nodactyl.node-id': nodeId,
     },
     HostConfig: {
       PortBindings,

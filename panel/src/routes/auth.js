@@ -5,6 +5,8 @@ const rateLimit = require('express-rate-limit');
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../db');
 const { JWT_SECRET, requireAuth } = require('../middleware/auth');
+const nodeManager = require('../nodeManager');
+const { audit } = require('../audit');
 
 const router = express.Router();
 
@@ -83,6 +85,7 @@ router.post('/login', loginLimiter, (req, res) => {
   );
 
   res.cookie('token', token, cookieOpts());
+  if (user.role !== 'admin') audit(user.id, null, 'auth.login', {}, req);
   res.json({ token, user: userWithRank(user) });
 });
 
@@ -107,12 +110,15 @@ router.patch('/me', requireAuth, (req, res) => {
   const updates = [];
   const values = [];
 
+  let usernameChanged = false;
+  let passwordChanged = false;
   if (username !== undefined) {
     const trimmed = String(username).trim();
     if (trimmed.length < 3) return res.status(400).json({ error: 'Username must be at least 3 characters' });
     const dupe = db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(trimmed, user.id);
     if (dupe) return res.status(400).json({ error: 'Username already taken' });
     updates.push('username = ?'); values.push(trimmed);
+    usernameChanged = true;
   }
 
   if ('avatar' in req.body) {
@@ -126,11 +132,16 @@ router.patch('/me', requireAuth, (req, res) => {
     if (!bcrypt.compareSync(current_password, user.password)) return res.status(400).json({ error: 'Current password is incorrect' });
     if (String(new_password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
     updates.push('password = ?'); values.push(bcrypt.hashSync(new_password, 10));
+    passwordChanged = true;
   }
 
   if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
   values.push(user.id);
   db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+  if (user.role !== 'admin') {
+    if (usernameChanged) audit(user.id, null, 'auth.username_change', {}, req);
+    if (passwordChanged) audit(user.id, null, 'auth.password_change', {}, req);
+  }
 
   const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
   const out = { user: userWithRank(updated) };
@@ -152,6 +163,31 @@ router.get('/me', requireAuth, (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(404).json({ error: 'Not found' });
   res.json(userWithRank(user));
+});
+
+router.delete('/me', requireAuth, async (req, res) => {
+  const { password } = req.body;
+  if (!password) return res.status(400).json({ error: 'Password is required to delete your account' });
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'Not found' });
+  if (!bcrypt.compareSync(password, user.password)) return res.status(400).json({ error: 'Incorrect password' });
+  if (user.role === 'admin') return res.status(400).json({ error: 'Admin accounts cannot be self-deleted. Ask another admin to remove your account.' });
+
+  const servers = db.prepare('SELECT * FROM servers WHERE owner_id = ?').all(req.user.id);
+  await Promise.all(servers.map(s => {
+    if (nodeManager.isOnline(s.node_id) && s.container_id) {
+      return nodeManager.send(s.node_id, {
+        type: 'delete-server', serverId: s.id, containerId: s.container_id,
+      }, { timeout: 15000 }).catch(() => {});
+    }
+  }));
+
+  db.prepare('DELETE FROM servers WHERE owner_id = ?').run(req.user.id);
+  db.prepare('DELETE FROM users WHERE id = ?').run(req.user.id);
+
+  res.clearCookie('token');
+  res.json({ ok: true });
 });
 
 module.exports = router;

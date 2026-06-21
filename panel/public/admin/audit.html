@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nodactyl — Audit Log</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .audit-list { display: flex; flex-direction: column; gap: 1px; }
+    .audit-row {
+      display: grid;
+      grid-template-columns: 140px 160px 130px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      background: var(--surface);
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .audit-row:hover { background: var(--surface2); }
+    .audit-user { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .audit-avatar {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: var(--primary); display: flex; align-items: center;
+      justify-content: center; font-size: 11px; font-weight: 700; color: #fff;
+      overflow: hidden; flex-shrink: 0;
+    }
+    .audit-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 2px 9px; border-radius: 99px; font-size: 11px; font-weight: 700;
+      white-space: nowrap;
+    }
+    .audit-meta { color: var(--text-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .audit-time { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+    .audit-ip   { color: var(--text-muted); font-size: 11px; white-space: nowrap; font-family: monospace; }
+    .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .filter-bar select, .filter-bar input { height: 32px; font-size: 13px; }
+  </style>
+</head>
+<body>
+<div class="layout" id="app"></div>
+<script src="/js/api.js"></script>
+<script>
+requireAdmin();
+
+const BADGE = {
+  'server.create':   { label: 'Create',    bg: '#22c55e22', color: '#22c55e', dot: '+' },
+  'server.delete':   { label: 'Delete',    bg: '#ef444422', color: '#ef4444', dot: '✕' },
+  'server.settings': { label: 'Settings',  bg: '#f59e0b22', color: '#fbbf24', dot: '✎' },
+  'power.start':     { label: 'Start',     bg: '#22c55e22', color: '#22c55e', dot: '▶' },
+  'power.stop':      { label: 'Stop',      bg: '#6b728022', color: '#9ca3af', dot: '■' },
+  'power.restart':   { label: 'Restart',   bg: '#f59e0b22', color: '#f59e0b', dot: '↺' },
+  'power.kill':      { label: 'Kill',      bg: '#ef444422', color: '#ef4444', dot: '✕' },
+  'power.sigint':    { label: 'SIGINT',    bg: '#ef444422', color: '#ef4444', dot: '✕' },
+  'power.sigterm':   { label: 'SIGTERM',   bg: '#ef444422', color: '#ef4444', dot: '✕' },
+  'file.read':       { label: 'Read',      bg: '#3b82f622', color: '#3b82f6', dot: '◎' },
+  'file.write':      { label: 'Write',     bg: '#6366f122', color: '#818cf8', dot: '✎' },
+  'file.upload':     { label: 'Upload',    bg: '#6366f122', color: '#818cf8', dot: '↑' },
+  'file.delete':     { label: 'Delete',    bg: '#ef444422', color: '#ef4444', dot: '✕' },
+  'file.mkdir':      { label: 'Mkdir',     bg: '#3b82f622', color: '#60a5fa', dot: '+' },
+  'file.rename':     { label: 'Rename',    bg: '#f59e0b22', color: '#fbbf24', dot: '↔' },
+  'file.git_clone':  { label: 'Git Clone', bg: '#8b5cf622', color: '#a78bfa', dot: '⎇' },
+  'file.git_pull':   { label: 'Git Pull',  bg: '#8b5cf622', color: '#a78bfa', dot: '↓' },
+  'file.git_reset':  { label: 'Git Reset', bg: '#ef444422', color: '#fca5a5', dot: '↩' },
+  'console.command': { label: 'Command',   bg: '#0ea5e922', color: '#38bdf8', dot: '>' },
+  'package.install': { label: 'Package',   bg: '#10b98122', color: '#34d399', dot: '↓' },
+  'auth.login':      { label: 'Login',     bg: '#22c55e22', color: '#86efac', dot: '→' },
+  'auth.password_change': { label: 'Password', bg: '#f59e0b22', color: '#fcd34d', dot: '🔑' },
+  'auth.username_change': { label: 'Username', bg: '#f59e0b22', color: '#fcd34d', dot: '✎' },
+};
+
+function badgeFor(action) {
+  const b = BADGE[action] || { label: action, bg: '#6b728022', color: '#9ca3af', dot: '•' };
+  return `<span class="audit-badge" style="background:${b.bg};color:${b.color}">${b.dot} ${b.label}</span>`;
+}
+
+function metaFor(action, meta) {
+  if (!meta) return '';
+  if (action.startsWith('power.') || action.startsWith('auth.')) return '';
+  if (action === 'file.rename') return `${esc(meta.from || '')} → ${esc(meta.to || '')}`;
+  if (action === 'file.git_clone') return esc(meta.url || '');
+  if (action === 'file.git_pull') return `strategy: ${esc(meta.strategy || 'ff-only')}`;
+  if (action === 'file.git_reset') return `${esc(meta.commit || 'HEAD~1')} --${esc(meta.mode || 'mixed')}`;
+  if (action === 'console.command') return esc((meta.command || '').slice(0, 80));
+  if (action === 'package.install') return `${esc(meta.manager || '')} ${esc(meta.pkg || '')}`;
+  if (action === 'server.settings') return `changed: ${esc((meta.changed || []).join(', '))}`;
+  if (action === 'server.create') return esc(meta.name || '');
+  if (action === 'server.delete') return esc(meta.name || '');
+  return esc(meta.path || '');
+}
+
+function avatarHtml(row) {
+  if (row.avatar) return `<img src="${esc(row.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" alt="">`;
+  return `${esc((row.username?.[0] || '?').toUpperCase())}`;
+}
+
+let logs = [];
+let total = 0;
+let offset = 0;
+const PAGE = 50;
+let filterAction = '';
+let filterUser = '';
+
+async function init() {
+  await loadPanelSettings();
+  document.getElementById('app').innerHTML = `
+    ${renderSidebar('admin-audit')}
+    <div class="main">
+      <div class="topbar">
+        <div>
+          <div class="page-title">Audit Log</div>
+          <div class="page-sub">Non-admin user activity</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="reload()">Refresh</button>
+      </div>
+      <div class="content">
+        <div class="filter-bar">
+          <input type="text" class="form-input" id="filterUser" placeholder="Filter by username…" style="width:180px" oninput="reload()">
+          <select class="form-input" id="filterAction" onchange="reload()">
+            <option value="">All actions</option>
+            <optgroup label="Server">
+              <option value="server.create">Server Create</option>
+              <option value="server.delete">Server Delete</option>
+              <option value="server.settings">Settings Change</option>
+            </optgroup>
+            <optgroup label="Power">
+              <option value="power">All Power</option>
+              <option value="power.start">Start</option>
+              <option value="power.stop">Stop</option>
+              <option value="power.restart">Restart</option>
+              <option value="power.kill">Kill</option>
+            </optgroup>
+            <optgroup label="Files">
+              <option value="file">All File</option>
+              <option value="file.read">Read</option>
+              <option value="file.write">Write</option>
+              <option value="file.upload">Upload</option>
+              <option value="file.delete">Delete</option>
+              <option value="file.rename">Rename</option>
+              <option value="file.mkdir">Mkdir</option>
+              <option value="file.git_clone">Git Clone</option>
+              <option value="file.git_pull">Git Pull</option>
+              <option value="file.git_reset">Git Reset</option>
+            </optgroup>
+            <optgroup label="Console">
+              <option value="console.command">Console Command</option>
+              <option value="package.install">Package Install</option>
+            </optgroup>
+            <optgroup label="Auth">
+              <option value="auth">All Auth</option>
+              <option value="auth.login">Login</option>
+              <option value="auth.password_change">Password Change</option>
+              <option value="auth.username_change">Username Change</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="alert alert-error" id="pageError"></div>
+        <div class="card p-0">
+          <div id="auditWrap">
+            <div class="empty-state"><span class="spinner"></span></div>
+          </div>
+        </div>
+        <div style="margin-top:12px;text-align:center" id="loadMoreWrap"></div>
+      </div>
+    </div>`;
+  await reload(true);
+}
+
+async function reload(reset = true) {
+  if (reset) { offset = 0; logs = []; }
+  filterAction = document.getElementById('filterAction')?.value || '';
+  filterUser   = document.getElementById('filterUser')?.value.trim() || '';
+  try {
+    const params = new URLSearchParams({ limit: PAGE, offset });
+    if (filterAction) params.set('action', filterAction);
+    if (filterUser)   params.set('username', filterUser);
+    const data = await API.get('/audit?' + params);
+    total = data.total;
+    if (reset) logs = data.logs;
+    else logs = [...logs, ...data.logs];
+    render();
+  } catch (e) {
+    const el = document.getElementById('pageError');
+    if (el) { el.textContent = e.message; el.classList.add('show'); }
+  }
+}
+
+async function loadMore() {
+  offset += PAGE;
+  await reload(false);
+}
+
+function render() {
+  const wrap = document.getElementById('auditWrap');
+  if (!wrap) return;
+
+  if (!logs.length) {
+    wrap.innerHTML = `<div class="empty-state"><p>No activity recorded yet.</p></div>`;
+    document.getElementById('loadMoreWrap').innerHTML = '';
+    return;
+  }
+
+  wrap.innerHTML = `
+    <div style="padding:10px 16px 6px;display:grid;grid-template-columns:140px 160px 130px 1fr auto;gap:12px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">
+      <div>Time</div><div>User</div><div>Action</div><div>Details</div><div>IP</div>
+    </div>
+    <div class="audit-list">
+      ${logs.map(renderRow).join('')}
+    </div>`;
+
+  const lm = document.getElementById('loadMoreWrap');
+  if (logs.length < total) {
+    lm.innerHTML = `<button class="btn btn-ghost btn-sm" onclick="loadMore()">Load more (${total - logs.length} remaining)</button>`;
+  } else {
+    lm.innerHTML = `<span style="font-size:12px;color:var(--text-muted)">${total} total entr${total === 1 ? 'y' : 'ies'}</span>`;
+  }
+}
+
+function renderRow(row) {
+  const meta = row.metadata || {};
+  const serverLink = row.server_id
+    ? `<a href="/server/${esc(row.server_id)}" style="color:var(--text);font-weight:600">${esc(row.server_name || row.server_id.slice(0,8))}</a>`
+    : '<span class="text-muted">—</span>';
+
+  const detail = metaFor(row.action, meta);
+  const detailHtml = detail
+    ? `${serverLink} <span class="audit-meta" title="${esc(detail)}">${esc(detail)}</span>`
+    : serverLink;
+
+  return `
+    <div class="audit-row">
+      <div class="audit-time" title="${new Date(row.created_at * 1000).toLocaleString()}">${timeAgo(row.created_at)}</div>
+      <div class="audit-user">
+        <div class="audit-avatar">${avatarHtml(row)}</div>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(row.username || '')}">${esc(row.username || row.user_id.slice(0,8))}</span>
+      </div>
+      <div>${badgeFor(row.action)}</div>
+      <div style="overflow:hidden;display:flex;align-items:center;gap:8px;min-width:0">${detailHtml}</div>
+      <div class="audit-ip">${esc(row.ip || '—')}</div>
+    </div>`;
+}
+
+init();
+</script>
+</body>
+</html>

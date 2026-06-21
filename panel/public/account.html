@@ -144,8 +144,36 @@ function render() {
         </div>
       </div>
 
+      <div class="card mb-4" style="border-color:var(--danger)">
+        <div class="card-title mb-2" style="color:var(--danger)">Danger Zone</div>
+        <p style="font-size:13px;color:var(--text-muted);margin:0 0 14px">Permanently delete your account and all servers you own. This cannot be undone.</p>
+        <button class="btn btn-danger btn-sm" onclick="openDeleteModal()">Delete My Account</button>
+      </div>
+
+    </div>
+
+    <div class="modal-overlay" id="deleteModal">
+      <div class="modal modal-sm">
+        <div class="modal-header">
+          <h2 class="modal-title" style="color:var(--danger)">Delete Account</h2>
+          <button class="modal-close" onclick="closeDeleteModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size:13.5px;color:var(--text-muted);margin:0 0 14px">This will permanently delete your account and all servers you own. There is no way to recover this data.</p>
+          <div class="form-group mb-0">
+            <label class="form-label">Confirm your password</label>
+            <input type="password" class="form-input" id="deletePassword" placeholder="••••••••" autocomplete="current-password">
+          </div>
+          <div class="alert alert-error mt-3" id="deleteErr"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" onclick="closeDeleteModal()">Cancel</button>
+          <button class="btn btn-danger" id="deleteConfirmBtn" onclick="confirmDelete()">Delete Forever</button>
+        </div>
+      </div>
     </div>`;
 
+  document.getElementById('deleteModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeDeleteModal(); });
   document.getElementById('avatarFile').addEventListener('change', function() {
     if (this.files[0]) handleFile(this.files[0]);
   });
@@ -285,6 +313,35 @@ function updateSidebarAvatar() {
   el.innerHTML = me.avatar
     ? `<img src="${esc(me.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" alt="">`
     : (me.username?.[0] || '?').toUpperCase();
+}
+
+function openDeleteModal() {
+  document.getElementById('deletePassword').value = '';
+  document.getElementById('deleteErr').classList.remove('show');
+  document.getElementById('deleteModal').classList.add('open');
+  setTimeout(() => document.getElementById('deletePassword').focus(), 50);
+}
+
+function closeDeleteModal() {
+  document.getElementById('deleteModal').classList.remove('open');
+}
+
+async function confirmDelete() {
+  const password = document.getElementById('deletePassword').value;
+  const errEl = document.getElementById('deleteErr');
+  const btn = document.getElementById('deleteConfirmBtn');
+  errEl.classList.remove('show');
+  if (!password) { errEl.textContent = 'Enter your password to confirm.'; errEl.classList.add('show'); return; }
+  btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true;
+  try {
+    await API.delete('/auth/me', { password });
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    window.location.href = '/login';
+  } catch (e) {
+    errEl.textContent = e.message; errEl.classList.add('show');
+    btn.textContent = 'Delete Forever'; btn.disabled = false;
+  }
 }
 
 init();

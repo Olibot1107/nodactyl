@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nodactyl — Activity</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .act-feed { display: flex; flex-direction: column; }
+    .act-row {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .act-row:last-child { border-bottom: none; }
+    .act-avatar {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: var(--primary); display: flex; align-items: center;
+      justify-content: center; font-size: 13px; font-weight: 700; color: #fff;
+      overflow: hidden; flex-shrink: 0; margin-top: 1px;
+    }
+    .act-body { flex: 1; min-width: 0; }
+    .act-title { font-size: 13.5px; color: var(--text); line-height: 1.4; }
+    .act-title strong { font-weight: 700; }
+    .act-sub { font-size: 12px; color: var(--text-muted); margin-top: 3px; display: flex; gap: 12px; flex-wrap: wrap; }
+    .act-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 1px 8px; border-radius: 99px;
+      font-size: 11px; font-weight: 700; white-space: nowrap;
+    }
+    .act-code {
+      font-family: monospace; font-size: 12px; background: var(--surface2);
+      padding: 2px 6px; border-radius: 4px; color: var(--text-muted);
+      max-width: 380px; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; display: inline-block; vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+<div class="layout" id="app"></div>
+<script src="/js/api.js"></script>
+<script>
+requireAuth();
+
+const serverId = location.pathname.match(/^\/server\/([^/]+)/)?.[1] || '';
+let server = null;
+
+const UI = {
+  back: `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>`,
+};
+
+const BADGE = {
+  'server.create':        { label: 'Server Created',   bg: '#22c55e22', color: '#22c55e' },
+  'server.delete':        { label: 'Server Deleted',   bg: '#ef444422', color: '#ef4444' },
+  'server.settings':      { label: 'Settings Changed', bg: '#f59e0b22', color: '#fbbf24' },
+  'power.start':          { label: 'Started',          bg: '#22c55e22', color: '#22c55e' },
+  'power.stop':           { label: 'Stopped',          bg: '#6b728022', color: '#9ca3af' },
+  'power.restart':        { label: 'Restarted',        bg: '#f59e0b22', color: '#f59e0b' },
+  'power.kill':           { label: 'Killed',           bg: '#ef444422', color: '#ef4444' },
+  'power.sigint':         { label: 'SIGINT',           bg: '#ef444422', color: '#ef4444' },
+  'power.sigterm':        { label: 'SIGTERM',          bg: '#ef444422', color: '#ef4444' },
+  'file.read':            { label: 'File Read',        bg: '#3b82f622', color: '#60a5fa' },
+  'file.write':           { label: 'File Saved',       bg: '#6366f122', color: '#818cf8' },
+  'file.upload':          { label: 'File Uploaded',    bg: '#6366f122', color: '#818cf8' },
+  'file.delete':          { label: 'File Deleted',     bg: '#ef444422', color: '#ef4444' },
+  'file.mkdir':           { label: 'Folder Created',   bg: '#3b82f622', color: '#60a5fa' },
+  'file.rename':          { label: 'File Renamed',     bg: '#f59e0b22', color: '#fbbf24' },
+  'file.git_clone':       { label: 'Git Clone',        bg: '#8b5cf622', color: '#a78bfa' },
+  'file.git_pull':        { label: 'Git Pull',         bg: '#8b5cf622', color: '#a78bfa' },
+  'file.git_reset':       { label: 'Git Reset',        bg: '#ef444422', color: '#fca5a5' },
+  'console.command':      { label: 'Console Command',  bg: '#0ea5e922', color: '#38bdf8' },
+  'package.install':      { label: 'Package Install',  bg: '#10b98122', color: '#34d399' },
+};
+
+function badge(action) {
+  const b = BADGE[action] || { label: action, bg: '#6b728022', color: '#9ca3af' };
+  return `<span class="act-badge" style="background:${b.bg};color:${b.color}">${esc(b.label)}</span>`;
+}
+
+function detail(action, meta) {
+  if (!meta) return '';
+  if (action === 'file.rename')    return `<span class="act-code">${esc(meta.from || '')} → ${esc(meta.to || '')}</span>`;
+  if (action === 'file.git_clone') return `<span class="act-code">${esc(meta.url || '')}</span>${meta.branch ? ` <span style="font-size:12px;color:var(--text-muted)">branch: ${esc(meta.branch)}</span>` : ''}`;
+  if (action === 'file.git_pull')  return `<span style="font-size:12px;color:var(--text-muted)">strategy: ${esc(meta.strategy || 'ff-only')}</span>`;
+  if (action === 'file.git_reset') return `<span class="act-code">${esc(meta.commit || 'HEAD~1')}</span> <span style="font-size:12px;color:var(--text-muted)">--${esc(meta.mode || 'mixed')}</span>`;
+  if (action === 'console.command') return `<span class="act-code">${esc(meta.command || '')}</span>`;
+  if (action === 'package.install') return `<span class="act-code">${esc(meta.manager || '')} ${esc(meta.pkg || '')}</span>`;
+  if (action === 'server.settings') return `<span style="font-size:12px;color:var(--text-muted)">changed: ${esc((meta.changed || []).join(', '))}</span>`;
+  if (meta.path) return `<span class="act-code">${esc(meta.path)}</span>`;
+  return '';
+}
+
+function avatarHtml(row) {
+  if (row.avatar) return `<img src="${esc(row.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" alt="">`;
+  return (row.username?.[0] || '?').toUpperCase();
+}
+
+let logs = [], total = 0, offset = 0;
+const PAGE = 50;
+
+async function init() {
+  await loadPanelSettings();
+  document.getElementById('app').innerHTML = buildShell();
+
+  try {
+    server = await API.get(`/servers/${serverId}`);
+    renderTopbar();
+    document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'activity');
+    await loadLogs(true);
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty-state"><p>${esc(e.message)}</p></div>`;
+  }
+}
+
+function buildShell() {
+  return `
+    ${renderSidebar('dashboard')}
+    <div class="main">
+      <div class="topbar" id="topbar">
+        <div class="flex-center gap-2">
+          <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
+          <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+          <span class="page-title">Loading…</span>
+          <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+          <span class="text-muted" style="font-size:13px">Activity</span>
+        </div>
+      </div>
+      <div id="serverNavSlot"></div>
+      <div class="content" id="content">
+        <div class="empty-state"><span class="spinner"></span></div>
+      </div>
+    </div>`;
+}
+
+function renderTopbar() {
+  document.getElementById('topbar').innerHTML = `
+    <div class="flex-center gap-2">
+      <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
+      <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+      <a class="topbar-link" href="/server/${serverId}">${esc(server.name)}</a>
+      <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+      <span class="page-title">Activity</span>
+    </div>
+    <div class="flex-center gap-2">
+      ${badgeHtml(server.status)}
+    </div>`;
+}
+
+async function loadLogs(reset = false) {
+  if (reset) { offset = 0; logs = []; }
+  const data = await API.get(`/servers/${serverId}/activity?limit=${PAGE}&offset=${offset}`);
+  total = data.total;
+  logs = reset ? data.logs : [...logs, ...data.logs];
+  renderContent();
+}
+
+async function loadMore() {
+  offset += PAGE;
+  await loadLogs(false);
+}
+
+function renderContent() {
+  document.getElementById('content').innerHTML = `
+    <div class="card">
+      <div class="card-title mb-4">Recent Activity</div>
+      ${logs.length ? `<div class="act-feed">${logs.map(renderRow).join('')}</div>` : `<div class="empty-state" style="padding:24px 0"><p>No activity recorded yet.</p></div>`}
+      ${logs.length < total
+        ? `<div style="margin-top:16px"><button class="btn btn-ghost btn-sm" onclick="loadMore()">Load more <span class="text-muted">(${total - logs.length} remaining)</span></button></div>`
+        : logs.length ? `<p style="margin-top:12px;font-size:12px;color:var(--text-muted)">${total} total entr${total === 1 ? 'y' : 'ies'}</p>` : ''}
+    </div>`;
+}
+
+function renderRow(row) {
+  const meta = row.metadata || {};
+  const det = detail(row.action, meta);
+  return `
+    <div class="act-row">
+      <div class="act-avatar">${avatarHtml(row)}</div>
+      <div class="act-body">
+        <div class="act-title">
+          <strong>${esc(row.username || 'Unknown')}</strong>
+          &ensp;${badge(row.action)}
+          ${det ? `<div style="margin-top:5px">${det}</div>` : ''}
+        </div>
+        <div class="act-sub">
+          <span title="${new Date(row.created_at * 1000).toLocaleString()}">${timeAgo(row.created_at)}</span>
+          ${row.ip ? `<span style="font-family:monospace">${esc(row.ip)}</span>` : ''}
+        </div>
+      </div>
+    </div>`;
+}
+
+init();
+</script>
+</body>
+</html>

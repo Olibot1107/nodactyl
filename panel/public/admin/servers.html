@@ -10,6 +10,28 @@
 <body>
 <div class="layout" id="app"></div>
 
+<!-- Migrate modal -->
+<div class="modal-overlay" id="migrateModal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <h2 class="modal-title">Migrate Server</h2>
+      <button class="modal-close" onclick="closeMigrateModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text-muted);margin:0 0 14px">Move this server to another node. The server must be stopped. All files will be copied to the new node and the port will be reassigned. This may take a few minutes for large servers.</p>
+      <div class="form-group mb-0">
+        <label class="form-label">Target Node</label>
+        <select class="form-input" id="m_node"></select>
+      </div>
+      <div class="alert alert-error mt-3" id="migrateError"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeMigrateModal()">Cancel</button>
+      <button class="btn btn-primary" id="migrateSaveBtn" onclick="saveMigrate()">Migrate</button>
+    </div>
+  </div>
+</div>
+
 <!-- Edit modal -->
 <div class="modal-overlay" id="editModal">
   <div class="modal modal-sm">
@@ -49,7 +71,9 @@
 <script>
 requireAdmin();
 let servers = [];
+let nodes = [];
 let editTarget = null;
+let migrateTarget = null;
 
 async function init() {
   await loadPanelSettings();
@@ -83,7 +107,7 @@ async function init() {
 
 async function loadServers() {
   try {
-    servers = await API.get('/servers');
+    [servers, nodes] = await Promise.all([API.get('/servers'), API.get('/nodes')]);
     renderStats();
     renderTable();
   } catch (e) {
@@ -149,6 +173,7 @@ function renderTable() {
                 ${s.suspended
                   ? `<button class="btn btn-success btn-xs" onclick="setSuspend('${s.id}', false, '${esc(s.name)}')">Unsuspend</button>`
                   : `<button class="btn btn-warning btn-xs" onclick="setSuspend('${s.id}', true, '${esc(s.name)}')">Suspend</button>`}
+                <button class="btn btn-ghost btn-xs" onclick="openMigrate('${s.id}')">Migrate</button>
                 <button class="btn btn-danger btn-xs" onclick="deleteServer('${s.id}','${esc(s.name)}')">Delete</button>
               </div>
             </td>
@@ -237,6 +262,51 @@ async function deleteServer(id, name) {
   } catch (e) { showErr(e.message); }
 }
 
+// ── Migrate modal ─────────────────────────────────────────────────────────────
+function openMigrate(id) {
+  migrateTarget = servers.find(s => s.id === id);
+  if (!migrateTarget) return;
+  const errEl = document.getElementById('migrateError');
+  errEl.classList.remove('show');
+  const sel = document.getElementById('m_node');
+  const others = nodes.filter(n => n.id !== migrateTarget.node_id);
+  if (!others.length) {
+    sel.innerHTML = '<option value="">No other nodes available</option>';
+  } else {
+    sel.innerHTML = others.map(n =>
+      `<option value="${esc(n.id)}">${esc(n.name)}${n.status === 'online' ? '' : ' (offline)'}</option>`
+    ).join('');
+  }
+  document.getElementById('migrateModal').classList.add('open');
+}
+
+function closeMigrateModal() {
+  document.getElementById('migrateModal').classList.remove('open');
+  migrateTarget = null;
+}
+
+async function saveMigrate() {
+  if (!migrateTarget) return;
+  const nodeId = document.getElementById('m_node').value;
+  const errEl = document.getElementById('migrateError');
+  errEl.classList.remove('show');
+  if (!nodeId) { errEl.textContent = 'Select a target node.'; errEl.classList.add('show'); return; }
+  const btn = document.getElementById('migrateSaveBtn');
+  btn.innerHTML = '<span class="spinner"></span> Migrating…'; btn.disabled = true;
+  try {
+    const result = await API.post(`/servers/${migrateTarget.id}/migrate`, { node_id: nodeId });
+    closeMigrateModal();
+    const filesNote = result.files_transferred === false ? ' (no files — node has no data path)' : '';
+    showOk(`"${migrateTarget.name}" migrated to ${result.node_name}${filesNote}.`);
+    await loadServers();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.add('show');
+  } finally {
+    btn.textContent = 'Migrate'; btn.disabled = false;
+  }
+}
+
 function showErr(msg) {
   const el = document.getElementById('pageError');
   el.textContent = msg; el.classList.add('show');
@@ -249,6 +319,7 @@ function showOk(msg) {
 }
 
 document.getElementById('editModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeEditModal(); });
+document.getElementById('migrateModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeMigrateModal(); });
 
 init();
 </script>

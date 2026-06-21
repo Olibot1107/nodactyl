@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const { db } = require('../db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const nodeManager = require('../nodeManager');
+const { audit } = require('../audit');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -263,6 +264,7 @@ router.post('/from-preset', async (req, res) => {
     console.error(`Failed to install server ${id}:`, err.message);
   });
 
+  if (req.user.role !== 'admin') audit(req.user.id, id, 'server.create', { name, preset: preset.name, image: finalImage }, req);
   res.status(202).json({ id, status: 'installing' });
 });
 
@@ -327,6 +329,7 @@ router.post('/from-template', async (req, res) => {
     console.error(`Failed to install server ${id} from template:`, err.message);
   });
 
+  if (req.user.role !== 'admin') audit(req.user.id, id, 'server.create', { name, template: template.name, image: template.image }, req);
   res.status(202).json({ id, status: 'installing' });
 });
 
@@ -407,6 +410,8 @@ router.post('/:id/action', async (req, res) => {
   // Respond immediately — Docker events + Socket.IO update the actual status
   res.json({ ok: true });
 
+  if (req.user.role !== 'admin') audit(req.user.id, server.id, `power.${action}`, { action }, req);
+
   // Background: persist new container ID if daemon recreated the container
   nodeManager.send(server.node_id, msg).then(result => {
     if (result?.containerId && result.containerId !== server.container_id) {
@@ -467,6 +472,7 @@ router.get('/:id/files/read', async (req, res) => {
   try {
     const result = await nodeManager.send(server.node_id,
       fileMsg(server, { type: 'read-file', path: filePath }));
+    if (req.user.role !== 'admin') audit(req.user.id, server.id, 'file.read', { path: filePath }, req);
     res.json(result);
   } catch (err) { sendFileError(res, err); }
 });
@@ -483,6 +489,7 @@ router.get('/:id/files/read-binary', async (req, res) => {
   try {
     const result = await nodeManager.send(server.node_id,
       fileMsg(server, { type: 'read-file-binary', path: filePath }));
+    if (req.user.role !== 'admin') audit(req.user.id, server.id, 'file.read', { path: filePath }, req);
     res.json(result);
   } catch (err) { sendFileError(res, err); }
 });
@@ -499,6 +506,7 @@ router.put('/:id/files/write', async (req, res) => {
   try {
     await nodeManager.send(server.node_id,
       fileMsg(server, { type: 'write-file', path: filePath, content: content ?? '' }));
+    if (req.user.role !== 'admin') audit(req.user.id, server.id, 'file.write', { path: filePath }, req);
     res.json({ ok: true });
   } catch (err) { sendFileError(res, err); }
 });
@@ -516,6 +524,7 @@ router.post('/:id/files/upload', express.raw({ type: '*/*', limit: '512mb' }), a
     const content = req.body.toString('base64');
     await nodeManager.send(server.node_id,
       fileMsg(server, { type: 'write-file', path: filePath, content, encoding: 'base64' }));
+    if (req.user.role !== 'admin') audit(req.user.id, server.id, 'file.upload', { path: filePath }, req);
     res.json({ ok: true });
   } catch (err) { sendFileError(res, err); }
 });
@@ -532,6 +541,7 @@ router.post('/:id/files/mkdir', async (req, res) => {
   try {
     await nodeManager.send(server.node_id,
       fileMsg(server, { type: 'mkdir', path: dirPath }));
+    if (req.user.role !== 'admin') audit(req.user.id, server.id, 'file.mkdir', { path: dirPath }, req);
     res.json({ ok: true });
   } catch (err) { sendFileError(res, err); }
 });
@@ -548,6 +558,7 @@ router.delete('/:id/files', async (req, res) => {
   try {
     await nodeManager.send(server.node_id,
       fileMsg(server, { type: 'delete-file', path: filePath }));
+    if (req.user.role !== 'admin') audit(req.user.id, server.id, 'file.delete', { path: filePath }, req);
     res.json({ ok: true });
   } catch (err) { sendFileError(res, err); }
 });
@@ -574,8 +585,9 @@ router.post('/:id/files/git', async (req, res) => {
     const result = await nodeManager.send(
       server.node_id,
       fileMsg(server, { type: 'git-clone', url, branch: branch || '', folder: folder || '', path: targetPath || '/home/container' }),
-      { timeout: 300000 }  // 5 minutes for large repos
+      { timeout: 300000 }
     );
+    if (req.user.role !== 'admin') audit(req.user.id, server.id, 'file.git_clone', { url, branch: branch || null }, req);
     res.json(result);
   } catch (err) { sendFileError(res, err); }
 });
@@ -596,6 +608,7 @@ router.post('/:id/files/git-pull', async (req, res) => {
       fileMsg(server, { type: 'git-pull', path: targetPath || '/home/container', strategy: pullStrategy }),
       { timeout: 300000 }
     );
+    if (req.user.role !== 'admin') audit(req.user.id, server.id, 'file.git_pull', { strategy: pullStrategy }, req);
     res.json(result);
   } catch (err) { sendFileError(res, err); }
 });
@@ -616,6 +629,7 @@ router.post('/:id/files/git-reset', async (req, res) => {
       fileMsg(server, { type: 'git-reset', path: targetPath || '/home/container', commit: commit || 'HEAD~1', mode: resetMode }),
       { timeout: 30000 }
     );
+    if (req.user.role !== 'admin') audit(req.user.id, server.id, 'file.git_reset', { commit: commit || 'HEAD~1', mode: resetMode }, req);
     res.json(result);
   } catch (err) { sendFileError(res, err); }
 });
@@ -632,6 +646,7 @@ router.post('/:id/files/rename', async (req, res) => {
   try {
     await nodeManager.send(server.node_id,
       fileMsg(server, { type: 'rename-file', oldPath, newPath }));
+    if (req.user.role !== 'admin') audit(req.user.id, server.id, 'file.rename', { from: oldPath, to: newPath }, req);
     res.json({ ok: true });
   } catch (err) { sendFileError(res, err); }
 });
@@ -676,6 +691,8 @@ router.patch('/:id/settings', async (req, res) => {
   if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
   values.push(req.params.id);
   db.prepare(`UPDATE servers SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+  const changedFields = updates.map(u => u.split(' = ')[0]);
+  if (req.user.role !== 'admin') audit(req.user.id, server.id, 'server.settings', { changed: changedFields }, req);
   const updated = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   res.json({ ...updated, port_mappings: JSON.parse(updated.port_mappings), env_vars: JSON.parse(updated.env_vars), discord_config: updated.discord_config ? JSON.parse(updated.discord_config) : null });
 });
@@ -694,6 +711,7 @@ router.delete('/:id', async (req, res) => {
     }).catch(() => {});
   }
 
+  if (req.user.role !== 'admin') audit(req.user.id, server.id, 'server.delete', { name: server.name }, req);
   db.prepare('DELETE FROM servers WHERE id = ?').run(server.id);
   res.json({ ok: true });
 });
@@ -710,6 +728,7 @@ router.post('/:id/stdin', async (req, res) => {
     await nodeManager.send(server.node_id, {
       type: 'send-stdin', serverId: server.id, containerId: server.container_id, data,
     });
+    if (req.user.role !== 'admin') audit(req.user.id, server.id, 'console.command', { command: data.slice(0, 200) }, req);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -753,6 +772,7 @@ router.post('/:id/packages', async (req, res) => {
       manager,
       pkg: isManifestInstall ? '' : pkg.trim(),
     }, { timeout: 300000 });
+    if (req.user.role !== 'admin') audit(req.user.id, server.id, 'package.install', { manager, pkg: isManifestInstall ? '(manifest)' : pkg.trim() }, req);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -782,6 +802,34 @@ router.get('/:id/stats', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── Server activity log ───────────────────────────────────────────────────────
+
+router.get('/:id/activity', (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+
+  const limit  = Math.min(parseInt(req.query.limit)  || 50, 200);
+  const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+
+  const logs = db.prepare(`
+    SELECT al.id, al.user_id, al.action, al.metadata, al.ip, al.created_at,
+           u.username, u.avatar
+    FROM audit_logs al
+    LEFT JOIN users u ON al.user_id = u.id
+    WHERE al.server_id = ?
+    ORDER BY al.created_at DESC
+    LIMIT ? OFFSET ?
+  `).all(req.params.id, limit, offset);
+
+  const total = db.prepare('SELECT COUNT(*) as n FROM audit_logs WHERE server_id = ?').get(req.params.id)?.n ?? 0;
+
+  res.json({
+    logs: logs.map(l => ({ ...l, metadata: (() => { try { return JSON.parse(l.metadata || '{}'); } catch { return {}; } })() })),
+    total,
+  });
 });
 
 // ── Server members ─────────────────────────────────────────────────────────
@@ -884,6 +932,58 @@ router.delete('/:id/log-shares/:shareId', (req, res) => {
   if (!canManageLogShares(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
   db.prepare('DELETE FROM log_shares WHERE id = ? AND server_id = ?').run(req.params.shareId, req.params.id);
   res.json({ ok: true });
+});
+
+// ── Node migration (admin only) ───────────────────────────────────────────────
+
+router.post('/:id/migrate', requireAdmin, async (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+
+  const { node_id: targetNodeId } = req.body;
+  if (!targetNodeId) return res.status(400).json({ error: 'node_id is required' });
+  if (targetNodeId === server.node_id) return res.status(400).json({ error: 'Server is already on this node' });
+
+  const targetNode = db.prepare('SELECT * FROM nodes WHERE id = ?').get(targetNodeId);
+  if (!targetNode) return res.status(404).json({ error: 'Target node not found' });
+  if (!nodeManager.isOnline(targetNodeId)) return res.status(503).json({ error: 'Target node is offline' });
+  if (!nodeManager.isOnline(server.node_id)) return res.status(503).json({ error: 'Source node is offline — bring it online first so files can be exported' });
+
+  if (server.status === 'installing') return res.status(400).json({ error: 'Cannot migrate a server that is still installing' });
+  if (server.status === 'running') return res.status(400).json({ error: 'Stop the server before migrating' });
+
+  const capacityErr = checkNodeCapacity(targetNodeId, server.memory_limit, server.disk_limit || 0);
+  if (capacityErr) return res.status(400).json({ error: capacityErr });
+
+  try {
+    // 1. Export data dir from old node (null data = no dataPath configured, skip file transfer)
+    const exportResult = await nodeManager.send(server.node_id, {
+      type: 'export-server', serverId: server.id,
+    }, { timeout: 300000 });
+    const exportedData = exportResult?.data || null;
+
+    // 2. Remove old container + data dir from old node (always call so data dir is cleaned up
+    //    even when container_id is null; daemon handles missing containers gracefully)
+    await nodeManager.send(server.node_id, {
+      type: 'delete-server', serverId: server.id, containerId: server.container_id || null,
+    }, { timeout: 30000 }).catch(() => {});
+
+    // 3. Import data dir into new node
+    if (exportedData) {
+      await nodeManager.send(targetNodeId, {
+        type: 'import-server', serverId: server.id, data: exportedData,
+      }, { timeout: 300000 });
+    }
+
+    // 4. Assign fresh port on target node and update DB
+    const port_mappings = autoPortMappings(targetNodeId);
+    db.prepare('UPDATE servers SET node_id = ?, port_mappings = ?, container_id = NULL, status = ? WHERE id = ?')
+      .run(targetNodeId, JSON.stringify(port_mappings), 'stopped', server.id);
+
+    res.json({ ok: true, port_mappings, node_name: targetNode.name, files_transferred: !!exportedData });
+  } catch (err) {
+    res.status(500).json({ error: `Migration failed: ${err.message}` });
+  }
 });
 
 module.exports = router;

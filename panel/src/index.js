@@ -32,6 +32,7 @@ async function main() {
   const connectorRoutes = require('./routes/connectors');
   const rankRoutes = require('./routes/ranks');
   const settingsRoutes = require('./routes/settings');
+  const auditRoutes = require('./routes/audit');
   const app = express();
   const httpServer = http.createServer(app);
   const io = new SocketIO(httpServer);
@@ -54,6 +55,7 @@ async function main() {
   app.use('/api/connectors', connectorRoutes);
   app.use('/api/ranks', rankRoutes);
   app.use('/api/settings', settingsRoutes);
+  app.use('/api/audit', auditRoutes);
 
   const pub = (f) => path.join(__dirname, '..', 'public', f);
   app.get('/', (req, res) => res.redirect('/login'));
@@ -65,6 +67,7 @@ async function main() {
   app.get('/server/:id/files', (req, res) => res.sendFile(pub('files.html')));
   app.get('/server/:id/settings', (req, res) => res.sendFile(pub('server-settings.html')));
   app.get('/server/:id/packages', (req, res) => res.sendFile(pub('packages.html')));
+  app.get('/server/:id/activity', (req, res) => res.sendFile(pub('server-activity.html')));
   app.get('/account', (req, res) => res.sendFile(pub('account.html')));
   app.get('/connectors', (req, res) => res.sendFile(pub('connectors.html')));
   app.get('/admin/users', (req, res) => res.sendFile(pub('admin/users.html')));
@@ -74,6 +77,7 @@ async function main() {
   app.get('/admin/servers', (req, res) => res.sendFile(pub('admin/servers.html')));
   app.get('/admin/ranks', (req, res) => res.sendFile(pub('admin/ranks.html')));
   app.get('/admin/settings', (req, res) => res.sendFile(pub('admin/settings.html')));
+  app.get('/admin/audit',    (req, res) => res.sendFile(pub('admin/audit.html')));
   app.get('/logs/:shareId', (req, res) => res.sendFile(pub('log-viewer.html')));
 
   // ── Favicon ───────────────────────────────────────────────────────────────────
