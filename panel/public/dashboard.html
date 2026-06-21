@@ -21,7 +21,10 @@
       <div class="alert alert-error" id="deployError"></div>
       <div class="form-group">
         <label class="form-label">Server Name</label>
-        <input type="text" class="form-input" id="d_name" placeholder="my-server">
+        <div style="display:flex;gap:6px">
+          <input type="text" class="form-input" id="d_name" placeholder="my-server" style="flex:1">
+          <button class="btn btn-ghost btn-sm" type="button" title="Random name" onclick="randomName('d_name')"><svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg></button>
+        </div>
       </div>
       <div class="form-group" id="d_versionGroup" style="display:none">
         <label class="form-label">Version</label>
@@ -50,7 +53,10 @@
       <div class="alert alert-error" id="deployTemplateError"></div>
       <div class="form-group">
         <label class="form-label">Server Name</label>
-        <input type="text" class="form-input" id="dt_name" placeholder="my-server">
+        <div style="display:flex;gap:6px">
+          <input type="text" class="form-input" id="dt_name" placeholder="my-server" style="flex:1">
+          <button class="btn btn-ghost btn-sm" type="button" title="Random name" onclick="randomName('dt_name')"><svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg></button>
+        </div>
       </div>
       <div class="form-group" id="dt_nodeGroup">
         <label class="form-label">Node</label>
@@ -76,7 +82,10 @@
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Server Name *</label>
-          <input type="text" class="form-input" id="c_name" placeholder="my-server">
+          <div style="display:flex;gap:6px">
+            <input type="text" class="form-input" id="c_name" placeholder="my-server" style="flex:1">
+            <button class="btn btn-ghost btn-sm" type="button" title="Random name" onclick="randomName('c_name')"><svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg></button>
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">Docker Image *</label>
@@ -120,6 +129,30 @@
 requireAuth();
 const user = getUser();
 let servers = [], nodes = [], presets = [], templates = [];
+
+async function randomName(inputId) {
+  const input = document.getElementById(inputId);
+  const btn = input.parentElement.querySelector('button');
+  if (btn.disabled) return;
+  btn.disabled = true;
+
+  const res = await fetch('/api/random-name?count=20');
+  if (!res.ok) { btn.disabled = false; return; }
+  const { names } = await res.json();
+
+  let i = 0;
+  const speeds = [40, 40, 50, 50, 60, 70, 80, 100, 120, 150, 180, 210, 240, 270, 300, 330, 360, 390, 420, 0];
+  function step() {
+    input.value = names[i];
+    if (i < names.length - 1) {
+      setTimeout(step, speeds[i]);
+      i++;
+    } else {
+      btn.disabled = false;
+    }
+  }
+  step();
+}
 let deployPresetId = null;
 let deployTemplateId = null;
 

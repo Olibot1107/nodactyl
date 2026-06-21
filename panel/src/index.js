@@ -5,7 +5,17 @@ const WebSocket = require('ws');
 const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
 const path = require('path');
+const fs = require('fs');
 const jwt = require('jsonwebtoken');
+
+let _words = null;
+function getWords() {
+  if (!_words) {
+    const raw = fs.readFileSync(path.join(__dirname, '..', 'words.txt'), 'utf8');
+    _words = raw.split('\n').map(w => w.trim()).filter(w => /^[a-z]+$/i.test(w));
+  }
+  return _words;
+}
 
 const { JWT_SECRET, requireAuth } = require('./middleware/auth');
 const nodeManager = require('./nodeManager');
@@ -56,6 +66,14 @@ async function main() {
   app.use('/api/ranks', rankRoutes);
   app.use('/api/settings', settingsRoutes);
   app.use('/api/audit', auditRoutes);
+
+  app.get('/api/random-name', requireAuth, (req, res) => {
+    const words = getWords();
+    const pick = () => words[Math.floor(Math.random() * words.length)].toLowerCase();
+    const count = Math.min(Math.max(parseInt(req.query.count) || 1, 1), 50);
+    const names = Array.from({ length: count }, () => `${pick()}-${pick()}`);
+    res.json(count === 1 ? { name: names[0] } : { names });
+  });
 
   const pub = (f) => path.join(__dirname, '..', 'public', f);
   app.get('/', (req, res) => res.redirect('/login'));
