@@ -149,6 +149,16 @@
             <input class="form-input" id="gitFolder" placeholder="auto from URL" autocomplete="off">
           </div>
         </div>
+        <div class="form-row" style="gap:8px">
+          <div class="form-group mb-2" style="flex:1">
+            <label class="form-label">Username <span class="text-muted">(private repos)</span></label>
+            <input class="form-input" id="gitUsername" placeholder="optional" autocomplete="off">
+          </div>
+          <div class="form-group mb-2" style="flex:1">
+            <label class="form-label">Token / Password <span class="text-muted">(private repos)</span></label>
+            <input class="form-input" id="gitToken" type="password" placeholder="optional" autocomplete="off">
+          </div>
+        </div>
         <div class="form-hint" id="gitHint"></div>
       </div>
       <!-- Pull pane -->
@@ -156,6 +166,16 @@
         <div class="form-group mb-3">
           <label class="form-label">Directory <span class="text-muted">(must contain .git)</span></label>
           <input class="form-input font-mono" id="gitPullPath" placeholder="/home/container" autocomplete="off">
+        </div>
+        <div class="form-row" style="gap:8px;margin-bottom:12px">
+          <div class="form-group mb-0" style="flex:1">
+            <label class="form-label">Username <span class="text-muted">(private repos)</span></label>
+            <input class="form-input" id="gitPullUsername" placeholder="optional" autocomplete="off">
+          </div>
+          <div class="form-group mb-0" style="flex:1">
+            <label class="form-label">Token / Password <span class="text-muted">(private repos)</span></label>
+            <input class="form-input" id="gitPullToken" type="password" placeholder="optional" autocomplete="off">
+          </div>
         </div>
         <div class="form-group mb-0">
           <label class="form-label mb-2">Strategy</label>
@@ -1305,6 +1325,8 @@ function openGitModal(tab = 'clone') {
     document.getElementById('gitUrl').value = '';
     document.getElementById('gitBranch').value = '';
     document.getElementById('gitFolder').value = '';
+    document.getElementById('gitUsername').value = '';
+    document.getElementById('gitToken').value = '';
     updateGitCloneHint();
   } else if (tab === 'pull') {
     document.getElementById('gitPullPath').value = currentPath;
@@ -1355,9 +1377,11 @@ async function submitGitAction() {
 }
 
 async function submitGitClone() {
-  const url    = document.getElementById('gitUrl').value.trim();
-  const branch = document.getElementById('gitBranch').value.trim();
-  const folder = document.getElementById('gitFolder').value.trim();
+  const url      = document.getElementById('gitUrl').value.trim();
+  const branch   = document.getElementById('gitBranch').value.trim();
+  const folder   = document.getElementById('gitFolder').value.trim();
+  const username = document.getElementById('gitUsername').value.trim();
+  const token    = document.getElementById('gitToken').value;
   const errEl  = document.getElementById('gitError');
   const outEl  = document.getElementById('gitOutput');
   errEl.classList.remove('show');
@@ -1369,7 +1393,9 @@ async function submitGitClone() {
   btn.disabled = true;
   setStatusState('Cloning...');
   try {
-    const res = await API.post(`/servers/${serverId}/files/git`, { url, branch, folder, path: currentPath });
+    const body = { url, branch, folder, path: currentPath };
+    if (username && token) { body.username = username; body.token = token; }
+    const res = await API.post(`/servers/${serverId}/files/git`, body);
     outEl.textContent = res.output || 'Done.';
     outEl.style.display = 'block';
     btn.textContent = res.pulled ? 'Pulled' : 'Cloned';
@@ -1386,7 +1412,9 @@ async function submitGitClone() {
 
 async function submitGitPull() {
   const targetPath = document.getElementById('gitPullPath').value.trim() || currentPath;
-  const strategy = document.querySelector('input[name="gitPullStrategy"]:checked')?.value || 'ff-only';
+  const strategy   = document.querySelector('input[name="gitPullStrategy"]:checked')?.value || 'ff-only';
+  const username   = document.getElementById('gitPullUsername').value.trim();
+  const token      = document.getElementById('gitPullToken').value;
   const errEl = document.getElementById('gitError');
   const outEl = document.getElementById('gitOutput');
   const btn = document.getElementById('gitSubmit');
@@ -1396,7 +1424,9 @@ async function submitGitPull() {
   btn.disabled = true;
   setStatusState('Pulling...');
   try {
-    const res = await API.post(`/servers/${serverId}/files/git-pull`, { path: targetPath, strategy });
+    const body = { path: targetPath, strategy };
+    if (username && token) { body.username = username; body.token = token; }
+    const res = await API.post(`/servers/${serverId}/files/git-pull`, body);
     outEl.textContent = res.output || 'Already up to date.';
     outEl.style.display = 'block';
     btn.textContent = 'Done';

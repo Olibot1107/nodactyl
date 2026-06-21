@@ -571,21 +571,28 @@ router.post('/:id/files/git', async (req, res) => {
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
-  const { url, branch, folder, path: targetPath } = req.body;
+  const { url, branch, folder, path: targetPath, username, token } = req.body;
   if (!url) return res.status(400).json({ error: 'url is required' });
   if (!/^https:\/\/.+/.test(url)) return res.status(400).json({ error: 'Only https:// URLs are supported' });
+  let parsed;
   try {
-    const host = new URL(url).hostname;
-    if (/^(localhost|.*\.local|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|fd[0-9a-f]{2}:)/i.test(host)) {
+    parsed = new URL(url);
+    if (/^(localhost|.*\.local|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|fd[0-9a-f]{2}:)/i.test(parsed.hostname)) {
       return res.status(400).json({ error: 'Private or loopback URLs are not allowed' });
     }
   } catch {
     return res.status(400).json({ error: 'Invalid URL' });
   }
+  let authedUrl = url;
+  if (username && token) {
+    parsed.username = encodeURIComponent(username);
+    parsed.password = encodeURIComponent(token);
+    authedUrl = parsed.toString();
+  }
   try {
     const result = await nodeManager.send(
       server.node_id,
-      fileMsg(server, { type: 'git-clone', url, branch: branch || '', folder: folder || '', path: targetPath || '/home/container' }),
+      fileMsg(server, { type: 'git-clone', url: authedUrl, branch: branch || '', folder: folder || '', path: targetPath || '/home/container' }),
       { timeout: 300000 }
     );
     if (req.user.role !== 'admin') audit(req.user.id, server.id, 'file.git_clone', { url, branch: branch || null }, req);
@@ -600,13 +607,30 @@ router.post('/:id/files/git-pull', async (req, res) => {
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
   const accessError = fileAccessError(server);
   if (accessError) return res.status(accessError.status).json({ error: accessError.error });
-  const { path: targetPath, strategy } = req.body;
+  const { path: targetPath, strategy, username, token } = req.body;
   const validStrategies = ['ff-only', 'merge', 'rebase'];
   const pullStrategy = validStrategies.includes(strategy) ? strategy : 'ff-only';
+  let authedUrl = null;
+  if (username && token) {
+    try {
+      const remoteInfo = await nodeManager.send(
+        server.node_id,
+        fileMsg(server, { type: 'git-remote-url', path: targetPath || '/home/container' }),
+        { timeout: 10000 }
+      ).catch(() => null);
+      const remoteUrl = remoteInfo?.url;
+      if (remoteUrl && /^https:\/\//i.test(remoteUrl)) {
+        const p = new URL(remoteUrl);
+        p.username = encodeURIComponent(username);
+        p.password = encodeURIComponent(token);
+        authedUrl = p.toString();
+      }
+    } catch { /* fall back to unauthenticated pull */ }
+  }
   try {
     const result = await nodeManager.send(
       server.node_id,
-      fileMsg(server, { type: 'git-pull', path: targetPath || '/home/container', strategy: pullStrategy }),
+      fileMsg(server, { type: 'git-pull', path: targetPath || '/home/container', strategy: pullStrategy, ...(authedUrl ? { authedUrl } : {}) }),
       { timeout: 300000 }
     );
     if (req.user.role !== 'admin') audit(req.user.id, server.id, 'file.git_pull', { strategy: pullStrategy }, req);

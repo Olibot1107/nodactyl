@@ -715,8 +715,30 @@ async function handleMessage(msg) {
       break;
     }
 
+    case 'git-remote-url': {
+      const { requestId, serverId: ruServerId, path: ruPath } = msg;
+      if (!dataPath || !ruServerId) { respond(requestId, {}, new Error('No data path configured on this node')); break; }
+      try {
+        const dataDir = serverDataDir(ruServerId);
+        const hostTarget = toHostPath(ruPath || HOME_CONTAINER);
+        const targetFull = nodePath.resolve(nodePath.join(dataDir, hostTarget.replace(/^\//, '')));
+        if (!targetFull.startsWith(nodePath.resolve(dataDir) + nodePath.sep) && targetFull !== nodePath.resolve(dataDir)) {
+          respond(requestId, {}, new Error('Path traversal detected'));
+          break;
+        }
+        const result = spawnSync('git', ['-C', targetFull, 'remote', 'get-url', 'origin'], {
+          timeout: 5000, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        });
+        const url = (result.stdout || '').trim();
+        respond(requestId, { url });
+      } catch (err) {
+        respond(requestId, {}, err);
+      }
+      break;
+    }
+
     case 'git-pull': {
-      const { requestId, serverId: pullServerId, path: pullTargetPath, strategy } = msg;
+      const { requestId, serverId: pullServerId, path: pullTargetPath, strategy, authedUrl } = msg;
       if (!dataPath || !pullServerId) { respond(requestId, {}, new Error('No data path configured on this node')); break; }
       try {
         const dataDir = serverDataDir(pullServerId);
@@ -734,9 +756,10 @@ async function handleMessage(msg) {
         if (strategy === 'rebase') pullArgs.push('--rebase');
         else if (strategy === 'merge') { /* default git pull merge */ }
         else pullArgs.push('--ff-only');
+        if (authedUrl) pullArgs.push(authedUrl);
         console.log(`[server:${pullServerId.slice(0,8)}] Git pull (${strategy || 'ff-only'}) in ${targetFull}`);
         const result = spawnSync('git', pullArgs, {
-          timeout: 270000, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+          timeout: 270000, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: 'echo' },
         });
         if (result.error) { respond(requestId, {}, result.error); break; }
         if (result.status !== 0) {
@@ -908,18 +931,21 @@ async function handleMessage(msg) {
         let result;
         const isGitRepo = fs.existsSync(nodePath.join(targetFull, '.git'));
 
+        const safeUrl = url.replace(/\/\/[^@]*@/, '//');
         if (isGitRepo) {
           console.log(`[server:${serverId.slice(0,8)}] Git pull in ${targetFull}`);
-          result = spawnSync('git', ['-C', targetFull, 'pull', '--ff-only'], {
-            timeout: 270000, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+          const pullArgs = ['-C', targetFull, 'pull', '--ff-only'];
+          if (url !== safeUrl) pullArgs.push(url); // re-auth via URL for already-cloned private repos
+          result = spawnSync('git', pullArgs, {
+            timeout: 270000, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: 'echo' },
           });
         } else {
-          console.log(`[server:${serverId.slice(0,8)}] Git clone ${url} → ${targetFull}`);
+          console.log(`[server:${serverId.slice(0,8)}] Git clone ${safeUrl} → ${targetFull}`);
           const args = ['clone', '--depth', '1'];
           if (branch) args.push('--branch', branch);
           args.push(url, targetFull);
           result = spawnSync('git', args, {
-            timeout: 270000, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+            timeout: 270000, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: 'echo' },
           });
         }
 
