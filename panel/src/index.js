@@ -32,6 +32,7 @@ async function main() {
   // Init DB first (sql.js needs async WASM load)
   const { db, init } = require('./db');
   await init();
+  require('./push').initVapid();
 
   const authRoutes = require('./routes/auth');
   const nodeRoutes = require('./routes/nodes');
@@ -43,6 +44,7 @@ async function main() {
   const rankRoutes = require('./routes/ranks');
   const settingsRoutes = require('./routes/settings');
   const auditRoutes = require('./routes/audit');
+  const pushRoutes = require('./routes/push');
   const app = express();
   const httpServer = http.createServer(app);
   const io = new SocketIO(httpServer);
@@ -66,6 +68,7 @@ async function main() {
   app.use('/api/ranks', rankRoutes);
   app.use('/api/settings', settingsRoutes);
   app.use('/api/audit', auditRoutes);
+  app.use('/api/push', pushRoutes);
 
   app.get('/api/random-name', requireAuth, (req, res) => {
     const words = getWords();
@@ -95,7 +98,8 @@ async function main() {
   app.get('/admin/servers', (req, res) => res.sendFile(pub('admin/servers.html')));
   app.get('/admin/ranks', (req, res) => res.sendFile(pub('admin/ranks.html')));
   app.get('/admin/settings', (req, res) => res.sendFile(pub('admin/settings.html')));
-  app.get('/admin/audit',    (req, res) => res.sendFile(pub('admin/audit.html')));
+  app.get('/admin/audit',          (req, res) => res.sendFile(pub('admin/audit.html')));
+  app.get('/admin/notifications',  (req, res) => res.sendFile(pub('admin/notifications.html')));
   app.get('/logs/:shareId', (req, res) => res.sendFile(pub('log-viewer.html')));
 
   // ── Favicon ───────────────────────────────────────────────────────────────────
@@ -273,6 +277,43 @@ async function main() {
         } catch {}
       }
     } catch {}
+  }, 60000);
+
+  // Background schedule runner — fires server actions at configured UTC times (checked every 60s)
+  setInterval(() => {
+    try {
+      const now = new Date();
+      const hour = now.getUTCHours();
+      const minute = now.getUTCMinutes();
+      const dayOfWeek = now.getUTCDay(); // 0 = Sunday
+      const nowSec = Math.floor(Date.now() / 1000);
+
+      const due = db.prepare(`
+        SELECT ss.*, s.node_id, s.container_id, s.status
+        FROM server_schedules ss
+        JOIN servers s ON ss.server_id = s.id
+        WHERE ss.enabled = 1 AND ss.hour = ? AND ss.minute = ?
+          AND (ss.last_run IS NULL OR ss.last_run < ?)
+      `).all(hour, minute, nowSec - 55);
+
+      for (const sched of due) {
+        const days = JSON.parse(sched.days || '[]');
+        if (days.length > 0 && !days.includes(dayOfWeek)) continue;
+        if (sched.action === 'start' && sched.status !== 'stopped') continue;
+        if (['stop', 'kill', 'restart'].includes(sched.action) && sched.status !== 'running') continue;
+        if (!nodeManager.isOnline(sched.node_id) || !sched.container_id) continue;
+
+        db.prepare('UPDATE server_schedules SET last_run = ? WHERE id = ?').run(nowSec, sched.id);
+        console.log(`[schedule] ${sched.action} server ${sched.server_id.slice(0, 8)}`);
+        nodeManager.send(sched.node_id, {
+          type: 'server-action', serverId: sched.server_id, containerId: sched.container_id, action: sched.action,
+        }, { timeout: 15000 }).catch(err => {
+          console.error(`[schedule] failed on ${sched.server_id.slice(0, 8)}: ${err.message}`);
+        });
+      }
+    } catch (err) {
+      console.error('[schedule] tick error:', err.message);
+    }
   }, 60000);
 
   httpServer.listen(PORT, () => {

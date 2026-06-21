@@ -168,6 +168,8 @@ async function init() {
   try { _db.exec(`CREATE TABLE IF NOT EXISTS audit_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, server_id TEXT, action TEXT NOT NULL, metadata TEXT DEFAULT '{}', ip TEXT, created_at INTEGER DEFAULT (strftime('%s','now')))`); } catch {}
   try { _db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at DESC)`); } catch {}
   try { _db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id)`); } catch {}
+  try { _db.exec(`CREATE TABLE IF NOT EXISTS server_schedules (id TEXT PRIMARY KEY, server_id TEXT NOT NULL, action TEXT NOT NULL, hour INTEGER NOT NULL, minute INTEGER NOT NULL, days TEXT DEFAULT '[]', enabled INTEGER DEFAULT 1, last_run INTEGER DEFAULT NULL, created_at INTEGER DEFAULT (strftime('%s','now')))`); } catch {}
+  try { _db.exec(`CREATE TABLE IF NOT EXISTS push_subscriptions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, endpoint TEXT NOT NULL UNIQUE, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created_at INTEGER DEFAULT (strftime('%s','now')))`); } catch {}
 
   // Seed default ranks
   const rankCount = prepare('SELECT COUNT(*) as count FROM ranks').get();

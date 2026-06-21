@@ -28,6 +28,12 @@
     .perm-pill:hover .perm-pill-btn { border-color: var(--primary); color: var(--primary); }
     .perm-pill input:checked ~ .perm-pill-btn,
     .perm-pill:hover input:checked + .perm-pill-btn { color: #fff; }
+    .push-toggle { position:relative; display:inline-block; width:38px; height:21px; cursor:pointer; flex-shrink:0; }
+    .push-toggle input { opacity:0; width:0; height:0; position:absolute; }
+    .push-toggle-track { position:absolute; inset:0; border-radius:21px; background:var(--border2,#374151); transition:background .15s; }
+    .push-toggle-track::after { content:''; position:absolute; top:3px; left:3px; width:15px; height:15px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.3); transition:transform .15s; }
+    .push-toggle input:checked + .push-toggle-track { background:var(--primary); }
+    .push-toggle input:checked + .push-toggle-track::after { transform:translateX(17px); }
   </style>
 </head>
 <body>
@@ -212,8 +218,21 @@ function buildNotifCard() {
   const events = cfg.events?.length ? cfg.events : ['running', 'stopped', 'error'];
   const chk = (e) => events.includes(e) ? 'checked' : '';
   return `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--text)">Push Notifications</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:3px">Browser alerts when this server changes status</div>
+      </div>
+      <label class="push-toggle" title="Toggle push notifications for this server">
+        <input type="checkbox" id="pushToggle" onchange="setPushMuted(!this.checked)">
+        <span class="push-toggle-track"></span>
+      </label>
+    </div>
+
+    <div class="form-label mb-3" style="text-transform:uppercase;font-size:11px;letter-spacing:.06em;color:var(--text-muted)">Discord</div>
+
     <div class="form-group mb-3">
-      <label class="form-label">Discord Webhook URL <span class="text-muted">(optional)</span></label>
+      <label class="form-label">Webhook URL <span class="text-muted">(optional)</span></label>
       <input class="form-input font-mono" id="fieldWebhook" value="${esc(server.discord_webhook || '')}" placeholder="https://discord.com/api/webhooks/...">
       <div class="form-hint mt-2">${UI.info} Leave blank to disable Discord notifications.</div>
     </div>
@@ -262,8 +281,43 @@ function getEnvVars() {
   return envs;
 }
 
+function getMutedServers() {
+  try { return JSON.parse(localStorage.getItem('notif_muted_servers') || '[]'); } catch { return []; }
+}
+
+async function _cachePrefsForSW() {
+  try {
+    const cache = await caches.open('nodactyl-prefs');
+    await cache.put('/sw-prefs', new Response(JSON.stringify({ mutedServers: getMutedServers() }), {
+      headers: { 'Content-Type': 'application/json' },
+    }));
+  } catch {}
+}
+
+function setPushMuted(muted) {
+  const list = getMutedServers().filter(id => id !== serverId);
+  if (muted) list.push(serverId);
+  localStorage.setItem('notif_muted_servers', JSON.stringify(list));
+  _cachePrefsForSW();
+  const t = document.getElementById('pushToggle');
+  if (t) t.checked = !muted;
+}
+
+function populatePushToggle() {
+  const t = document.getElementById('pushToggle');
+  if (!t) return;
+  const notifSupported = 'Notification' in window || 'PushManager' in window;
+  if (!notifSupported) {
+    t.closest('.push-toggle').parentElement.style.opacity = '0.4';
+    t.disabled = true;
+    return;
+  }
+  t.checked = !getMutedServers().includes(serverId);
+}
+
 function populateForm() {
   (server.env_vars || []).forEach(e => addEnvRow(e.key, e.value));
+  populatePushToggle();
 }
 
 function attachListeners() {

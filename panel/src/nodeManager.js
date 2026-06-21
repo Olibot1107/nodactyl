@@ -143,7 +143,7 @@ class NodeManager {
 
       case 'server-status': {
         // Guard: only accept status updates for servers that belong to this node
-        const server = db.prepare('SELECT node_id, owner_id FROM servers WHERE id = ?').get(msg.serverId);
+        const server = db.prepare('SELECT node_id, owner_id, name FROM servers WHERE id = ?').get(msg.serverId);
         if (!server || server.node_id !== nodeId) break;
 
         if (msg.status === 'running') {
@@ -166,6 +166,7 @@ class NodeManager {
           members.forEach(m => { if (this.io) this.io.to(`user:${m.user_id}`).emit('server-status', { serverId: msg.serverId, status: msg.status }); });
         }
         sendDiscordWebhook(msg.serverId, msg.status);
+        require('./push').sendStatusPush(server.owner_id, server.name, msg.serverId, msg.status).catch(() => {});
         break;
       }
 

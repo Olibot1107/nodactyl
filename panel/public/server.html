@@ -24,6 +24,9 @@ let logsSubscribed = false;
 let logsTailDone = false;
 let isTerminalMode = false;
 let liveScroll = true;
+let schedules = [];
+const schedDays = new Set();
+let _pushActive = false;
 
 const UI = {
   arrowLeft: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>',
@@ -41,10 +44,12 @@ const UI = {
   upload: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>',
   link: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>',
   edit: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+  clock: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
 };
 
 async function init() {
   await loadPanelSettings();
+  initPushNotifications();
   document.getElementById('app').innerHTML = `
     ${renderSidebar('dashboard')}
     <div class="main">
@@ -66,6 +71,7 @@ async function init() {
     if (server.status === 'running' && server.terminal_mode) isTerminalMode = true;
     document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'console');
     render();
+    loadSchedules();
     setupConsoleScrollDetect();
     connectSocket();
     startStats();
@@ -219,6 +225,43 @@ function render() {
           </div>
         </div>`;
         })() : ''}
+
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div class="card-title">${UI.clock} Schedules</div>
+            ${(user?.role === 'admin' || server?.owner_id === user?.id) ? `<button class="btn btn-ghost btn-xs" onclick="toggleAddSchedForm()" id="addSchedToggle">+ Add</button>` : ''}
+          </div>
+          <div id="schedList"><span style="font-size:12px;color:var(--text-dim)">Loading…</span></div>
+          ${(user?.role === 'admin' || server?.owner_id === user?.id) ? `
+          <div id="schedAddForm" style="display:none;border-top:1px solid var(--border);margin-top:14px;padding-top:14px">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.06em;color:var(--text-dim);margin-bottom:10px">NEW SCHEDULE</div>
+            <div style="display:grid;grid-template-columns:1fr auto;gap:7px;margin-bottom:10px;align-items:center">
+              <select class="form-select" id="schedAction" style="font-size:12.5px;padding:6px 8px">
+                <option value="start">Start</option>
+                <option value="stop">Stop</option>
+                <option value="restart">Restart</option>
+                <option value="kill">Kill</option>
+              </select>
+              <div style="display:flex;align-items:center;gap:3px;white-space:nowrap">
+                <input type="number" class="form-input" id="schedHour" min="0" max="23" placeholder="HH" style="width:46px;text-align:center;padding:6px 4px;font-size:13px;font-weight:600;font-family:monospace">
+                <span style="color:var(--text-muted);font-weight:800;font-size:15px">:</span>
+                <input type="number" class="form-input" id="schedMin" min="0" max="59" placeholder="MM" style="width:46px;text-align:center;padding:6px 4px;font-size:13px;font-weight:600;font-family:monospace">
+                <span style="font-size:10px;color:var(--text-dim);margin-left:2px">UTC</span>
+              </div>
+            </div>
+            <div style="margin-bottom:12px">
+              <div style="font-size:10px;color:var(--text-dim);font-weight:500;margin-bottom:6px">REPEAT ON — leave empty for daily</div>
+              <div style="display:flex;gap:4px">
+                ${['Su','Mo','Tu','We','Th','Fr','Sa'].map((d, i) => `<button type="button" data-day="${i}" class="sched-day-btn btn btn-ghost btn-xs" style="flex:1;padding:5px 0;font-size:11px;font-weight:600;border-radius:6px" onclick="toggleSchedDay(${i},this)">${d}</button>`).join('')}
+              </div>
+            </div>
+            <div id="schedAddError" style="display:none;font-size:11.5px;color:var(--danger);margin-bottom:8px"></div>
+            <div style="display:flex;gap:7px">
+              <button class="btn btn-primary btn-sm" onclick="addSchedule()" style="flex:1;justify-content:center">Add Schedule</button>
+              <button class="btn btn-ghost btn-sm" onclick="toggleAddSchedForm(true)">Cancel</button>
+            </div>
+          </div>` : ''}
+        </div>
       </aside>
     </div>`;
 
@@ -393,6 +436,7 @@ function connectSocket() {
   socket.on('server-status', ({ serverId: sid, status }) => {
     if (sid !== serverId) return;
     server.status = status;
+    notifyServerStatus(status);
     if (status === 'running') { server.started_at = Math.floor(Date.now() / 1000); startUptimeTicker(); }
     else if (status === 'stopped' || status === 'error') { server.started_at = null; stopUptimeTicker(); isTerminalMode = false; }
     updateLiveBits();
@@ -424,7 +468,12 @@ function connectSocket() {
 
   socket.on('node-status', ({ nodeId, status }) => {
     if (nodeId !== server.node_id) return;
+    const wasOnline = server.node_online;
     server.node_online = status === 'online';
+    if (wasOnline && !server.node_online && document.hidden && Notification.permission === 'granted') {
+      const n = new Notification(`Node offline — ${server.name}`, { body: 'The hosting node went offline.', icon: '/favicon.svg' });
+      n.onclick = () => { window.focus(); n.close(); };
+    }
     updateLiveBits();
   });
 }
@@ -875,6 +924,313 @@ async function openRedactView(sid, label) {
   }
 
   renderRedact();
+}
+
+// ── Push notifications ────────────────────────────────────────────────────────
+
+function _urlBase64ToUint8Array(b64) {
+  const pad = '='.repeat((4 - b64.length % 4) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+function _bufToBase64(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+}
+
+async function _cacheTokenForSW() {
+  try {
+    const token = getToken();
+    if (!token) return;
+    const cache = await caches.open('nodactyl-auth');
+    await cache.put('/sw-token', new Response(JSON.stringify({ token }), {
+      headers: { 'Content-Type': 'application/json' },
+    }));
+  } catch {}
+}
+
+function getMutedServers() {
+  try { return JSON.parse(localStorage.getItem('notif_muted_servers') || '[]'); } catch { return []; }
+}
+
+async function _cachePrefsForSW() {
+  try {
+    const cache = await caches.open('nodactyl-prefs');
+    await cache.put('/sw-prefs', new Response(JSON.stringify({ mutedServers: getMutedServers() }), {
+      headers: { 'Content-Type': 'application/json' },
+    }));
+  } catch {}
+}
+
+function _showNotifBanner(onAccept, onDismiss) {
+  if (document.getElementById('notif-prompt-overlay')) return;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'notif-prompt-overlay';
+  overlay.style.cssText = `
+    position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(3px);
+    display:flex;align-items:center;justify-content:center;z-index:9999;
+    opacity:0;transition:opacity .2s ease;
+  `;
+
+  overlay.innerHTML = `
+    <div id="notif-prompt-card" style="
+      background:var(--card);border:1px solid var(--border);border-radius:16px;
+      box-shadow:0 20px 60px rgba(0,0,0,.6);padding:32px 28px;
+      max-width:400px;width:calc(100% - 40px);text-align:center;
+      transform:scale(.94);transition:transform .2s ease;
+    ">
+      <div style="
+        width:56px;height:56px;border-radius:50%;
+        background:rgba(249,115,22,.12);border:1px solid rgba(249,115,22,.25);
+        display:flex;align-items:center;justify-content:center;margin:0 auto 20px;
+      ">
+        <svg width="26" height="26" fill="none" stroke="#f97316" stroke-width="1.7" viewBox="0 0 24 24">
+          <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+          <path d="M13.73 21a2 2 0 01-3.46 0"/>
+        </svg>
+      </div>
+
+      <div style="font-size:17px;font-weight:700;color:var(--text);margin-bottom:10px">
+        Enable server notifications?
+      </div>
+      <div style="font-size:13px;color:var(--text-muted);line-height:1.6;margin-bottom:6px">
+        We'll only notify you if your server crashes — not for normal stops or restarts.
+      </div>
+
+      <div style="
+        background:rgba(255,255,255,.04);border:1px solid var(--border);
+        border-radius:10px;padding:14px 16px;margin:18px 0;
+        display:flex;flex-direction:column;gap:9px;text-align:left;
+      ">
+        <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-muted)">
+          <svg width="14" height="14" fill="none" stroke="#22c55e" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          Server crashes or exits unexpectedly
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-muted)">
+          <svg width="14" height="14" fill="none" stroke="#ef4444" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          Not sent for manual stops, restarts, or any other actions
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-muted)">
+          <svg width="14" height="14" fill="none" stroke="#ef4444" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          No ads, no marketing, no spam — ever
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button id="notif-accept" class="btn btn-primary" style="width:100%;justify-content:center">
+          Enable Notifications
+        </button>
+        <button id="notif-dismiss" class="btn" style="width:100%;justify-content:center">
+          Not now
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => {
+    overlay.style.opacity = '1';
+    overlay.querySelector('#notif-prompt-card').style.transform = 'scale(1)';
+  });
+
+  const remove = () => {
+    overlay.style.opacity = '0';
+    overlay.querySelector('#notif-prompt-card').style.transform = 'scale(.94)';
+    setTimeout(() => overlay.remove(), 220);
+  };
+
+  document.getElementById('notif-accept').onclick  = () => { remove(); onAccept(); };
+  document.getElementById('notif-dismiss').onclick = () => { remove(); onDismiss?.(); };
+}
+
+async function _activatePush(reg) {
+  const keyRes = await fetch('/api/push/vapid-key');
+  if (!keyRes.ok) return;
+  const { publicKey } = await keyRes.json();
+
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: _urlBase64ToUint8Array(publicKey),
+    });
+  }
+  await API.post('/push/subscribe', {
+    endpoint: sub.endpoint,
+    keys: { p256dh: _bufToBase64(sub.getKey('p256dh')), auth: _bufToBase64(sub.getKey('auth')) },
+  });
+  _pushActive = true;
+}
+
+async function initPushNotifications() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    // Fallback: plain Notification permission for backgrounded-tab case
+    if ('Notification' in window && Notification.permission === 'default') {
+      _showNotifBanner(() => Notification.requestPermission(), null);
+    }
+    return;
+  }
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+    _cacheTokenForSW();
+    _cachePrefsForSW();
+
+    // Already subscribed — reuse existing subscription silently
+    const existing = await reg.pushManager.getSubscription();
+    if (existing) {
+      await _activatePush(reg);
+      return;
+    }
+
+    // Permission already denied — don't nag
+    if (Notification.permission === 'denied') return;
+
+    // Permission already granted — subscribe silently (browser won't prompt again)
+    if (Notification.permission === 'granted') {
+      await _activatePush(reg);
+      return;
+    }
+
+    // First time — show our explanation banner before the browser prompt
+    _showNotifBanner(async () => {
+      try { await _activatePush(reg); } catch {}
+    }, null);
+  } catch {}
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+function notifyServerStatus(status) {
+  if (_pushActive) return; // push subscription handles it — avoids duplicates
+  if (!document.hidden || Notification.permission !== 'granted') return;
+  if (getMutedServers().includes(serverId)) return;
+  const cfg = {
+    error: { title: `${server.name} crashed`, body: 'Server stopped unexpectedly.' },
+  };
+  const c = cfg[status];
+  if (!c) return;
+  const n = new Notification(c.title, { body: c.body, icon: '/favicon.svg' });
+  n.onclick = () => { window.focus(); n.close(); };
+}
+
+// ── Schedules ─────────────────────────────────────────────────────────────────
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+async function loadSchedules() {
+  try {
+    schedules = await API.get(`/servers/${serverId}/schedules`);
+    renderSchedList();
+  } catch {
+    const el = document.getElementById('schedList');
+    if (el) el.innerHTML = '<span style="font-size:12px;color:var(--text-dim)">—</span>';
+  }
+}
+
+const ACTION_BG = { start: 'rgba(34,197,94,.13)', stop: 'rgba(100,116,139,.12)', restart: 'rgba(245,158,11,.13)', kill: 'rgba(239,68,68,.13)' };
+const ACTION_FG = { start: '#4ade80', stop: '#94a3b8', restart: '#fbbf24', kill: '#f87171' };
+
+function renderSchedList() {
+  const el = document.getElementById('schedList');
+  if (!el) return;
+  if (!schedules.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text-dim);padding:4px 0 2px">No schedules yet.</div>';
+    return;
+  }
+  el.innerHTML = schedules.map(s => {
+    const h = String(s.hour).padStart(2, '0');
+    const m = String(s.minute).padStart(2, '0');
+    const daysLabel = s.days?.length ? s.days.map(d => DAY_NAMES[d]).join(', ') : 'Every day';
+    const bg = ACTION_BG[s.action] || 'rgba(100,116,139,.12)';
+    const fg = ACTION_FG[s.action] || 'var(--text)';
+    const opacity = s.enabled ? '1' : '0.45';
+    return `
+    <div style="border:1px solid var(--border);border-radius:8px;padding:9px 11px;display:flex;align-items:center;gap:10px;margin-bottom:6px;opacity:${opacity};transition:opacity .15s">
+      <span style="flex-shrink:0;font-size:10px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:4px;background:${bg};color:${fg};text-transform:uppercase">${esc(s.action)}</span>
+      <div style="flex:1;min-width:0">
+        <div><span class="font-mono" style="font-size:14px;font-weight:700;color:var(--text)">${h}:${m}</span><span style="font-size:10px;color:var(--text-dim);margin-left:4px">UTC</span></div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px">${esc(daysLabel)}</div>
+      </div>
+      <input type="checkbox" ${s.enabled ? 'checked' : ''} title="${s.enabled ? 'Enabled — click to pause' : 'Disabled — click to enable'}"
+        style="width:15px;height:15px;cursor:pointer;accent-color:var(--primary);flex-shrink:0"
+        onchange="toggleSchedule('${esc(s.id)}', this.checked)">
+      <button class="btn btn-ghost btn-xs" style="color:var(--text-dim);padding:3px 5px;flex-shrink:0"
+        onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-dim)'"
+        onclick="deleteSchedule('${esc(s.id)}',this)" title="Delete schedule">${UI.trash}</button>
+    </div>`;
+  }).join('');
+}
+
+function toggleAddSchedForm(cancel) {
+  const form = document.getElementById('schedAddForm');
+  if (!form) return;
+  const open = form.style.display !== 'none';
+  if (cancel || open) {
+    form.style.display = 'none';
+    schedDays.clear();
+    document.querySelectorAll('.sched-day-btn').forEach(b => { b.style.background = ''; b.style.color = ''; b.style.borderColor = ''; });
+    const errEl = document.getElementById('schedAddError');
+    if (errEl) errEl.style.display = 'none';
+  } else {
+    form.style.display = '';
+  }
+}
+
+function toggleSchedDay(day, btn) {
+  if (schedDays.has(day)) {
+    schedDays.delete(day);
+    btn.style.background = '';
+    btn.style.color = '';
+    btn.style.borderColor = '';
+  } else {
+    schedDays.add(day);
+    btn.style.background = 'var(--primary)';
+    btn.style.color = '#fff';
+    btn.style.borderColor = 'var(--primary)';
+  }
+}
+
+async function addSchedule() {
+  const action = document.getElementById('schedAction')?.value;
+  const hour = parseInt(document.getElementById('schedHour')?.value);
+  const minute = parseInt(document.getElementById('schedMin')?.value);
+  const errEl = document.getElementById('schedAddError');
+  if (errEl) errEl.style.display = 'none';
+  if (isNaN(hour) || hour < 0 || hour > 23) {
+    if (errEl) { errEl.textContent = 'Hour must be 0–23.'; errEl.style.display = ''; } return;
+  }
+  if (isNaN(minute) || minute < 0 || minute > 59) {
+    if (errEl) { errEl.textContent = 'Minute must be 0–59.'; errEl.style.display = ''; } return;
+  }
+  const days = [...schedDays].sort((a, b) => a - b);
+  try {
+    const sched = await API.post(`/servers/${serverId}/schedules`, { action, hour, minute, days });
+    schedules.push(sched);
+    renderSchedList();
+    toggleAddSchedForm(true);
+  } catch (e) {
+    if (errEl) { errEl.textContent = e.message; errEl.style.display = ''; }
+  }
+}
+
+async function toggleSchedule(schedId, enabled) {
+  try {
+    await API.patch(`/servers/${serverId}/schedules/${schedId}`, { enabled });
+    const s = schedules.find(x => x.id === schedId);
+    if (s) s.enabled = enabled ? 1 : 0;
+  } catch {
+    renderSchedList();
+  }
+}
+
+async function deleteSchedule(schedId, btn) {
+  if (!confirm('Delete this schedule?')) return;
+  try {
+    await API.delete(`/servers/${serverId}/schedules/${schedId}`);
+    schedules = schedules.filter(s => s.id !== schedId);
+    renderSchedList();
+  } catch (e) { alert(e.message); }
 }
 
 init();
