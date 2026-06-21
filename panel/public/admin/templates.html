@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nodactyl — Templates</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .files-table { width:100%; border-collapse:collapse; margin-top:4px; }
+    .files-table th, .files-table td { padding:6px 8px; text-align:left; border-bottom:1px solid var(--border); font-size:12px; }
+    .files-table th { color:var(--text-muted); font-weight:500; }
+    .file-path-input { font-family:monospace; }
+    .file-content-input { font-family:monospace; font-size:11.5px; resize:vertical; min-height:60px; }
+    .files-empty { color:var(--text-dim); font-size:12px; padding:10px 0; font-style:italic; }
+    .badge-template { font-size:10px; padding:1px 6px; border-radius:99px; background:rgba(99,102,241,.15); color:#818cf8; border:1px solid rgba(99,102,241,.3); }
+  </style>
+</head>
+<body>
+<div class="layout" id="app"></div>
+
+<!-- Create / Edit modal -->
+<div class="modal-overlay" id="templateModal">
+  <div class="modal modal-lg" style="max-width:820px">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modalTitle">New Template</h2>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-error" id="modalError"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Template Name *</label>
+          <input type="text" class="form-input" id="t_name" placeholder="Node.js App">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Docker Image *</label>
+          <input type="text" class="form-input" id="t_image" placeholder="node:18-alpine">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <input type="text" class="form-input" id="t_desc" placeholder="Brief description shown to users">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Memory Limit (MB)</label>
+          <input type="number" class="form-input" id="t_memory" value="512" min="64">
+        </div>
+        <div class="form-group">
+          <label class="form-label">CPU Limit (cores)</label>
+          <input type="number" class="form-input" id="t_cpu" value="1" step="0.1" min="0.1">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Disk Limit (MB)</label>
+        <input type="number" class="form-input" id="t_disk" value="0" min="0" step="512">
+        <div class="form-hint">Max disk space for servers using this template. 0 = unlimited.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Required Rank <span class="text-muted">(optional)</span></label>
+        <select class="form-select" id="t_rank">
+          <option value="">None — available to all users</option>
+        </select>
+        <div class="form-hint">Users need this rank or higher to see and deploy this template.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Environment Variables</label>
+        <div id="envList"></div>
+        <button class="btn btn-ghost btn-sm mt-2" onclick="addEnv()" type="button">+ Add Variable</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Install Script <span class="text-muted">(optional)</span></label>
+        <textarea class="form-input font-mono" id="t_install" rows="4" placeholder="npm install&#10;npm run build"></textarea>
+        <div class="form-hint">Runs once inside the container at first deploy, before the server starts.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Startup Command</label>
+        <input type="text" class="form-input font-mono" id="t_startup" placeholder="node server.js">
+        <div class="form-hint">Runs inside <code>/home/container</code>. Leave blank to use the image's default CMD.</div>
+      </div>
+
+      <!-- Files section -->
+      <div class="form-group">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <label class="form-label" style="margin:0">Pre-loaded Files</label>
+          <button class="btn btn-ghost btn-sm" onclick="addFile()" type="button">+ Add File</button>
+        </div>
+        <div class="form-hint" style="margin-bottom:8px">These files are written to the server's data directory right after installation. Paths are relative to <code>/home/container</code>.</div>
+        <div id="filesList">
+          <div class="files-empty" id="filesEmpty">No files yet. Click "Add File" to add pre-populated files.</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="saveBtn" onclick="saveTemplate()">Save Template</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+requireAdmin();
+let templates = [];
+let ranks = [];
+let editId = null;
+let envCount = 0;
+let fileCount = 0;
+
+async function init() {
+  await loadPanelSettings();
+  document.getElementById('app').innerHTML = `
+    ${renderSidebar('admin-templates')}
+    <div class="main">
+      <div class="topbar">
+        <div>
+          <div class="page-title">Templates</div>
+          <div class="page-sub">Server templates with pre-populated files</div>
+        </div>
+        <button class="btn btn-primary" onclick="openCreate()">New Template</button>
+      </div>
+      <div class="content">
+        <div class="alert alert-error" id="pageError"></div>
+        <div class="alert alert-success" id="pageSuccess"></div>
+        <div id="templatesGrid">
+          <div class="empty-state"><span class="spinner"></span></div>
+        </div>
+      </div>
+    </div>`;
+
+  await loadTemplates();
+}
+
+async function loadTemplates() {
+  try {
+    [templates, ranks] = await Promise.all([API.get('/templates'), API.get('/ranks').catch(() => [])]);
+    renderTemplates();
+  } catch (e) {
+    showErr(e.message);
+  }
+}
+
+function renderTemplates() {
+  const el = document.getElementById('templatesGrid');
+  if (!templates.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">—</div><p>No templates yet. Create one to pre-populate server files on deploy.</p></div>`;
+    return;
+  }
+  el.innerHTML = `<div class="grid-3">${templates.map(t => `
+    <div class="preset-card">
+      <div>
+        <div class="preset-card-name" style="display:flex;align-items:center;gap:6px">
+          ${esc(t.name)} <span class="badge-template">template</span>
+        </div>
+        ${t.description ? `<div class="preset-card-desc mt-2">${esc(t.description)}</div>` : ''}
+      </div>
+      <div class="preset-card-image">${esc(t.image)}</div>
+      ${t.startup_command ? `<div class="preset-card-cmd font-mono">${esc(t.startup_command)}</div>` : ''}
+      <div class="preset-card-meta">
+        <span>${t.memory_limit} MB RAM</span>
+        <span>${t.cpu_limit} CPU</span>
+        ${t.disk_limit > 0 ? `<span>${t.disk_limit >= 1024 ? (t.disk_limit/1024).toFixed(1)+' GB' : t.disk_limit+' MB'} disk</span>` : ''}
+        ${t.files?.length ? `<span style="color:#818cf8">${t.files.length} file(s)</span>` : '<span style="color:var(--text-muted)">No files</span>'}
+        ${t.required_rank_id ? `<span style="color:var(--warning,#f59e0b)">Rank required</span>` : '<span style="color:var(--text-muted)">Public</span>'}
+      </div>
+      <div class="preset-card-footer">
+        <button class="btn btn-ghost btn-sm" onclick="openEdit('${t.id}')">Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteTemplate('${t.id}', '${esc(t.name)}')">Delete</button>
+      </div>
+    </div>`).join('')}</div>`;
+}
+
+// ── Modal helpers ─────────────────────────────────────────────────────────────
+function populateRankDropdown(selectedId = '') {
+  const sel = document.getElementById('t_rank');
+  const sorted = [...ranks].sort((a, b) => a.sort_order - b.sort_order);
+  sel.innerHTML = `<option value="">None — available to all users</option>` +
+    sorted.map(r => `<option value="${r.id}" ${r.id === selectedId ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+}
+
+function clearModal() {
+  ['t_name','t_image','t_desc','t_startup'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('t_install').value = '';
+  document.getElementById('t_memory').value = 512;
+  document.getElementById('t_cpu').value = 1;
+  document.getElementById('t_disk').value = 0;
+  document.getElementById('envList').innerHTML = '';
+  document.getElementById('filesList').innerHTML = '<div class="files-empty" id="filesEmpty">No files yet. Click "Add File" to add pre-populated files.</div>';
+  document.getElementById('modalError').classList.remove('show');
+  populateRankDropdown('');
+  envCount = 0;
+  fileCount = 0;
+}
+
+function openCreate() {
+  editId = null;
+  clearModal();
+  document.getElementById('modalTitle').textContent = 'New Template';
+  document.getElementById('saveBtn').textContent = 'Save Template';
+  document.getElementById('templateModal').classList.add('open');
+}
+
+function openEdit(id) {
+  editId = id;
+  const t = templates.find(x => x.id === id);
+  if (!t) return;
+  clearModal();
+  document.getElementById('t_name').value = t.name;
+  document.getElementById('t_image').value = t.image;
+  document.getElementById('t_desc').value = t.description || '';
+  document.getElementById('t_memory').value = t.memory_limit;
+  document.getElementById('t_cpu').value = t.cpu_limit;
+  document.getElementById('t_disk').value = t.disk_limit || 0;
+  (t.env_vars || []).forEach(ev => addEnv(ev.key, ev.value));
+  document.getElementById('t_install').value = t.install_script || '';
+  document.getElementById('t_startup').value = t.startup_command || '';
+  populateRankDropdown(t.required_rank_id || '');
+  (t.files || []).forEach(f => addFile(f.path, f.content));
+  document.getElementById('modalTitle').textContent = 'Edit Template';
+  document.getElementById('saveBtn').textContent = 'Update Template';
+  document.getElementById('templateModal').classList.add('open');
+}
+
+function closeModal() { document.getElementById('templateModal').classList.remove('open'); }
+
+function addEnv(key='', value='') {
+  const id = ++envCount;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:6px';
+  div.innerHTML = `
+    <input type="text" class="form-input" id="ek_${id}" placeholder="KEY" value="${esc(key)}" style="flex:1">
+    <span class="text-muted">=</span>
+    <input type="text" class="form-input" id="ev_${id}" placeholder="value" value="${esc(value)}" style="flex:2">
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">✕</button>`;
+  document.getElementById('envList').appendChild(div);
+}
+
+function getEnvVars() {
+  const envs = [];
+  document.querySelectorAll('[id^="ek_"]').forEach(el => {
+    const id = el.id.slice(3);
+    const key = el.value.trim();
+    const value = document.getElementById(`ev_${id}`).value;
+    if (key) envs.push({ key, value });
+  });
+  return envs;
+}
+
+function addFile(path='', content='') {
+  const emptyEl = document.getElementById('filesEmpty');
+  if (emptyEl) emptyEl.remove();
+
+  const id = ++fileCount;
+  const div = document.createElement('div');
+  div.id = `file_row_${id}`;
+  div.style.cssText = 'margin-top:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px';
+  div.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+      <input type="text" class="form-input file-path-input" id="fp_${id}" placeholder="/config.json" value="${esc(path)}" style="flex:1;font-size:12px">
+      <button onclick="document.getElementById('file_row_${id}').remove();checkFilesEmpty()" class="btn btn-ghost btn-sm" style="padding:5px 8px;flex-shrink:0">✕</button>
+    </div>
+    <textarea class="form-input file-content-input" id="fc_${id}" placeholder="File content here..." rows="4">${esc(content)}</textarea>`;
+  document.getElementById('filesList').appendChild(div);
+}
+
+function checkFilesEmpty() {
+  const list = document.getElementById('filesList');
+  if (!list.querySelector('[id^="file_row_"]')) {
+    list.innerHTML = '<div class="files-empty" id="filesEmpty">No files yet. Click "Add File" to add pre-populated files.</div>';
+  }
+}
+
+function getFiles() {
+  const files = [];
+  document.querySelectorAll('[id^="fp_"]').forEach(el => {
+    const id = el.id.slice(3);
+    const path = el.value.trim();
+    const content = document.getElementById(`fc_${id}`).value;
+    if (path) files.push({ path, content });
+  });
+  return files;
+}
+
+async function saveTemplate() {
+  const errEl = document.getElementById('modalError');
+  errEl.classList.remove('show');
+  const btn = document.getElementById('saveBtn');
+  const body = {
+    name: document.getElementById('t_name').value.trim(),
+    description: document.getElementById('t_desc').value.trim(),
+    image: document.getElementById('t_image').value.trim(),
+    memory_limit: parseInt(document.getElementById('t_memory').value),
+    cpu_limit: parseFloat(document.getElementById('t_cpu').value),
+    disk_limit: parseInt(document.getElementById('t_disk').value) || 0,
+    env_vars: getEnvVars(),
+    install_script: document.getElementById('t_install').value.trim(),
+    startup_command: document.getElementById('t_startup').value.trim(),
+    required_rank_id: document.getElementById('t_rank').value || null,
+    files: getFiles(),
+  };
+  if (!body.name || !body.image) {
+    errEl.textContent = 'Name and image are required.';
+    errEl.classList.add('show');
+    return;
+  }
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled = true;
+  try {
+    if (editId) {
+      await API.patch(`/templates/${editId}`, body);
+      showOk('Template updated.');
+    } else {
+      await API.post('/templates', body);
+      showOk('Template created.');
+    }
+    closeModal();
+    await loadTemplates();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.add('show');
+  } finally {
+    btn.innerHTML = editId ? 'Update Template' : 'Save Template';
+    btn.disabled = false;
+  }
+}
+
+async function deleteTemplate(id, name) {
+  if (!confirm(`Delete template "${name}"? Users will no longer be able to deploy it.`)) return;
+  try { await API.delete(`/templates/${id}`); showOk('Template deleted.'); await loadTemplates(); }
+  catch (e) { showErr(e.message); }
+}
+
+function showErr(msg) {
+  const el = document.getElementById('pageError');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 4000);
+}
+function showOk(msg) {
+  const el = document.getElementById('pageSuccess');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+document.getElementById('templateModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+
+init();
+</script>
+</body>
+</html>

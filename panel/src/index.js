@@ -28,6 +28,8 @@ async function main() {
   const serverRoutes = require('./routes/servers');
   const userRoutes = require('./routes/users');
   const presetRoutes = require('./routes/presets');
+  const templateRoutes = require('./routes/templates');
+  const connectorRoutes = require('./routes/connectors');
   const rankRoutes = require('./routes/ranks');
   const settingsRoutes = require('./routes/settings');
   const app = express();
@@ -48,6 +50,8 @@ async function main() {
   app.use('/api/servers', serverRoutes);
   app.use('/api/users', userRoutes);
   app.use('/api/presets', presetRoutes);
+  app.use('/api/templates', templateRoutes);
+  app.use('/api/connectors', connectorRoutes);
   app.use('/api/ranks', rankRoutes);
   app.use('/api/settings', settingsRoutes);
 
@@ -62,8 +66,10 @@ async function main() {
   app.get('/server/:id/settings', (req, res) => res.sendFile(pub('server-settings.html')));
   app.get('/server/:id/packages', (req, res) => res.sendFile(pub('packages.html')));
   app.get('/account', (req, res) => res.sendFile(pub('account.html')));
+  app.get('/connectors', (req, res) => res.sendFile(pub('connectors.html')));
   app.get('/admin/users', (req, res) => res.sendFile(pub('admin/users.html')));
   app.get('/admin/presets', (req, res) => res.sendFile(pub('admin/presets.html')));
+  app.get('/admin/templates', (req, res) => res.sendFile(pub('admin/templates.html')));
   app.get('/admin/servers', (req, res) => res.sendFile(pub('admin/servers.html')));
   app.get('/admin/ranks', (req, res) => res.sendFile(pub('admin/ranks.html')));
   app.get('/admin/settings', (req, res) => res.sendFile(pub('admin/settings.html')));

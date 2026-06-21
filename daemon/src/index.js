@@ -662,6 +662,25 @@ async function handleMessage(msg) {
       break;
     }
 
+    case 'write-files': {
+      const { requestId, serverId, files } = msg;
+      if (!Array.isArray(files) || files.length === 0) { respond(requestId, { written: 0 }); break; }
+      if (!hasDataDir(serverId)) {
+        respond(requestId, {}, new Error('No data directory — cannot write template files without dataPath configured'));
+        break;
+      }
+      try {
+        const dataDir = serverDataDir(serverId);
+        for (const f of files) {
+          hostfs.writeFile(dataDir, toHostPath(f.path), f.content || '');
+        }
+        respond(requestId, { written: files.length });
+      } catch (err) {
+        respond(requestId, {}, err);
+      }
+      break;
+    }
+
     case 'ping': {
       respond(msg.requestId, { pong: true });
       break;

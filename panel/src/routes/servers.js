@@ -258,6 +258,70 @@ router.post('/from-preset', async (req, res) => {
   res.status(202).json({ id, status: 'installing' });
 });
 
+router.post('/from-template', async (req, res) => {
+  const { name, template_id, node_id } = req.body;
+  if (!name || !template_id) return res.status(400).json({ error: 'name and template_id are required' });
+
+  const template = db.prepare('SELECT * FROM templates WHERE id = ?').get(template_id);
+  if (!template) return res.status(404).json({ error: 'Template not found' });
+
+  if (req.user.role !== 'admin' && template.required_rank_id) {
+    const canUse = (() => {
+      const u = db.prepare('SELECT rank_id FROM users WHERE id = ?').get(req.user.id);
+      if (!u?.rank_id) return false;
+      const uRank = db.prepare('SELECT sort_order FROM ranks WHERE id = ?').get(u.rank_id);
+      const rRank = db.prepare('SELECT sort_order FROM ranks WHERE id = ?').get(template.required_rank_id);
+      return uRank && rRank && uRank.sort_order >= rRank.sort_order;
+    })();
+    if (!canUse) return res.status(403).json({ error: 'Your rank does not have access to this template' });
+  }
+
+  const memoryLimit = template.memory_limit;
+  const diskLimit   = template.disk_limit || 0;
+
+  const limitErr = checkAccountLimits(req.user.id, memoryLimit, diskLimit);
+  if (limitErr) return res.status(403).json({ error: limitErr });
+
+  const finalNodeId = findAvailableNode(node_id || null, memoryLimit, diskLimit);
+  if (!finalNodeId) return res.status(503).json({ error: 'All nodes are full or offline. Try again later or ask an admin to add capacity.' });
+
+  const id = uuidv4();
+  const port_mappings = autoPortMappings(finalNodeId);
+  const env_vars = JSON.parse(template.env_vars || '[]');
+  const files = JSON.parse(template.files || '[]');
+  const installScript = template.install_script || '';
+
+  db.prepare(`INSERT INTO servers (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
+    .run(id, name, template.description, template.image, finalNodeId, req.user.id, JSON.stringify(port_mappings), template.env_vars, memoryLimit, template.cpu_limit, diskLimit, template.startup_command || '', installScript);
+
+  nodeManager.send(finalNodeId, {
+    type: 'install-server',
+    serverId: id,
+    image: template.image,
+    portMappings: port_mappings,
+    envVars: env_vars,
+    memoryLimit,
+    cpuLimit: template.cpu_limit,
+    startupCommand: template.startup_command || '',
+    installScript,
+  }).then(async data => {
+    db.prepare(`UPDATE servers SET container_id = ?, status = 'stopped' WHERE id = ?`).run(data.containerId, id);
+    if (files.length > 0) {
+      try {
+        await nodeManager.send(finalNodeId, { type: 'write-files', serverId: id, files }, { timeout: 30000 });
+        console.log(`[template] Wrote ${files.length} file(s) to server ${id.slice(0, 8)}`);
+      } catch (err) {
+        console.error(`[template] Failed to write template files to server ${id.slice(0, 8)}:`, err.message);
+      }
+    }
+  }).catch(err => {
+    db.prepare(`UPDATE servers SET status = 'error' WHERE id = ?`).run(id);
+    console.error(`Failed to install server ${id} from template:`, err.message);
+  });
+
+  res.status(202).json({ id, status: 'installing' });
+});
+
 router.post('/', requireAdmin, async (req, res) => {
   const {
     name, description = '', image, node_id, owner_id,

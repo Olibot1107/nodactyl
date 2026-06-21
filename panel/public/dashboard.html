@@ -35,6 +35,31 @@
   </div>
 </div>
 
+<!-- Deploy from template modal -->
+<div class="modal-overlay" id="deployTemplateModal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <h2 class="modal-title">Deploy <span id="deployTemplateName" style="color:#818cf8"></span></h2>
+      <button class="modal-close" onclick="closeDeployTemplateModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-error" id="deployTemplateError"></div>
+      <div class="form-group">
+        <label class="form-label">Server Name</label>
+        <input type="text" class="form-input" id="dt_name" placeholder="my-server">
+      </div>
+      <div class="form-group" id="dt_nodeGroup">
+        <label class="form-label">Node</label>
+        <select class="form-select" id="dt_node"></select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeDeployTemplateModal()">Cancel</button>
+      <button class="btn btn-primary" id="deployTemplateBtn" onclick="deployTemplate()">Deploy</button>
+    </div>
+  </div>
+</div>
+
 <!-- Admin: custom create modal -->
 <div class="modal-overlay" id="createModal">
   <div class="modal">
@@ -90,8 +115,9 @@
 <script>
 requireAuth();
 const user = getUser();
-let servers = [], nodes = [], presets = [];
+let servers = [], nodes = [], presets = [], templates = [];
 let deployPresetId = null;
+let deployTemplateId = null;
 
 function fmtMb(mb) {
   if (!mb) return '0 MB';
@@ -120,6 +146,7 @@ async function init() {
       <div class="content">
         <div class="grid-stats mb-6" id="statsRow"></div>
         <div id="presetsSection"></div>
+        <div id="templatesSection"></div>
         <div id="serverSection">
           <div class="empty-state"><span class="spinner"></span></div>
         </div>
@@ -132,7 +159,7 @@ async function init() {
   const socket = io({ auth: { token: getToken() } });
   socket.on('server-status', ({ serverId, status }) => {
     const s = servers.find(x => x.id === serverId);
-    if (s) { s.status = status; renderServers(); renderStats(); renderPresets(); }
+    if (s) { s.status = status; renderServers(); renderStats(); renderPresets(); renderTemplates(); }
   });
   socket.on('node-status', ({ nodeId, status }) => {
     const n = nodes.find(x => x.id === nodeId);
@@ -141,13 +168,15 @@ async function init() {
 }
 
 async function loadData() {
-  [servers, nodes, presets] = await Promise.all([
+  [servers, nodes, presets, templates] = await Promise.all([
     API.get('/servers').catch(() => []),
     API.get('/nodes').catch(() => []),
     API.get('/presets').catch(() => []),
+    API.get('/templates').catch(() => []),
   ]);
   renderStats();
   renderPresets();
+  renderTemplates();
   renderServers();
 }
 
@@ -236,6 +265,52 @@ function renderPresets() {
             ${atLimit
               ? `<button class="btn btn-ghost btn-sm w-full" style="justify-content:center;cursor:not-allowed;opacity:.6" disabled title="Server limit reached">Deploy</button>`
               : `<button class="btn btn-primary btn-sm w-full" style="justify-content:center" onclick="openDeployModal('${esc(p.id)}', '${esc(p.name)}')">Deploy</button>`
+            }
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function renderTemplates() {
+  const el = document.getElementById('templatesSection');
+  if (!templates.length) { el.innerHTML = ''; return; }
+
+  const freshUser = getUser();
+  const isAdmin = freshUser?.role === 'admin';
+  const rank = freshUser?.rank;
+  const maxServers = isAdmin ? -1 : (rank?.max_servers ?? 1);
+  const ownedCount = servers.filter(s => !s.shared).length;
+  const atLimit = maxServers !== -1 && ownedCount >= maxServers;
+
+  el.innerHTML = `
+    <div class="section-header mb-4">
+      <div>
+        <div class="section-title">Templates</div>
+        <div class="section-sub">${atLimit
+          ? `<span style="color:var(--danger)">You've reached your server limit (${ownedCount}/${maxServers}). Contact an admin to upgrade your rank.</span>`
+          : 'Pre-configured servers with files already set up'}</div>
+      </div>
+    </div>
+    <div class="grid-3 mb-6">
+      ${templates.map(t => `
+        <div class="preset-card${atLimit ? ' opacity-50' : ''}">
+          <div>
+            <div class="preset-card-name" style="display:flex;align-items:center;gap:6px">
+              ${esc(t.name)}
+              <span style="font-size:10px;padding:1px 6px;border-radius:99px;background:rgba(99,102,241,.15);color:#818cf8;border:1px solid rgba(99,102,241,.3)">template</span>
+            </div>
+            ${t.description ? `<div class="preset-card-desc mt-2">${esc(t.description)}</div>` : ''}
+          </div>
+          <div class="preset-card-image">${esc(t.image)}</div>
+          <div class="preset-card-meta">
+            <span>${t.memory_limit} MB RAM</span>
+            <span>${t.cpu_limit} CPU</span>
+            ${t.files?.length ? `<span>${t.files.length} file(s) pre-loaded</span>` : ''}
+          </div>
+          <div class="preset-card-footer">
+            ${atLimit
+              ? `<button class="btn btn-ghost btn-sm w-full" style="justify-content:center;cursor:not-allowed;opacity:.6" disabled>Deploy</button>`
+              : `<button class="btn btn-primary btn-sm w-full" style="justify-content:center" onclick="openDeployTemplateModal('${esc(t.id)}', '${esc(t.name)}')">Deploy</button>`
             }
           </div>
         </div>`).join('')}
@@ -388,6 +463,64 @@ async function deployServer() {
   }
 }
 
+// ── Deploy from template ──────────────────────────────────────────────────────
+let _templateAutoNodeId = null;
+
+function openDeployTemplateModal(templateId, templateName) {
+  deployTemplateId = templateId;
+  _templateAutoNodeId = null;
+  document.getElementById('deployTemplateName').textContent = templateName;
+  document.getElementById('dt_name').value = '';
+  document.getElementById('deployTemplateError').classList.remove('show');
+
+  const onlineNodes = nodes.filter(n => n.online);
+  const nodeGroup = document.getElementById('dt_nodeGroup');
+  const nodeSelect = document.getElementById('dt_node');
+
+  if (onlineNodes.length === 1) {
+    _templateAutoNodeId = onlineNodes[0].id;
+    nodeGroup.style.display = 'none';
+  } else if (onlineNodes.length > 1) {
+    _templateAutoNodeId = null;
+    nodeGroup.style.display = '';
+    nodeSelect.innerHTML = '<option value="">Auto (best available)</option>' + onlineNodes.map(n => `<option value="${n.id}">${esc(n.name)}</option>`).join('');
+  } else {
+    _templateAutoNodeId = null;
+    nodeGroup.style.display = 'none';
+  }
+
+  document.getElementById('deployTemplateModal').classList.add('open');
+}
+
+function closeDeployTemplateModal() {
+  document.getElementById('deployTemplateModal').classList.remove('open');
+  deployTemplateId = null;
+  _templateAutoNodeId = null;
+}
+
+async function deployTemplate() {
+  const errEl = document.getElementById('deployTemplateError');
+  errEl.classList.remove('show');
+  const btn = document.getElementById('deployTemplateBtn');
+  const name = document.getElementById('dt_name').value.trim();
+  const node_id = _templateAutoNodeId || document.getElementById('dt_node').value || null;
+  if (!name) { errEl.textContent = 'Server name is required.'; errEl.classList.add('show'); return; }
+
+  btn.innerHTML = '<span class="spinner"></span> Deploying...';
+  btn.disabled = true;
+  try {
+    await API.post('/servers/from-template', { name, template_id: deployTemplateId, node_id });
+    closeDeployTemplateModal();
+    await loadData();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.add('show');
+  } finally {
+    btn.innerHTML = 'Deploy';
+    btn.disabled = false;
+  }
+}
+
 // ── Admin custom create ───────────────────────────────────────────────────────
 let envCount = 0;
 let _createAutoNodeId = null;
@@ -472,6 +605,7 @@ async function createServer() {
 }
 
 document.getElementById('deployModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeDeployModal(); });
+document.getElementById('deployTemplateModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeDeployTemplateModal(); });
 document.getElementById('createModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeCreateModal(); });
 
 init();

@@ -4,7 +4,7 @@ const { requireAuth, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
-const PUBLIC_KEYS = ['panel_name', 'panel_logo'];
+const PUBLIC_KEYS = ['panel_name', 'panel_logo', 'discord_enabled'];
 
 // Public — no auth required
 router.get('/public', (req, res) => {
@@ -31,10 +31,13 @@ router.patch('/', requireAuth, requireAdmin, (req, res) => {
   }
 
   for (const [key, value] of Object.entries(updates)) {
+    if (!/^[a-z][a-z0-9_]{0,63}$/.test(key)) continue;
+    if (value === null || value === '') {
+      db.prepare('DELETE FROM settings WHERE key = ?').run(key);
+      continue;
+    }
     if (typeof value !== 'string') continue;
-    if (!/^[a-z][a-z0-9_]{0,63}$/.test(key)) continue; // only allow safe key names
     const trimmed = value.trim();
-    if (!trimmed) continue;
     if (trimmed.length > 300000) return res.status(400).json({ error: 'Value too large (max ~300 KB)' });
     const existing = db.prepare('SELECT key FROM settings WHERE key = ?').get(key);
     if (existing) {

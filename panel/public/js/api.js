@@ -75,6 +75,7 @@ const ICONS = {
   presets:    `<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>`,
   allServers: `<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>`,
   ranks:      `<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+  connectors: `<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>`,
   settings:   `<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>`,
   logout:     `<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>`,
 };
@@ -86,17 +87,19 @@ function renderSidebar(activePage) {
   const ps = getPanelSettings();
 
   const userNav = [
-    { href: '/dashboard', icon: ICONS.servers, label: 'My Servers', key: 'dashboard' },
+    { href: '/dashboard',  icon: ICONS.servers,    label: 'My Servers', key: 'dashboard' },
+    ...(ps.discord_enabled === '1' ? [{ href: '/connectors', icon: ICONS.connectors, label: 'Connectors', key: 'connectors' }] : []),
     ...(!isAdmin ? [{ href: '/nodes', icon: ICONS.nodes, label: 'Node Status', key: 'nodes' }] : []),
   ];
 
   const adminNav = isAdmin ? [
-    { href: '/admin/servers',  icon: ICONS.allServers, label: 'All Servers',  key: 'admin-servers' },
-    { href: '/admin/presets',  icon: ICONS.presets,    label: 'Presets',      key: 'admin-presets' },
-    { href: '/admin/ranks',    icon: ICONS.ranks,      label: 'Ranks',        key: 'admin-ranks' },
-    { href: '/admin/users',    icon: ICONS.users,      label: 'Users',        key: 'admin-users' },
-    { href: '/nodes',          icon: ICONS.nodes,      label: 'Nodes',        key: 'nodes' },
-    { href: '/admin/settings', icon: ICONS.settings,   label: 'Settings',     key: 'admin-settings' },
+    { href: '/admin/servers',   icon: ICONS.allServers, label: 'All Servers',  key: 'admin-servers' },
+    { href: '/admin/presets',   icon: ICONS.presets,    label: 'Presets',      key: 'admin-presets' },
+    { href: '/admin/templates', icon: ICONS.presets,    label: 'Templates',    key: 'admin-templates' },
+    { href: '/admin/ranks',     icon: ICONS.ranks,      label: 'Ranks',        key: 'admin-ranks' },
+    { href: '/admin/users',     icon: ICONS.users,      label: 'Users',        key: 'admin-users' },
+    { href: '/nodes',           icon: ICONS.nodes,      label: 'Nodes',        key: 'nodes' },
+    { href: '/admin/settings',  icon: ICONS.settings,   label: 'Settings',     key: 'admin-settings' },
   ] : [];
 
   const navItem = (n) => `
