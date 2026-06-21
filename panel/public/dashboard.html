@@ -178,15 +178,17 @@ async function init() {
           <div class="page-title">My Servers</div>
           <div class="page-sub">Your deployed containers</div>
         </div>
-        ${user?.role === 'admin' ? '<button class="btn btn-ghost btn-sm" onclick="openCreateModal()">Custom Create</button>' : ''}
+        <div style="display:flex;gap:8px;align-items:center">
+          ${user?.role === 'admin' ? '<button class="btn btn-ghost btn-sm" onclick="openCreateModal()">Custom Create</button>' : ''}
+          <button class="btn btn-primary btn-sm" id="newServerBtn" onclick="scrollToDeploy()" style="display:none">+ New Server</button>
+        </div>
       </div>
       <div class="content">
         <div class="grid-stats mb-6" id="statsRow"></div>
-        <div id="presetsSection"></div>
-        <div id="templatesSection"></div>
         <div id="serverSection">
           <div class="empty-state"><span class="spinner"></span></div>
         </div>
+        <div id="deploySection"></div>
       </div>
     </div>`;
 
@@ -196,7 +198,7 @@ async function init() {
   const socket = io({ auth: { token: getToken() } });
   socket.on('server-status', ({ serverId, status }) => {
     const s = servers.find(x => x.id === serverId);
-    if (s) { s.status = status; renderServers(); renderStats(); renderPresets(); renderTemplates(); }
+    if (s) { s.status = status; renderServers(); renderStats(); renderDeploySection(); }
   });
   socket.on('node-status', ({ nodeId, status }) => {
     const n = nodes.find(x => x.id === nodeId);
@@ -212,9 +214,8 @@ async function loadData() {
     API.get('/templates').catch(() => []),
   ]);
   renderStats();
-  renderPresets();
-  renderTemplates();
   renderServers();
+  renderDeploySection();
 }
 
 function quotaBar(used, limit, label) {
@@ -266,9 +267,16 @@ function renderStats() {
     ${quotaBar(usedDisk, diskLimit, 'Disk Quota')}`;
 }
 
-function renderPresets() {
-  const el = document.getElementById('presetsSection');
-  if (!presets.length) { el.innerHTML = ''; return; }
+function renderDeploySection() {
+  const el = document.getElementById('deploySection');
+  const btn = document.getElementById('newServerBtn');
+  const all = [
+    ...presets.map(p => ({ ...p, _type: 'preset' })),
+    ...templates.map(t => ({ ...t, _type: 'template' })),
+  ];
+
+  if (!all.length) { el.innerHTML = ''; if (btn) btn.style.display = 'none'; return; }
+  if (btn) btn.style.display = '';
 
   const freshUser = getUser();
   const isAdmin = freshUser?.role === 'admin';
@@ -278,80 +286,44 @@ function renderPresets() {
   const atLimit = maxServers !== -1 && ownedCount >= maxServers;
 
   el.innerHTML = `
-    <div class="section-header mb-4">
+    <div class="section-header" style="margin-top:32px;margin-bottom:16px" id="deployAnchor">
       <div>
-        <div class="section-title">Available Presets</div>
-        <div class="section-sub">${atLimit
-          ? `<span style="color:var(--danger)">You've reached your server limit (${ownedCount}/${maxServers}). Contact an admin to upgrade your rank.</span>`
-          : 'Pick a preset to deploy a new server'}</div>
+        <div class="section-title">Deploy a New Server</div>
+        ${atLimit ? `<div class="section-sub"><span style="color:var(--danger)">Server limit reached (${ownedCount}/${maxServers}) — contact an admin to upgrade your rank.</span></div>` : ''}
       </div>
     </div>
-    <div class="grid-3 mb-6">
-      ${presets.map(p => `
+    <div class="grid-3">
+      ${all.map(item => {
+        const isTemplate = item._type === 'template';
+        const deployClick = isTemplate
+          ? `openDeployTemplateModal('${esc(item.id)}', '${esc(item.name)}')`
+          : `openDeployModal('${esc(item.id)}', '${esc(item.name)}')`;
+        return `
         <div class="preset-card${atLimit ? ' opacity-50' : ''}">
-          <div>
-            <div class="preset-card-name">${esc(p.name)}</div>
-            ${p.description ? `<div class="preset-card-desc mt-2">${esc(p.description)}</div>` : ''}
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <div class="preset-card-name">${esc(item.name)}</div>
+            ${isTemplate ? `<span style="font-size:10px;padding:1px 6px;border-radius:99px;background:rgba(99,102,241,.15);color:#818cf8;border:1px solid rgba(99,102,241,.3);white-space:nowrap">template</span>` : ''}
           </div>
-          <div class="preset-card-image">${esc(p.image)}</div>
-          <div class="preset-card-meta">
-            <span>${p.memory_limit} MB RAM</span>
-            <span>${p.cpu_limit} CPU</span>
-          </div>
-          <div class="preset-card-footer">
-            ${atLimit
-              ? `<button class="btn btn-ghost btn-sm w-full" style="justify-content:center;cursor:not-allowed;opacity:.6" disabled title="Server limit reached">Deploy</button>`
-              : `<button class="btn btn-primary btn-sm w-full" style="justify-content:center" onclick="openDeployModal('${esc(p.id)}', '${esc(p.name)}')">Deploy</button>`
-            }
-          </div>
-        </div>`).join('')}
-    </div>`;
-}
-
-function renderTemplates() {
-  const el = document.getElementById('templatesSection');
-  if (!templates.length) { el.innerHTML = ''; return; }
-
-  const freshUser = getUser();
-  const isAdmin = freshUser?.role === 'admin';
-  const rank = freshUser?.rank;
-  const maxServers = isAdmin ? -1 : (rank?.max_servers ?? 1);
-  const ownedCount = servers.filter(s => !s.shared).length;
-  const atLimit = maxServers !== -1 && ownedCount >= maxServers;
-
-  el.innerHTML = `
-    <div class="section-header mb-4">
-      <div>
-        <div class="section-title">Templates</div>
-        <div class="section-sub">${atLimit
-          ? `<span style="color:var(--danger)">You've reached your server limit (${ownedCount}/${maxServers}). Contact an admin to upgrade your rank.</span>`
-          : 'Pre-configured servers with files already set up'}</div>
-      </div>
-    </div>
-    <div class="grid-3 mb-6">
-      ${templates.map(t => `
-        <div class="preset-card${atLimit ? ' opacity-50' : ''}">
-          <div>
-            <div class="preset-card-name" style="display:flex;align-items:center;gap:6px">
-              ${esc(t.name)}
-              <span style="font-size:10px;padding:1px 6px;border-radius:99px;background:rgba(99,102,241,.15);color:#818cf8;border:1px solid rgba(99,102,241,.3)">template</span>
-            </div>
-            ${t.description ? `<div class="preset-card-desc mt-2">${esc(t.description)}</div>` : ''}
-          </div>
-          <div class="preset-card-image">${esc(t.image)}</div>
-          <div class="preset-card-meta">
-            <span>${t.memory_limit} MB RAM</span>
-            <span>${t.cpu_limit} CPU</span>
-            ${t.files?.length ? `<span>${t.files.length} file(s) pre-loaded</span>` : ''}
+          ${item.description ? `<div class="preset-card-desc">${esc(item.description)}</div>` : ''}
+          <div class="preset-card-image" style="margin-top:8px">${esc(item.image)}</div>
+          <div class="preset-card-meta" style="margin-top:8px">
+            <span>${item.memory_limit} MB RAM</span>
+            <span>${item.cpu_limit} CPU</span>
+            ${isTemplate && item.files?.length ? `<span>${item.files.length} file(s)</span>` : ''}
           </div>
           <div class="preset-card-footer">
             ${atLimit
               ? `<button class="btn btn-ghost btn-sm w-full" style="justify-content:center;cursor:not-allowed;opacity:.6" disabled>Deploy</button>`
-              : `<button class="btn btn-primary btn-sm w-full" style="justify-content:center" onclick="openDeployTemplateModal('${esc(t.id)}', '${esc(t.name)}')">Deploy</button>`
-            }
+              : `<button class="btn btn-primary btn-sm w-full" style="justify-content:center" onclick="${deployClick}">Deploy</button>`}
           </div>
-        </div>`).join('')}
+        </div>`;
+      }).join('')}
     </div>`;
+}
+
+function scrollToDeploy() {
+  const el = document.getElementById('deployAnchor');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function serverCard(s, showOwner = false) {
@@ -405,10 +377,10 @@ function renderServers() {
 
   if (!servers.length) {
     el.innerHTML = `
-      <div class="section-header"><div class="section-title">My Servers</div></div>
+      <div class="section-header mb-4"><div class="section-title">My Servers</div></div>
       <div class="empty-state">
         <div class="empty-icon" style="font-size:28px">—</div>
-        <p>No servers yet.${presets.length ? ' Choose a preset above to get started.' : ' Ask an admin to create presets.'}</p>
+        <p>No servers yet.${presets.length || templates.length ? ' Click <strong>+ New Server</strong> to deploy one.' : ' Ask an admin to create presets.'}</p>
       </div>`;
     return;
   }
