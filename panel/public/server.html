@@ -579,10 +579,17 @@ function openLogShareModal() {
 
         <div style="padding:0 18px 16px;flex-shrink:0">
           <input id="logShareLabel" class="form-input" placeholder="Label (optional)" style="width:100%;margin-bottom:8px">
+          <select id="logShareTtl" class="form-select" style="width:100%;margin-bottom:8px">
+            <option value="3600">Expires in 1 hour</option>
+            <option value="21600">Expires in 6 hours</option>
+            <option value="86400">Expires in 1 day</option>
+            <option value="259200">Expires in 3 days</option>
+            <option value="604800" selected>Expires in 7 days (max)</option>
+          </select>
           <button class="btn btn-primary" onclick="uploadLogShare()" id="uploadLogBtn" style="width:100%">${UI.upload} Share current console output</button>
           <div id="logShareError" style="display:none;margin-top:8px;font-size:12px;color:var(--danger)"></div>
           <div id="logShareSuccess" style="display:none;margin-top:10px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:500">Link ready — expires in 7 days</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:500" id="logShareExpiry">Link ready</div>
             <div style="display:flex;gap:6px">
               <input id="logShareUrl" class="form-input" readonly style="flex:1;font-size:11.5px;font-family:monospace;background:var(--bg2)">
               <button class="btn btn-ghost btn-sm" onclick="copyLogUrl(this)" style="flex-shrink:0">${UI.copy}</button>
@@ -611,15 +618,18 @@ async function uploadLogShare() {
   errEl.style.display = 'none';
   if (!content.trim()) { errEl.textContent = 'Console is empty — nothing to share.'; errEl.style.display = ''; return; }
   const label = document.getElementById('logShareLabel').value.trim() || null;
+  const ttl_seconds = parseInt(document.getElementById('logShareTtl').value) || 604800;
   const btn = document.getElementById('uploadLogBtn');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Uploading…';
   successEl.style.display = 'none';
   try {
-    const result = await API.post('/servers/' + serverId + '/log-shares', { content, label });
+    const result = await API.post('/servers/' + serverId + '/log-shares', { content, label, ttl_seconds });
     const url = location.origin + '/logs/' + result.id;
     document.getElementById('logShareUrl').value = url;
     document.getElementById('logShareOpenBtn').href = url;
+    const expiryEl = document.getElementById('logShareExpiry');
+    if (expiryEl) expiryEl.textContent = 'Link ready — ' + document.getElementById('logShareTtl').options[document.getElementById('logShareTtl').selectedIndex].text.toLowerCase();
     successEl.style.display = '';
     document.getElementById('logShareLabel').value = '';
     loadLogShares();

@@ -25,9 +25,16 @@
           <input type="text" class="form-input" id="p_name" placeholder="Minecraft Java">
         </div>
         <div class="form-group">
-          <label class="form-label">Docker Image *</label>
+          <label class="form-label">Default Docker Image *</label>
           <input type="text" class="form-input" id="p_image" placeholder="itzg/minecraft-server:latest">
+          <div class="form-hint">The image used when no version is selected.</div>
         </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Version Options <span class="text-muted">(optional)</span></label>
+        <div id="imageList"></div>
+        <button class="btn btn-ghost btn-sm mt-2" onclick="addImage()" type="button">+ Add Version</button>
+        <div class="form-hint">Each version shows as a dropdown choice when users deploy. Leave empty to use only the default image.</div>
       </div>
       <div class="form-group">
         <label class="form-label">Description</label>
@@ -85,6 +92,7 @@ let presets = [];
 let ranks = [];
 let editId = null;
 let envCount = 0;
+let imgCount = 0;
 
 async function init() {
   await loadPanelSettings();
@@ -131,7 +139,7 @@ function renderPresets() {
         <div class="preset-card-name">${esc(p.name)}</div>
         ${p.description ? `<div class="preset-card-desc mt-2">${esc(p.description)}</div>` : ''}
       </div>
-      <div class="preset-card-image">${esc(p.image)}</div>
+      <div class="preset-card-image">${esc(p.image)}${p.images?.length ? ` <span style="font-size:10px;opacity:.6">+${p.images.length} version${p.images.length !== 1 ? 's' : ''}</span>` : ''}</div>
       ${p.startup_command ? `<div class="preset-card-cmd font-mono">${esc(p.startup_command)}</div>` : ''}
       <div class="preset-card-meta">
         <span>${p.memory_limit} MB RAM</span>
@@ -163,9 +171,11 @@ function clearModal() {
   document.getElementById('p_cpu').value = 1;
   document.getElementById('p_disk').value = 0;
   document.getElementById('envList').innerHTML = '';
+  document.getElementById('imageList').innerHTML = '';
   document.getElementById('modalError').classList.remove('show');
   populateRankDropdown('');
   envCount = 0;
+  imgCount = 0;
 }
 
 function openCreate() {
@@ -188,6 +198,7 @@ function openEdit(id) {
   document.getElementById('p_cpu').value = p.cpu_limit;
   document.getElementById('p_disk').value = p.disk_limit || 0;
   (p.env_vars || []).forEach(ev => addEnv(ev.key, ev.value));
+  (p.images || []).forEach(img => addImage(img.label, img.image));
   document.getElementById('p_install').value = p.install_script || '';
   document.getElementById('p_startup').value = p.startup_command || '';
   populateRankDropdown(p.required_rank_id || '');
@@ -221,6 +232,28 @@ function getEnvVars() {
   return envs;
 }
 
+function addImage(label='', image='') {
+  const id = ++imgCount;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:6px';
+  div.innerHTML = `
+    <input type="text" class="form-input" id="il_${id}" placeholder="Label (e.g. Java 21)" value="${esc(label)}" style="flex:1">
+    <input type="text" class="form-input" id="ii_${id}" placeholder="image:tag" value="${esc(image)}" style="flex:2;font-family:monospace">
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">✕</button>`;
+  document.getElementById('imageList').appendChild(div);
+}
+
+function getImages() {
+  const imgs = [];
+  document.querySelectorAll('[id^="il_"]').forEach(el => {
+    const id = el.id.slice(3);
+    const label = el.value.trim();
+    const image = document.getElementById(`ii_${id}`)?.value.trim();
+    if (label && image) imgs.push({ label, image });
+  });
+  return imgs;
+}
+
 async function savePreset() {
   const errEl = document.getElementById('modalError');
   errEl.classList.remove('show');
@@ -234,6 +267,7 @@ async function savePreset() {
     disk_limit: parseInt(document.getElementById('p_disk').value) || 0,
     port_mappings: [],
     env_vars: getEnvVars(),
+    images: getImages(),
     install_script: document.getElementById('p_install').value.trim(),
     startup_command: document.getElementById('p_startup').value.trim(),
     required_rank_id: document.getElementById('p_rank').value || null,

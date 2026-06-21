@@ -23,6 +23,10 @@
         <label class="form-label">Server Name</label>
         <input type="text" class="form-input" id="d_name" placeholder="my-server">
       </div>
+      <div class="form-group" id="d_versionGroup" style="display:none">
+        <label class="form-label">Version</label>
+        <select class="form-select" id="d_version"></select>
+      </div>
       <div class="form-group" id="d_nodeGroup">
         <label class="form-label">Node</label>
         <select class="form-select" id="d_node"></select>
@@ -414,12 +418,24 @@ function openDeployModal(presetId, presetName) {
   document.getElementById('d_name').value = '';
   document.getElementById('deployError').classList.remove('show');
 
+  // Version picker
+  const preset = presets.find(p => p.id === presetId);
+  const versionGroup = document.getElementById('d_versionGroup');
+  const versionSelect = document.getElementById('d_version');
+  if (preset?.images?.length) {
+    versionSelect.innerHTML =
+      `<option value="">${esc(preset.image)} (default)</option>` +
+      preset.images.map(v => `<option value="${esc(v.image)}">${esc(v.label)} — ${esc(v.image)}</option>`).join('');
+    versionGroup.style.display = '';
+  } else {
+    versionGroup.style.display = 'none';
+  }
+
   const onlineNodes = nodes.filter(n => n.online);
   const nodeGroup = document.getElementById('d_nodeGroup');
   const nodeSelect = document.getElementById('d_node');
 
   if (onlineNodes.length === 1) {
-    // Only one node — auto-select, hide the picker
     _autoNodeId = onlineNodes[0].id;
     nodeGroup.style.display = 'none';
   } else if (onlineNodes.length > 1) {
@@ -446,12 +462,13 @@ async function deployServer() {
   const btn = document.getElementById('deployBtn');
   const name = document.getElementById('d_name').value.trim();
   const node_id = _autoNodeId || document.getElementById('d_node').value || null;
+  const image = document.getElementById('d_version').value || undefined;
   if (!name) { errEl.textContent = 'Server name is required.'; errEl.classList.add('show'); return; }
 
   btn.innerHTML = '<span class="spinner"></span> Deploying...';
   btn.disabled = true;
   try {
-    await API.post('/servers/from-preset', { name, preset_id: deployPresetId, node_id });
+    await API.post('/servers/from-preset', { name, preset_id: deployPresetId, node_id, image });
     closeDeployModal();
     await loadData();
   } catch (e) {

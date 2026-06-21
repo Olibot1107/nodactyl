@@ -199,7 +199,7 @@ function autoPortMappings(nodeId) {
 }
 
 router.post('/from-preset', async (req, res) => {
-  const { name, preset_id, node_id } = req.body;
+  const { name, preset_id, node_id, image: chosenImage } = req.body;
   if (!name || !preset_id) return res.status(400).json({ error: 'name and preset_id are required' });
 
   const preset = db.prepare('SELECT * FROM presets WHERE id = ?').get(preset_id);
@@ -214,6 +214,14 @@ router.post('/from-preset', async (req, res) => {
       return uRank && rRank && uRank.sort_order >= rRank.sort_order;
     })();
     if (!canUse) return res.status(403).json({ error: 'Your rank does not have access to this preset' });
+  }
+
+  // Validate chosen image (must be preset default or one of the preset's extra images)
+  let finalImage = preset.image;
+  if (chosenImage && chosenImage !== preset.image) {
+    const allowed = JSON.parse(preset.images || '[]').map(i => i.image);
+    if (!allowed.includes(chosenImage)) return res.status(400).json({ error: 'Invalid image selection' });
+    finalImage = chosenImage;
   }
 
   // Preset defines exact resources — no per-server rank capping
@@ -236,12 +244,12 @@ router.post('/from-preset', async (req, res) => {
 
   const installScript = preset.install_script || '';
   db.prepare(`INSERT INTO servers (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
-    .run(id, name, preset.description, preset.image, finalNodeId, req.user.id, JSON.stringify(port_mappings), preset.env_vars, memoryLimit, preset.cpu_limit, diskLimit, preset.startup_command || '', installScript);
+    .run(id, name, preset.description, finalImage, finalNodeId, req.user.id, JSON.stringify(port_mappings), preset.env_vars, memoryLimit, preset.cpu_limit, diskLimit, preset.startup_command || '', installScript);
 
   nodeManager.send(finalNodeId, {
     type: 'install-server',
     serverId: id,
-    image: preset.image,
+    image: finalImage,
     portMappings: port_mappings,
     envVars: env_vars,
     memoryLimit: memoryLimit,
@@ -820,8 +828,8 @@ router.post('/:id/leave', (req, res) => {
 
 // ── Log shares ────────────────────────────────────────────────────────────────
 
-const LOG_SHARE_MAX_BYTES = 512 * 1024; // 512 KB cap
-const LOG_SHARE_TTL_SECS  = 7 * 24 * 3600;
+const LOG_SHARE_MAX_BYTES    = 512 * 1024;
+const LOG_SHARE_MAX_TTL_SECS = 7 * 24 * 3600;
 
 function canManageLogShares(server, user) {
   return hasPerm(server, user, 'sharelog');
@@ -841,16 +849,17 @@ router.post('/:id/log-shares', (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canManageLogShares(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
-  const { content, label } = req.body;
+  const { content, label, ttl_seconds } = req.body;
   if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content required' });
   if (Buffer.byteLength(content, 'utf8') > LOG_SHARE_MAX_BYTES) return res.status(400).json({ error: 'Log too large (max 512 KB)' });
+  const ttl = Math.min(Math.max(parseInt(ttl_seconds) || LOG_SHARE_MAX_TTL_SECS, 3600), LOG_SHARE_MAX_TTL_SECS);
   const now = Math.floor(Date.now() / 1000);
   const activeCount = db.prepare('SELECT COUNT(*) as n FROM log_shares WHERE server_id = ? AND expires_at > ?').get(req.params.id, now)?.n ?? 0;
   if (activeCount >= 5) return res.status(400).json({ error: 'Limit reached: max 5 active log shares per server. Delete one first.' });
   const id = crypto.randomBytes(10).toString('hex');
   db.prepare('INSERT INTO log_shares (id, server_id, label, content, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(id, req.params.id, label || null, content, now, now + LOG_SHARE_TTL_SECS);
-  res.json({ id, expires_at: now + LOG_SHARE_TTL_SECS });
+    .run(id, req.params.id, label || null, content, now, now + ttl);
+  res.json({ id, expires_at: now + ttl });
 });
 
 router.delete('/:id/log-shares/:shareId', (req, res) => {
