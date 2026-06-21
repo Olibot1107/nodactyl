@@ -161,6 +161,8 @@ async function init() {
   try { _db.exec(`CREATE TABLE IF NOT EXISTS templates (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT DEFAULT '', image TEXT NOT NULL, env_vars TEXT DEFAULT '[]', memory_limit INTEGER DEFAULT 512, cpu_limit REAL DEFAULT 1.0, disk_limit INTEGER DEFAULT 0, startup_command TEXT DEFAULT '', install_script TEXT DEFAULT '', required_rank_id TEXT DEFAULT NULL, files TEXT DEFAULT '[]', created_at INTEGER DEFAULT (strftime('%s','now')))`); } catch {}
   try { _db.exec(`ALTER TABLE users ADD COLUMN discord_id TEXT DEFAULT NULL`); } catch {}
   try { _db.exec(`ALTER TABLE users ADD COLUMN discord_username TEXT DEFAULT NULL`); } catch {}
+  try { _db.exec(`ALTER TABLE users ADD COLUMN github_id TEXT DEFAULT NULL`); } catch {}
+  try { _db.exec(`ALTER TABLE users ADD COLUMN github_username TEXT DEFAULT NULL`); } catch {}
 
   // Seed default ranks
   const rankCount = prepare('SELECT COUNT(*) as count FROM ranks').get();

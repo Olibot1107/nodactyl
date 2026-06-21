@@ -88,7 +88,7 @@ function renderSidebar(activePage) {
 
   const userNav = [
     { href: '/dashboard',  icon: ICONS.servers,    label: 'My Servers', key: 'dashboard' },
-    ...(ps.discord_enabled === '1' ? [{ href: '/connectors', icon: ICONS.connectors, label: 'Connectors', key: 'connectors' }] : []),
+    ...((ps.discord_enabled === '1' || ps.github_enabled === '1') ? [{ href: '/connectors', icon: ICONS.connectors, label: 'Connectors', key: 'connectors' }] : []),
     ...(!isAdmin ? [{ href: '/nodes', icon: ICONS.nodes, label: 'Node Status', key: 'nodes' }] : []),
   ];
 
