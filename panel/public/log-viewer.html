@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Log Share — Nodactyl</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      background: #0d1117;
+      color: #c9d1d9;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100%;
+    }
+    body { display: flex; flex-direction: column; min-height: 100vh; }
+
+    /* ── Header ── */
+    .header {
+      background: #161b22;
+      border-bottom: 1px solid #21262d;
+      padding: 0 24px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .header-logo {
+      font-size: 16px;
+      font-weight: 800;
+      color: #f97316;
+      letter-spacing: -0.5px;
+      text-decoration: none;
+    }
+    .header-sep { color: #30363d; font-size: 18px; line-height: 1; }
+    .header-crumb { font-size: 13px; color: #6e7681; }
+    .header-label { font-size: 13px; font-weight: 600; color: #e6edf3; }
+    .header-spacer { flex: 1; }
+    .hdr-btn {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+      background: #21262d;
+      color: #c9d1d9;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+      white-space: nowrap;
+    }
+    .hdr-btn:hover { background: #30363d; border-color: #444c56; }
+    .hdr-btn svg { width: 13px; height: 13px; }
+    .hdr-btn.danger { border-color: rgba(239,68,68,.4); color: #f87171; }
+    .hdr-btn.danger:hover { background: rgba(239,68,68,.1); border-color: #f87171; }
+    .hdr-btn.primary { border-color: rgba(249,115,22,.5); color: #fb923c; }
+    .hdr-btn.primary:hover { background: rgba(249,115,22,.1); border-color: #f97316; }
+    /* Redacted lines */
+    .line-content.redacted-text {
+      color: #f87171 !important;
+      filter: blur(4px);
+      user-select: none;
+      border-radius: 3px;
+    }
+
+    /* ── Meta bar ── */
+    .meta-bar {
+      background: #161b22;
+      border-bottom: 1px solid #21262d;
+      padding: 0 24px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: 12px;
+      color: #6e7681;
+    }
+    .meta-item { display: flex; align-items: center; gap: 5px; }
+    .meta-item svg { width: 13px; height: 13px; opacity: .7; }
+    .badge-expires {
+      background: rgba(249,115,22,.12);
+      border: 1px solid rgba(249,115,22,.3);
+      color: #fb923c;
+      border-radius: 4px;
+      padding: 1px 7px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-expires.expiring-soon {
+      background: rgba(234,179,8,.12);
+      border-color: rgba(234,179,8,.3);
+      color: #facc15;
+    }
+
+    /* ── Console area ── */
+    .console-outer {
+      flex: 1;
+      background: #0d1117;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .console-wrap {
+      flex: 1;
+      padding: 16px 20px;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
+      font-size: 12.5px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      word-break: break-all;
+      background: #0d1117;
+    }
+    .log-line {
+      display: flex;
+      min-height: 1.7em;
+    }
+    .line-num {
+      min-width: 42px;
+      color: #3d444d;
+      text-align: right;
+      padding-right: 14px;
+      user-select: none;
+      flex-shrink: 0;
+      font-size: 11px;
+      padding-top: 1px;
+    }
+    .line-content { flex: 1; min-width: 0; }
+    .log-line:hover { background: rgba(255,255,255,.025); border-radius: 3px; }
+    .stderr .line-content { color: #f87171; }
+    .empty { color: #3d444d; font-style: italic; padding: 60px; text-align: center; }
+
+    /* ── Error / loading ── */
+    .error-state, .loading-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 80px 24px;
+      gap: 12px;
+    }
+    .error-icon { font-size: 40px; }
+    .error-state h2 { font-size: 18px; color: #f87171; }
+    .error-state p { color: #6e7681; font-size: 13px; }
+    .spinner {
+      width: 28px; height: 28px;
+      border: 3px solid #21262d;
+      border-top-color: #f97316;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── ANSI colours ── */
+    .ansi-30{color:#4a4a4a}.ansi-31{color:#f87171}.ansi-32{color:#4ade80}.ansi-33{color:#fbbf24}
+    .ansi-34{color:#60a5fa}.ansi-35{color:#c084fc}.ansi-36{color:#22d3ee}.ansi-37{color:#e6edf3}
+    .ansi-90{color:#3d444d}.ansi-91{color:#fca5a5}.ansi-92{color:#86efac}.ansi-93{color:#fde68a}
+    .ansi-94{color:#93c5fd}.ansi-95{color:#d8b4fe}.ansi-96{color:#67e8f9}.ansi-97{color:#ffffff}
+    .ansi-1{font-weight:700}.ansi-2{opacity:.55}.ansi-3{font-style:italic}.ansi-4{text-decoration:underline}
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <a class="header-logo" href="/">Nodactyl</a>
+  <span class="header-sep">›</span>
+  <span class="header-crumb">Log Share</span>
+  <span class="header-sep">›</span>
+  <span class="header-label" id="shareLabel">Loading…</span>
+  <div class="header-spacer"></div>
+  <button class="hdr-btn primary" id="copyAllBtn" onclick="copyAll(this)" style="display:none">
+    <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+    Copy all
+  </button>
+</div>
+
+<div class="meta-bar" id="metaBar" style="display:none">
+  <span class="meta-item" id="metaCreated">
+    <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+    <span id="metaCreatedText"></span>
+  </span>
+  <span class="meta-item" id="metaLines">
+    <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 6h16M4 10h16M4 14h10"/></svg>
+    <span id="metaLinesText"></span>
+  </span>
+  <span class="meta-item" id="metaViews">
+    <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+    <span id="metaViewsText"></span>
+  </span>
+  <span class="meta-item" id="metaExpires"></span>
+</div>
+
+<div class="console-outer" id="consoleOuter" style="display:none">
+  <div class="console-wrap" id="consoleWrap"></div>
+</div>
+
+<div class="loading-state" id="loadingState">
+  <div class="spinner"></div>
+</div>
+
+<div class="error-state" id="errorState" style="display:none">
+  <span class="error-icon">⚠️</span>
+  <h2>Log not found</h2>
+  <p id="errorMsg">This link may have expired or been deleted.</p>
+</div>
+
+<script>
+var shareId = location.pathname.split('/logs/')[1];
+var storedLines = [];
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function ansiToHtml(str) {
+  var FG = {30:'#555e6d',31:'#f87171',32:'#4ade80',33:'#facc15',34:'#60a5fa',35:'#c084fc',36:'#22d3ee',37:'#c8d3e0',90:'#6b7280',91:'#fca5a5',92:'#86efac',93:'#fde68a',94:'#93c5fd',95:'#d8b4fe',96:'#67e8f9',97:'#f9fafb'};
+  var s = String(str), html = '', open = 0, i = 0;
+  while (i < s.length) {
+    var code = s.charCodeAt(i);
+    if (code === 0x1b && s[i+1] === '[') {
+      var j = i + 2;
+      while (j < s.length && (s.charCodeAt(j) < 0x40 || s.charCodeAt(j) > 0x7e)) j++;
+      if (s[j] === 'm') {
+        var codes = s.slice(i+2,j).split(';').map(Number);
+        for (var k = 0; k < codes.length; k++) {
+          var n = codes[k];
+          if (n === 0 || isNaN(n)) { html += '</span>'.repeat(open); open = 0; }
+          else if (FG[n]) { html += '<span style="color:' + FG[n] + '">'; open++; }
+          else if (n === 1) { html += '<span style="font-weight:700">'; open++; }
+          else if (n === 2) { html += '<span style="opacity:.6">'; open++; }
+        }
+      }
+      i = j + 1;
+    } else if (code < 0x20 && code !== 0x09 && code !== 0x0a) {
+      i++;
+    } else {
+      var c = s[i++];
+      if (c === '&') html += '&amp;';
+      else if (c === '<') html += '&lt;';
+      else if (c === '>') html += '&gt;';
+      else html += c;
+    }
+  }
+  return html + '</span>'.repeat(open);
+}
+
+function fmtDate(ts) {
+  return new Date(ts * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function fmtCountdown(ts) {
+  var diff = ts - Math.floor(Date.now() / 1000);
+  if (diff <= 0) return 'Expired';
+  var d = Math.floor(diff / 86400), h = Math.floor((diff % 86400) / 3600), m = Math.floor((diff % 3600) / 60);
+  if (d) return 'Expires in ' + d + 'd ' + h + 'h';
+  if (h) return 'Expires in ' + h + 'h ' + m + 'm';
+  return 'Expires in ' + m + 'm';
+}
+
+function renderLines(lines) {
+  var wrap = document.getElementById('consoleWrap');
+  wrap.innerHTML = '';
+  if (!lines.length || (lines.length === 1 && !lines[0])) {
+    wrap.innerHTML = '<div class="empty">No log content.</div>';
+    return;
+  }
+  var frag = document.createDocumentFragment();
+  for (var i = 0; i < lines.length; i++) {
+    var isRedacted = lines[i].trim() === '[REDACTED]';
+    var div = document.createElement('div');
+    div.className = 'log-line';
+    div.dataset.idx = i;
+
+    var numEl = document.createElement('span');
+    numEl.className = 'line-num';
+    numEl.textContent = i + 1;
+
+    var contentEl = document.createElement('span');
+    contentEl.className = 'line-content' + (isRedacted ? ' redacted-text' : '');
+    if (isRedacted) {
+      contentEl.textContent = '[REDACTED]';
+    } else {
+      contentEl.innerHTML = ansiToHtml(lines[i]);
+    }
+
+    div.appendChild(numEl);
+    div.appendChild(contentEl);
+    frag.appendChild(div);
+  }
+  wrap.appendChild(frag);
+}
+
+
+function copyAll(btn) {
+  var wrap = document.getElementById('consoleWrap');
+  if (!wrap) return;
+  var text = Array.from(wrap.querySelectorAll('.line-content')).map(function(el) { return el.innerText; }).join('\n');
+  navigator.clipboard.writeText(text).then(function() {
+    var prev = btn.innerHTML;
+    btn.textContent = 'Copied!';
+    setTimeout(function() { btn.innerHTML = prev; }, 1500);
+  }).catch(function() {});
+}
+
+(async function() {
+  var panelName = 'Nodactyl';
+  try {
+    var ps = await fetch('/api/settings/public').then(function(r) { return r.json(); });
+    if (ps.panel_name) {
+      panelName = ps.panel_name;
+      document.querySelector('.header-logo').textContent = panelName;
+    }
+  } catch(e) {}
+  try {
+    var res = await fetch('/api/log-shares/' + shareId);
+    if (!res.ok) throw new Error((await res.json()).error || 'Not found');
+    var share = await res.json();
+
+    var label = share.label || 'Untitled log';
+    document.title = label + ' — ' + panelName;
+    document.getElementById('shareLabel').textContent = label;
+
+    document.getElementById('metaBar').style.display = '';
+    document.getElementById('metaCreatedText').textContent = fmtDate(share.created_at);
+
+    var diff = share.expires_at - Math.floor(Date.now() / 1000);
+    var expClass = diff < 86400 ? 'badge-expires expiring-soon' : 'badge-expires';
+    document.getElementById('metaExpires').innerHTML = '<span class="' + expClass + '">' + fmtCountdown(share.expires_at) + '</span>';
+
+    storedLines = share.content.split('\n');
+    document.getElementById('metaLinesText').textContent = storedLines.length.toLocaleString() + ' lines';
+    document.getElementById('metaViewsText').textContent = share.view_count.toLocaleString() + (share.view_count === 1 ? ' view' : ' views');
+
+    renderLines(storedLines);
+
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('consoleOuter').style.display = 'flex';
+    document.getElementById('copyAllBtn').style.display = '';
+  } catch(e) {
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('errorState').style.display = 'flex';
+    document.getElementById('errorMsg').textContent = e.message || 'This link may have expired or been deleted.';
+    document.getElementById('shareLabel').textContent = 'Not found';
+  }
+})();
+</script>
+</body>
+</html>

@@ -7,7 +7,7 @@ const helmet = require('helmet');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 
-const { JWT_SECRET } = require('./middleware/auth');
+const { JWT_SECRET, requireAuth } = require('./middleware/auth');
 const nodeManager = require('./nodeManager');
 
 function socketCanConsole(server, user) {
@@ -67,6 +67,64 @@ async function main() {
   app.get('/admin/servers', (req, res) => res.sendFile(pub('admin/servers.html')));
   app.get('/admin/ranks', (req, res) => res.sendFile(pub('admin/ranks.html')));
   app.get('/admin/settings', (req, res) => res.sendFile(pub('admin/settings.html')));
+  app.get('/logs/:shareId', (req, res) => res.sendFile(pub('log-viewer.html')));
+
+  // ── Favicon ───────────────────────────────────────────────────────────────────
+  function getFaviconSvg() {
+    const { db } = require('./db');
+    const logo = db.prepare("SELECT value FROM settings WHERE key = 'panel_logo'").get()?.value || 'N';
+    if (logo.startsWith('http') || logo.startsWith('/')) return { redirect: logo };
+    if (logo.startsWith('data:')) {
+      const safe = logo.replace(/"/g, '&quot;');
+      return { svg: `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 32 32"><image href="${safe}" width="32" height="32"/></svg>` };
+    }
+    const safe = logo.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#f97316"/><text x="16" y="23" font-family="system-ui,sans-serif" font-size="18" font-weight="800" text-anchor="middle" fill="#fff">${safe}</text></svg>` };
+  }
+
+  app.get('/favicon.svg', (req, res) => {
+    const result = getFaviconSvg();
+    if (result.redirect) return res.redirect(result.redirect);
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.send(result.svg);
+  });
+
+  app.get('/favicon.ico', (req, res) => {
+    const result = getFaviconSvg();
+    if (result.redirect) return res.redirect(result.redirect);
+    res.redirect('/favicon.svg');
+  });
+
+  // Redact lines in a log share (requires auth + sharelog permission on that server)
+  app.patch('/api/log-shares/:shareId', requireAuth, (req, res) => {
+    const share = db.prepare('SELECT * FROM log_shares WHERE id = ?').get(req.params.shareId);
+    if (!share) return res.status(404).json({ error: 'Not found' });
+    const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(share.server_id);
+    if (!server) return res.status(404).json({ error: 'Not found' });
+    const user = req.user;
+    let allowed = user.role === 'admin' || server.owner_id === user.id;
+    if (!allowed) {
+      const member = db.prepare('SELECT permissions FROM server_members WHERE server_id = ? AND user_id = ?').get(server.id, user.id);
+      try { allowed = JSON.parse(member?.permissions || '[]').includes('sharelog'); } catch {}
+    }
+    if (!allowed) return res.status(403).json({ error: 'Forbidden' });
+    const { content } = req.body;
+    if (typeof content !== 'string') return res.status(400).json({ error: 'content required' });
+    if (Buffer.byteLength(content) > 512 * 1024) return res.status(400).json({ error: 'Content too large' });
+    db.prepare('UPDATE log_shares SET content = ? WHERE id = ?').run(content, req.params.shareId);
+    res.json({ ok: true });
+  });
+
+  // Public log share read (no auth)
+  app.get('/api/log-shares/:shareId', (req, res) => {
+    const { db } = require('./db');
+    const now = Math.floor(Date.now() / 1000);
+    const share = db.prepare('SELECT id, label, content, view_count, created_at, expires_at FROM log_shares WHERE id = ? AND expires_at > ?').get(req.params.shareId, now);
+    if (!share) return res.status(404).json({ error: 'Log share not found or expired' });
+    db.prepare('UPDATE log_shares SET view_count = view_count + 1 WHERE id = ?').run(req.params.shareId);
+    res.json({ ...share, view_count: share.view_count + 1 });
+  });
 
   // ── Daemon WebSocket endpoint ────────────────────────────────────────────────
   const daemonWss = new WebSocket.Server({ noServer: true });

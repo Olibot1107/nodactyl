@@ -1,6 +1,7 @@
 const WebSocket = require('ws');
 const nodePath = require('path');
 const fs = require('fs');
+const os = require('os');
 const { spawnSync } = require('child_process');
 const docker = require('./docker');
 const hostfs = require('./hostfs');
@@ -32,6 +33,32 @@ if (dataPath) {
 }
 
 const DAEMON_WS = panelUrl.replace(/^http/, 'ws') + '/daemon';
+
+// ── CPU sampling ─────────────────────────────────────────────────────────────
+// Two /proc/stat reads 250 ms apart give an accurate delta-based CPU %.
+// Falls back to os.cpus() snapshot (less accurate) on non-Linux systems.
+async function getCpuPercent() {
+  function readProcStat() {
+    try {
+      const line = fs.readFileSync('/proc/stat', 'utf8').split('\n')[0];
+      const nums = line.trim().split(/\s+/).slice(1).map(Number);
+      const idle = nums[3] + (nums[4] || 0);
+      const total = nums.reduce((a, b) => a + b, 0);
+      return { idle, total };
+    } catch { return null; }
+  }
+  const a = readProcStat();
+  if (!a) {
+    const cpus = os.cpus();
+    let idle = 0, tick = 0;
+    for (const c of cpus) { for (const t in c.times) tick += c.times[t]; idle += c.times.idle; }
+    return tick > 0 ? Math.round((1 - idle / tick) * 100) : 0;
+  }
+  await new Promise(r => setTimeout(r, 250));
+  const b = readProcStat();
+  if (!b || b.total === a.total) return 0;
+  return Math.max(0, Math.min(100, Math.round((1 - (b.idle - a.idle) / (b.total - a.total)) * 100)));
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function serverDataDir(serverId) {
@@ -629,6 +656,24 @@ async function handleMessage(msg) {
         }
         const output = (result.stdout + result.stderr).trim() || 'Reset complete.';
         respond(requestId, { output });
+      } catch (err) {
+        respond(requestId, {}, err);
+      }
+      break;
+    }
+
+    case 'ping': {
+      respond(msg.requestId, { pong: true });
+      break;
+    }
+
+    case 'node-stats': {
+      const { requestId } = msg;
+      try {
+        const cpu = await getCpuPercent();
+        const memTotal = os.totalmem();
+        const memUsed  = memTotal - os.freemem();
+        respond(requestId, { cpu, memUsed, memTotal });
       } catch (err) {
         respond(requestId, {}, err);
       }

@@ -4,7 +4,84 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Nodactyl — Nodes</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .node-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: border-color .15s;
+    }
+    .node-card:hover { border-color: var(--border2); }
+    .node-card-header {
+      padding: 16px 18px 14px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .node-status-dot {
+      width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; margin-top: 5px;
+    }
+    .node-status-dot.online  { background: var(--success); box-shadow: 0 0 0 3px rgba(34,197,94,.18); }
+    .node-status-dot.offline { background: var(--danger);  box-shadow: 0 0 0 3px rgba(239,68,68,.18); }
+    .node-name { font-size: 14px; font-weight: 600; line-height: 1.3; }
+    .node-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .node-ping {
+      margin-left: auto;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 20px;
+      flex-shrink: 0;
+    }
+    .node-ping.fast   { background: rgba(34,197,94,.12);  color: #4ade80; }
+    .node-ping.medium { background: rgba(234,179,8,.12);  color: #fbbf24; }
+    .node-ping.slow   { background: rgba(239,68,68,.12);  color: #f87171; }
+    .node-ping.pinging{ background: var(--bg3); color: var(--text-dim); }
+    .node-divider { height: 1px; background: var(--border); }
+    .node-stats {
+      padding: 12px 18px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .node-stat-item { text-align: center; }
+    .node-stat-val  { font-size: 15px; font-weight: 700; line-height: 1; }
+    .node-stat-lbl  { font-size: 10px; color: var(--text-dim); margin-top: 3px; letter-spacing: .03em; text-transform: uppercase; }
+    .node-bars { padding: 0 18px 12px; display: flex; flex-direction: column; gap: 6px; }
+    .bar-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
+    .node-footer {
+      padding: 10px 18px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .node-token-preview {
+      font-family: monospace;
+      font-size: 10.5px;
+      color: var(--text-dim);
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 4px 8px;
+      letter-spacing: .04em;
+      margin: 0 18px 12px;
+    }
+    .port-badge {
+      display: inline-block;
+      font-size: 10.5px;
+      font-family: monospace;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 6px;
+      color: var(--text-muted);
+    }
+  </style>
 </head>
 <body>
 <div class="layout" id="app"></div>
@@ -13,14 +90,14 @@
 <div class="modal-overlay" id="createModal">
   <div class="modal">
     <div class="modal-header">
-      <h2 class="modal-title" id="createModalTitle">Add Node</h2>
-      <button class="modal-close" onclick="closeCreateModal()">✕</button>
+      <h2 class="modal-title">Add Node</h2>
+      <button class="modal-close" onclick="closeCreateModal()">&#x2715;</button>
     </div>
     <div class="modal-body">
       <div class="alert alert-error" id="createError"></div>
       <div class="form-group">
         <label class="form-label">Node Name *</label>
-        <input type="text" class="form-input" id="n_name" placeholder="Node 1 — My VPS">
+        <input type="text" class="form-input" id="n_name" placeholder="Node 1">
       </div>
       <div class="form-group">
         <label class="form-label">Description</label>
@@ -28,9 +105,8 @@
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Total Memory <span class="text-muted">(GB)</span></label>
+          <label class="form-label">Total Memory (GB)</label>
           <input type="number" class="form-input" id="n_mem" value="8" min="1">
-          <div class="form-hint">Total RAM on the node</div>
         </div>
         <div class="form-group">
           <label class="form-label">CPU Cores</label>
@@ -38,23 +114,21 @@
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Disk Limit <span class="text-muted">(GB — 0 = unlimited tracking)</span></label>
+        <label class="form-label">Disk Limit (GB, 0 = don't track)</label>
         <input type="number" class="form-input" id="n_disk" value="0" min="0">
-        <div class="form-hint">Set to track how much disk is allocated across servers on this node. 0 = don't track.</div>
       </div>
       <div class="form-group">
         <label class="form-label">Port Range</label>
         <div class="form-row" style="margin-top:0">
           <div class="form-group" style="margin-bottom:0">
-            <input type="number" class="form-input" id="n_portStart" value="10000" min="1024" max="65534" placeholder="10000">
+            <input type="number" class="form-input" id="n_portStart" value="10000" min="1024" max="65534">
             <div class="form-hint">Start</div>
           </div>
           <div class="form-group" style="margin-bottom:0">
-            <input type="number" class="form-input" id="n_portEnd" value="30000" min="1025" max="65535" placeholder="30000">
+            <input type="number" class="form-input" id="n_portEnd" value="30000" min="1025" max="65535">
             <div class="form-hint">End</div>
           </div>
         </div>
-        <div class="form-hint">Host ports auto-assigned to servers from this range.</div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-ghost" onclick="closeCreateModal()">Cancel</button>
@@ -69,45 +143,44 @@
   <div class="modal">
     <div class="modal-header">
       <h2 class="modal-title">Edit Node</h2>
-      <button class="modal-close" onclick="closeEditModal()">✕</button>
+      <button class="modal-close" onclick="closeEditModal()">&#x2715;</button>
     </div>
     <div class="modal-body">
       <div class="alert alert-error" id="editError"></div>
       <div class="form-group">
         <label class="form-label">Node Name *</label>
-        <input type="text" class="form-input" id="e_name" placeholder="Node 1 — My VPS">
+        <input type="text" class="form-input" id="e_name">
       </div>
       <div class="form-group">
         <label class="form-label">Description</label>
-        <input type="text" class="form-input" id="e_desc" placeholder="Optional">
+        <input type="text" class="form-input" id="e_desc">
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Total Memory <span class="text-muted">(GB)</span></label>
-          <input type="number" class="form-input" id="e_mem" value="8" min="1">
+          <label class="form-label">Total Memory (GB)</label>
+          <input type="number" class="form-input" id="e_mem" min="1">
         </div>
         <div class="form-group">
           <label class="form-label">CPU Cores</label>
-          <input type="number" class="form-input" id="e_cpu" value="4" min="1">
+          <input type="number" class="form-input" id="e_cpu" min="1">
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Disk Limit <span class="text-muted">(GB — 0 = unlimited tracking)</span></label>
-        <input type="number" class="form-input" id="e_disk" value="0" min="0">
+        <label class="form-label">Disk Limit (GB, 0 = don't track)</label>
+        <input type="number" class="form-input" id="e_disk" min="0">
       </div>
       <div class="form-group">
         <label class="form-label">Port Range</label>
         <div class="form-row" style="margin-top:0">
           <div class="form-group" style="margin-bottom:0">
-            <input type="number" class="form-input" id="e_portStart" min="1024" max="65534" placeholder="10000">
+            <input type="number" class="form-input" id="e_portStart" min="1024" max="65534">
             <div class="form-hint">Start</div>
           </div>
           <div class="form-group" style="margin-bottom:0">
-            <input type="number" class="form-input" id="e_portEnd" min="1025" max="65535" placeholder="30000">
+            <input type="number" class="form-input" id="e_portEnd" min="1025" max="65535">
             <div class="form-hint">End</div>
           </div>
         </div>
-        <div class="form-hint">Host ports auto-assigned to servers from this range.</div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-ghost" onclick="closeEditModal()">Cancel</button>
@@ -117,38 +190,18 @@
   </div>
 </div>
 
-<!-- Update Node Modal -->
-<div class="modal-overlay" id="updateModal">
-  <div class="modal modal-sm">
-    <div class="modal-header">
-      <h2 class="modal-title">Update Node — <span id="updateNodeName" style="color:var(--primary)"></span></h2>
-      <button class="modal-close" onclick="closeUpdateModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div id="updateBody">
-        <div style="display:flex;align-items:center;gap:10px;color:var(--text-muted)">
-          <span class="spinner"></span> Pulling latest code from GitHub…
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeUpdateModal()">Close</button>
-    </div>
-  </div>
-</div>
-
-<!-- Token display Modal -->
+<!-- Token Modal -->
 <div class="modal-overlay" id="tokenModal">
   <div class="modal">
     <div class="modal-header">
       <h2 class="modal-title">Node Token</h2>
-      <button class="modal-close" onclick="document.getElementById('tokenModal').classList.remove('open')">✕</button>
+      <button class="modal-close" onclick="document.getElementById('tokenModal').classList.remove('open')">&#x2715;</button>
     </div>
     <div class="modal-body">
-      <p class="text-muted text-sm mb-4">Copy this token into the daemon's <code>config.json</code>. It won't be shown again in full.</p>
+      <p class="text-muted text-sm mb-4">Paste this into the daemon's <code>config.json</code>.</p>
       <div class="token-box" id="tokenDisplay"></div>
       <button class="btn btn-ghost btn-sm mt-4" onclick="copyText(document.getElementById('tokenDisplay').textContent, this)">Copy Token</button>
-      <div class="form-hint mt-4">config.json → <code>{ "panelUrl": "http://your-panel:3000", "token": "..." }</code></div>
+      <div class="form-hint mt-4"><code>{ "panelUrl": "http://panel:3000", "token": "..." }</code></div>
     </div>
   </div>
 </div>
@@ -158,200 +211,234 @@
 <script>
 requireAuth();
 
-const currentUser = getUser();
-const isAdmin = currentUser?.role === 'admin';
-
-let nodes = [];
-let editNodeId = null;
+var currentUser = getUser();
+var isAdmin = currentUser && currentUser.role === 'admin';
+var nodes = [];
+var editNodeId = null;
+var pingCache = {};
+var statsCache = {};
 
 async function init() {
   await loadPanelSettings();
-
-  const addNodeBtn = isAdmin ? `<button class="btn btn-primary" onclick="openCreate()">+ Add Node</button>` : '';
-
-  document.getElementById('app').innerHTML = `
-    ${renderSidebar('nodes')}
-    <div class="main">
-      <div class="topbar">
-        <div>
-          <div class="page-title">Nodes</div>
-          <div class="page-sub">${isAdmin ? 'Connected daemons that run your containers' : 'Infrastructure status'}</div>
-        </div>
-        ${addNodeBtn}
-      </div>
-      <div class="content">
-        <div class="grid-stats mb-6" id="statsRow"></div>
-        <div class="grid-2" id="nodeGrid">
-          <div class="empty-state"><span class="spinner"></span></div>
-        </div>
-      </div>
-    </div>`;
+  document.getElementById('app').innerHTML =
+    renderSidebar('nodes') +
+    '<div class="main">' +
+      '<div class="topbar">' +
+        '<div>' +
+          '<div class="page-title">Nodes</div>' +
+          '<div class="page-sub">' + (isAdmin ? 'Connected daemons and their health' : 'Infrastructure status') + '</div>' +
+        '</div>' +
+        (isAdmin ? '<button class="btn btn-primary" onclick="openCreate()">+ Add Node</button>' : '') +
+      '</div>' +
+      '<div class="content">' +
+        '<div class="grid-stats mb-6" id="statsRow"></div>' +
+        '<div class="grid-2" id="nodeGrid"><div class="empty-state"><span class="spinner"></span></div></div>' +
+      '</div>' +
+    '</div>';
 
   await loadData();
 
-  const socket = io({ auth: { token: getToken() } });
-  socket.on('node-status', ({ nodeId, status }) => {
-    const node = nodes.find(n => n.id === nodeId);
-    if (node) { node.online = status === 'online'; renderNodes(); renderStats(); }
+  var socket = io({ auth: { token: getToken() } });
+  socket.on('node-status', function(d) {
+    var node = nodes.find(function(n) { return n.id === d.nodeId; });
+    if (node) {
+      node.online = d.status === 'online';
+      renderNodes();
+      renderStats();
+      if (d.status === 'online') { pingNode(d.nodeId); fetchNodeStats(d.nodeId); }
+    }
   });
 }
 
 async function loadData() {
-  nodes = await API.get('/nodes').catch(() => []);
+  nodes = await API.get('/nodes').catch(function() { return []; });
   renderStats();
+  renderNodes();
+  nodes.filter(function(n) { return n.online; }).forEach(function(n) {
+    pingNode(n.id);
+    fetchNodeStats(n.id);
+  });
+}
+
+async function fetchNodeStats(nodeId) {
+  try {
+    var r = await API.get('/nodes/' + nodeId + '/stats');
+    statsCache[nodeId] = r;
+  } catch(e) {
+    statsCache[nodeId] = null;
+  }
   renderNodes();
 }
 
-function renderStats() {
-  const online = nodes.filter(n => n.online).length;
-  const totalServers = nodes.reduce((s, n) => s + (n.server_count || 0), 0);
-  const totalMem = nodes.reduce((s, n) => s + (n.memory || 0), 0);
-  const usedMem  = nodes.reduce((s, n) => s + (n.used_memory || 0), 0);
-  document.getElementById('statsRow').innerHTML = `
-    <div class="stat-card">
-      <div class="stat-label">Total Nodes</div>
-      <div class="stat-value">${nodes.length}</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Online</div>
-      <div class="stat-value" style="color:${online ? 'var(--success)' : 'var(--text-muted)'}">${online}</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Offline</div>
-      <div class="stat-value" style="color:${nodes.length - online ? 'var(--danger)' : 'var(--text-muted)'}">${nodes.length - online}</div>
-    </div>
-    ${isAdmin && totalMem > 0 ? `
-    <div class="stat-card">
-      <div class="stat-label">RAM Allocated</div>
-      <div class="stat-value">${fmtMb(usedMem)} <small style="font-size:13px;color:var(--text-muted)">/ ${fmtMb(totalMem)}</small></div>
-      <div class="bar-wrap"><div class="bar-fill ${usedMem / totalMem > 0.8 ? 'danger' : usedMem / totalMem > 0.6 ? 'warn' : ''}" style="width:${Math.min(100, usedMem / totalMem * 100).toFixed(1)}%"></div></div>
-    </div>` : `
-    <div class="stat-card">
-      <div class="stat-label">Servers Hosted</div>
-      <div class="stat-value">${totalServers}</div>
-    </div>`}`;
+async function pingNode(nodeId) {
+  var el = document.getElementById('ping-' + nodeId);
+  if (el) { el.className = 'node-ping pinging'; el.textContent = '...ms'; }
+  try {
+    var r = await API.get('/nodes/' + nodeId + '/ping');
+    pingCache[nodeId] = r.ping;
+  } catch(e) {
+    pingCache[nodeId] = null;
+  }
+  renderNodes();
+}
+
+function pingClass(ms) {
+  if (ms == null) return 'slow';
+  if (ms < 30)  return 'fast';
+  if (ms < 100) return 'medium';
+  return 'slow';
 }
 
 function fmtMb(mb) {
-  if (!mb) return '0 MB';
-  if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
+  if (mb == null) return '—';
+  if (mb === 0) return '0 MB';
+  if (mb >= 1024) return (mb / 1024).toFixed(1).replace(/\.0$/, '') + ' GB';
   return mb + ' MB';
 }
 
-function allocBar(used, total, unit) {
+function allocBar(used, total, label) {
   if (!total) return '';
-  const pct = Math.min(100, (used / total) * 100);
-  const cls = pct > 80 ? 'danger' : pct > 60 ? 'warn' : '';
-  return `
-    <div style="margin-top:10px">
-      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:3px">
-        <span>${unit}</span>
-        <span>${fmtMb(used)} / ${fmtMb(total)} (${pct.toFixed(0)}%)</span>
-      </div>
-      <div class="bar-wrap"><div class="bar-fill ${cls}" style="width:${pct.toFixed(1)}%"></div></div>
-    </div>`;
+  var pct = Math.min(100, (used / total) * 100);
+  var cls = pct > 80 ? 'danger' : pct > 60 ? 'warn' : '';
+  return '<div style="margin-bottom:2px">' +
+    '<div class="bar-labels"><span>' + label + '</span><span>' + fmtMb(used) + ' / ' + fmtMb(total) + '</span></div>' +
+    '<div class="bar-wrap"><div class="bar-fill ' + cls + '" style="width:' + pct.toFixed(1) + '%"></div></div>' +
+    '</div>';
+}
+
+function renderStats() {
+  var online = nodes.filter(function(n) { return n.online; }).length;
+  var totalServers = nodes.reduce(function(s, n) { return s + (n.server_count || 0); }, 0);
+  var totalMem = nodes.reduce(function(s, n) { return s + (n.memory || 0); }, 0);
+  var usedMem  = nodes.reduce(function(s, n) { return s + (n.used_memory || 0); }, 0);
+  var memPct = totalMem > 0 ? Math.min(100, usedMem / totalMem * 100) : 0;
+  var memCls = memPct > 80 ? 'danger' : memPct > 60 ? 'warn' : '';
+  var statsHtml =
+    '<div class="stat-card"><div class="stat-label">Nodes</div><div class="stat-value">' + nodes.length + '</div></div>' +
+    '<div class="stat-card"><div class="stat-label">Online</div><div class="stat-value" style="color:' + (online ? 'var(--success)' : 'var(--text-muted)') + '">' + online + '</div></div>' +
+    '<div class="stat-card"><div class="stat-label">Offline</div><div class="stat-value" style="color:' + (nodes.length - online ? 'var(--danger)' : 'var(--text-muted)') + '">' + (nodes.length - online) + '</div></div>' +
+    '<div class="stat-card"><div class="stat-label">Servers</div><div class="stat-value">' + totalServers + '</div></div>';
+  if (totalMem > 0) {
+    statsHtml += '<div class="stat-card"><div class="stat-label">RAM Allocated</div>' +
+      '<div class="stat-value" style="font-size:18px">' + fmtMb(usedMem) + ' <small style="font-size:12px;color:var(--text-muted)">/ ' + fmtMb(totalMem) + '</small></div>' +
+      '<div class="bar-wrap" style="margin-top:6px"><div class="bar-fill ' + memCls + '" style="width:' + memPct.toFixed(1) + '%"></div></div>' +
+      '</div>';
+  }
+  document.getElementById('statsRow').innerHTML = statsHtml;
 }
 
 function renderNodes() {
-  const grid = document.getElementById('nodeGrid');
+  var grid = document.getElementById('nodeGrid');
   if (!nodes.length) {
-    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
-      <div class="empty-icon">🖥️</div>
-      <p>${isAdmin ? 'No nodes yet. Click "+ Add Node" to register one, then run the daemon on your server.' : 'No nodes configured yet.'}</p>
-    </div>`;
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">&#x1F5A5;</div><p>' +
+      (isAdmin ? 'No nodes yet. Add one to get started.' : 'No nodes configured.') + '</p></div>';
     return;
   }
+  grid.innerHTML = nodes.map(function(n) {
+    return isAdmin ? renderAdminCard(n) : renderUserCard(n);
+  }).join('');
+}
 
-  grid.innerHTML = nodes.map(n => isAdmin ? renderAdminCard(n) : renderUserCard(n)).join('');
+function nodeHeader(n) {
+  var online = n.online;
+  var ping = pingCache[n.id];
+  var pingLabel = online ? (ping == null ? '...' : ping + ' ms') : '—';
+  var pClass = online ? pingClass(ping) : 'slow';
+  return '<div class="node-card-header">' +
+    '<span class="node-status-dot ' + (online ? 'online' : 'offline') + '"></span>' +
+    '<div style="flex:1;min-width:0">' +
+      '<div class="node-name">' + esc(n.name) + '</div>' +
+      (n.description ? '<div class="node-desc">' + esc(n.description) + '</div>' : '') +
+    '</div>' +
+    (online
+      ? '<span class="node-ping ' + pClass + '" id="ping-' + n.id + '">' + pingLabel + '</span>'
+      : '<span class="node-ping slow">offline</span>') +
+  '</div>';
+}
+
+function nodeStatsGrid(n) {
+  return '<div class="node-stats">' +
+    '<div class="node-stat-item"><div class="node-stat-val">' + fmtMb(n.memory) + '</div><div class="node-stat-lbl">Total RAM</div></div>' +
+    '<div class="node-stat-item"><div class="node-stat-val">' + (n.cpu || '—') + '</div><div class="node-stat-lbl">CPU Cores</div></div>' +
+    '<div class="node-stat-item"><div class="node-stat-val">' + (n.server_count || 0) + '</div><div class="node-stat-lbl">Servers</div></div>' +
+  '</div>';
+}
+
+function cpuBar(pct) {
+  var cls = pct > 80 ? 'danger' : pct > 60 ? 'warn' : '';
+  return '<div style="margin-bottom:2px">' +
+    '<div class="bar-labels"><span>CPU usage</span><span>' + pct + '%</span></div>' +
+    '<div class="bar-wrap"><div class="bar-fill ' + cls + '" style="width:' + pct + '%"></div></div>' +
+    '</div>';
+}
+
+function nodeAllocBars(n) {
+  var hasAlloc = n.memory > 0;
+  var hasDisk  = n.disk_limit > 0;
+  var stats = statsCache[n.id];
+  var hasCpu = stats && stats.cpu != null;
+  if (!hasAlloc && !hasDisk && !hasCpu) return '';
+  return '<div class="node-bars">' +
+    (hasCpu   ? cpuBar(stats.cpu) : '') +
+    (hasAlloc ? allocBar(n.used_memory || 0, n.memory,     'RAM allocated') : '') +
+    (hasDisk  ? allocBar(n.used_disk   || 0, n.disk_limit, 'Disk allocated') : '') +
+  '</div>';
 }
 
 function renderUserCard(n) {
-  const count = n.server_count || 0;
-  return `
-    <div class="node-card">
-      <div class="node-header">
-        <div>
-          <div class="node-name">${esc(n.name)}</div>
-          ${n.description ? `<div class="node-meta">${esc(n.description)}</div>` : ''}
-        </div>
-        ${badgeHtml(n.online ? 'online' : 'offline')}
-      </div>
-      <div class="node-meta" style="margin-top:10px">
-        ${count} server${count !== 1 ? 's' : ''} hosted
-      </div>
-      ${!n.online ? `<div class="node-meta" style="color:var(--danger);margin-top:6px;font-size:12px">This node is currently offline. Your servers may be unavailable.</div>` : ''}
-    </div>`;
+  return '<div class="node-card">' +
+    nodeHeader(n) +
+    '<div class="node-divider"></div>' +
+    nodeStatsGrid(n) +
+    nodeAllocBars(n) +
+    (!n.online ? '<div style="padding:0 18px 12px;font-size:12px;color:var(--danger)">Node offline — hosted servers may be unavailable.</div>' : '') +
+  '</div>';
 }
 
 function renderAdminCard(n) {
-  return `
-    <div class="node-card">
-      <div class="node-header">
-        <div>
-          <div class="node-name">${esc(n.name)}</div>
-          ${n.description ? `<div class="node-meta">${esc(n.description)}</div>` : ''}
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          ${badgeHtml(n.online ? 'online' : 'offline')}
-        </div>
-      </div>
-
-      <div class="node-meta" style="margin-top:8px">
-        ${fmtMb(n.memory)} RAM · ${n.cpu} CPU cores · ${n.server_count || 0} server${(n.server_count || 0) !== 1 ? 's' : ''}
-        ${n.disk_limit > 0 ? ` · ${fmtMb(n.disk_limit)} disk` : ''}
-        <br>Ports: ${n.port_range_start ?? 10000}–${n.port_range_end ?? 30000}
-      </div>
-
-      ${allocBar(n.used_memory || 0, n.memory, 'RAM Allocated')}
-      ${n.disk_limit > 0 ? allocBar(n.used_disk || 0, n.disk_limit, 'Disk Allocated') : ''}
-
-      <div class="node-meta" style="margin-top:8px">Last seen: ${n.last_seen ? new Date(n.last_seen * 1000).toLocaleString() : 'Never'}</div>
-
-      <div class="node-token" style="margin-top:10px">
-        <span>${n.token.slice(0, 8)}••••••••••••••••••••••••••••••••••••••••••••••••••••••••••${n.token.slice(-4)}</span>
-      </div>
-
-      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-        <button class="btn btn-ghost btn-sm" onclick="openEdit('${n.id}')">Edit</button>
-        <button class="btn btn-ghost btn-sm" onclick="showToken('${n.id}','${n.token}')">Show Token</button>
-        ${n.online ? `<button class="btn btn-primary btn-sm" onclick="updateNode('${n.id}','${esc(n.name)}')">↑ Update</button>` : ''}
-        <button class="btn btn-warning btn-sm" onclick="resetToken('${n.id}')">New Token</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteNode('${n.id}','${esc(n.name)}')">Delete</button>
-      </div>
-
-      <div class="node-meta" style="margin-top:8px;font-size:11px">
-        ID: <span class="chip">${n.id}</span>
-      </div>
-    </div>`;
+  var lastSeen = n.last_seen ? timeAgo(n.last_seen) : 'never';
+  return '<div class="node-card">' +
+    nodeHeader(n) +
+    '<div class="node-divider"></div>' +
+    nodeStatsGrid(n) +
+    nodeAllocBars(n) +
+    '<div style="padding:0 18px 12px;display:flex;justify-content:flex-end">' +
+      '<span style="font-size:11px;color:var(--text-dim)">seen ' + lastSeen + '</span>' +
+    '</div>' +
+    '<div class="node-token-preview">' + n.token.slice(0, 8) + '&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;' + n.token.slice(-4) + '</div>' +
+    '<div class="node-footer">' +
+      '<button class="btn btn-ghost btn-sm" onclick="openEdit(\'' + n.id + '\')">Edit</button>' +
+      '<button class="btn btn-ghost btn-sm" onclick="showToken(\'' + n.id + '\',\'' + n.token + '\')">Token</button>' +
+      (n.online ? '<button class="btn btn-ghost btn-sm" onclick="pingNode(\'' + n.id + '\')">Ping</button>' : '') +
+      '<button class="btn btn-warning btn-sm" onclick="resetToken(\'' + n.id + '\')">New Token</button>' +
+      '<button class="btn btn-danger btn-sm" onclick="deleteNode(\'' + n.id + '\',\'' + esc(n.name).replace(/'/g, "\\'") + '\')">Delete</button>' +
+    '</div>' +
+  '</div>';
 }
 
 function showToken(id, token) {
-  if (!isAdmin) return;
   document.getElementById('tokenDisplay').textContent = token;
   document.getElementById('tokenModal').classList.add('open');
 }
 
 async function resetToken(id) {
-  if (!isAdmin) return;
-  if (!confirm('Generate a new token? The daemon will need to be reconfigured with it.')) return;
+  if (!confirm('Generate a new token? The daemon must be reconfigured.')) return;
   try {
-    const data = await API.post(`/nodes/${id}/reset-token`, {});
+    var data = await API.post('/nodes/' + id + '/reset-token', {});
     showToken(id, data.token);
     await loadData();
-  } catch (e) { alert(e.message); }
+  } catch(e) { alert(e.message); }
 }
 
 async function deleteNode(id, name) {
-  if (!isAdmin) return;
-  if (!confirm(`Delete node "${name}"? This will fail if servers are assigned to it.`)) return;
+  if (!confirm('Delete node "' + name + '"? This will fail if servers are assigned to it.')) return;
   try {
-    await API.delete(`/nodes/${id}`);
+    await API.delete('/nodes/' + id);
     await loadData();
-  } catch (e) { alert(e.message); }
+  } catch(e) { alert(e.message); }
 }
 
 function openCreate() {
-  if (!isAdmin) return;
   document.getElementById('n_name').value = '';
   document.getElementById('n_desc').value = '';
   document.getElementById('n_mem').value = 8;
@@ -362,32 +449,28 @@ function openCreate() {
   document.getElementById('createError').classList.remove('show');
   document.getElementById('createModal').classList.add('open');
 }
-
-function closeCreateModal() {
-  document.getElementById('createModal').classList.remove('open');
-}
+function closeCreateModal() { document.getElementById('createModal').classList.remove('open'); }
 
 async function createNode() {
-  const btn = document.getElementById('createBtn');
-  const errEl = document.getElementById('createError');
+  var btn = document.getElementById('createBtn');
+  var errEl = document.getElementById('createError');
   errEl.classList.remove('show');
   btn.innerHTML = '<span class="spinner"></span> Creating...';
   btn.disabled = true;
-
   try {
-    const node = await API.post('/nodes', {
+    var node = await API.post('/nodes', {
       name: document.getElementById('n_name').value,
       description: document.getElementById('n_desc').value,
-      memory: parseInt(document.getElementById('n_mem').value) * 1024,  // GB → MB
+      memory: parseInt(document.getElementById('n_mem').value) * 1024,
       cpu: parseInt(document.getElementById('n_cpu').value),
-      disk_limit: parseInt(document.getElementById('n_disk').value) * 1024, // GB → MB
+      disk_limit: parseInt(document.getElementById('n_disk').value) * 1024,
       port_range_start: parseInt(document.getElementById('n_portStart').value) || 10000,
-      port_range_end: parseInt(document.getElementById('n_portEnd').value) || 30000,
+      port_range_end:   parseInt(document.getElementById('n_portEnd').value)   || 30000,
     });
     closeCreateModal();
     await loadData();
-    setTimeout(() => showToken(node.id, node.token), 100);
-  } catch (e) {
+    setTimeout(function() { showToken(node.id, node.token); }, 100);
+  } catch(e) {
     errEl.textContent = e.message;
     errEl.classList.add('show');
   } finally {
@@ -397,45 +480,40 @@ async function createNode() {
 }
 
 function openEdit(id) {
-  const n = nodes.find(x => x.id === id);
+  var n = nodes.find(function(x) { return x.id === id; });
   if (!n) return;
   editNodeId = id;
   document.getElementById('e_name').value = n.name;
   document.getElementById('e_desc').value = n.description || '';
-  document.getElementById('e_mem').value = (n.memory / 1024).toFixed(1);  // MB → GB
+  document.getElementById('e_mem').value = (n.memory / 1024).toFixed(1);
   document.getElementById('e_cpu').value = n.cpu;
   document.getElementById('e_disk').value = n.disk_limit > 0 ? (n.disk_limit / 1024).toFixed(1) : 0;
-  document.getElementById('e_portStart').value = n.port_range_start ?? 10000;
-  document.getElementById('e_portEnd').value = n.port_range_end ?? 30000;
+  document.getElementById('e_portStart').value = n.port_range_start || 10000;
+  document.getElementById('e_portEnd').value   = n.port_range_end   || 30000;
   document.getElementById('editError').classList.remove('show');
   document.getElementById('editModal').classList.add('open');
 }
-
-function closeEditModal() {
-  document.getElementById('editModal').classList.remove('open');
-  editNodeId = null;
-}
+function closeEditModal() { document.getElementById('editModal').classList.remove('open'); editNodeId = null; }
 
 async function saveEdit() {
-  const btn = document.getElementById('editBtn');
-  const errEl = document.getElementById('editError');
+  var btn = document.getElementById('editBtn');
+  var errEl = document.getElementById('editError');
   errEl.classList.remove('show');
   btn.innerHTML = '<span class="spinner"></span> Saving...';
   btn.disabled = true;
-
   try {
-    await API.patch(`/nodes/${editNodeId}`, {
+    await API.patch('/nodes/' + editNodeId, {
       name: document.getElementById('e_name').value,
       description: document.getElementById('e_desc').value,
-      memory: Math.round(parseFloat(document.getElementById('e_mem').value) * 1024),  // GB → MB
+      memory: Math.round(parseFloat(document.getElementById('e_mem').value) * 1024),
       cpu: parseInt(document.getElementById('e_cpu').value),
-      disk_limit: Math.round(parseFloat(document.getElementById('e_disk').value) * 1024), // GB → MB
+      disk_limit: Math.round(parseFloat(document.getElementById('e_disk').value) * 1024),
       port_range_start: parseInt(document.getElementById('e_portStart').value) || 10000,
-      port_range_end: parseInt(document.getElementById('e_portEnd').value) || 30000,
+      port_range_end:   parseInt(document.getElementById('e_portEnd').value)   || 30000,
     });
     closeEditModal();
     await loadData();
-  } catch (e) {
+  } catch(e) {
     errEl.textContent = e.message;
     errEl.classList.add('show');
   } finally {
@@ -444,47 +522,10 @@ async function saveEdit() {
   }
 }
 
-async function updateNode(id, name) {
-  if (!isAdmin) return;
-  document.getElementById('updateNodeName').textContent = name;
-  document.getElementById('updateBody').innerHTML = `
-    <div style="display:flex;align-items:center;gap:10px;color:var(--text-muted)">
-      <span class="spinner"></span> Pulling latest code from GitHub…
-    </div>`;
-  document.getElementById('updateModal').classList.add('open');
-  try {
-    const res = await API.post(`/nodes/${id}/update`, {});
-    document.getElementById('updateBody').innerHTML = `
-      <div style="margin-bottom:8px">
-        <span style="color:var(--success);font-weight:600">✓ Update successful — daemon is restarting</span>
-      </div>
-      <pre style="background:var(--surface2);padding:12px;border-radius:6px;font-size:12px;overflow:auto;max-height:200px;white-space:pre-wrap;word-break:break-word;color:var(--text-muted)">${esc(res.output)}</pre>
-      <div class="form-hint mt-3">The daemon will briefly go offline while it restarts, then reconnect automatically.</div>`;
-  } catch (e) {
-    document.getElementById('updateBody').innerHTML = `
-      <div style="margin-bottom:8px">
-        <span style="color:var(--danger);font-weight:600">Update failed</span>
-      </div>
-      <pre style="background:var(--surface2);padding:12px;border-radius:6px;font-size:12px;overflow:auto;max-height:200px;white-space:pre-wrap;word-break:break-word;color:var(--text-muted)">${esc(e.message)}</pre>`;
-  }
-}
-
-function closeUpdateModal() {
-  document.getElementById('updateModal').classList.remove('open');
-}
-
-document.getElementById('updateModal').addEventListener('click', e => {
-  if (e.target === e.currentTarget) closeUpdateModal();
-});
-
-document.getElementById('createModal').addEventListener('click', e => {
-  if (e.target === e.currentTarget) closeCreateModal();
-});
-document.getElementById('editModal').addEventListener('click', e => {
-  if (e.target === e.currentTarget) closeEditModal();
-});
-document.getElementById('tokenModal').addEventListener('click', e => {
-  if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+['createModal','editModal','tokenModal'].forEach(function(id) {
+  document.getElementById(id).addEventListener('click', function(e) {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+  });
 });
 
 init();

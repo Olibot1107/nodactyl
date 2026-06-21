@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
@@ -152,12 +153,14 @@ router.get('/:id', (req, res) => {
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
 
+  const member = getMember(server.id, req.user.id);
   res.json({
     ...server,
     port_mappings: JSON.parse(server.port_mappings),
     env_vars: JSON.parse(server.env_vars),
     discord_config: server.discord_config ? JSON.parse(server.discord_config) : null,
     node_online: nodeManager.isOnline(server.node_id),
+    member_permissions: member ? JSON.parse(member.permissions || '[]') : null,
   });
 });
 
@@ -711,7 +714,7 @@ router.post('/:id/members', (req, res) => {
   if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
   const { username, permissions } = req.body;
   if (!username) return res.status(400).json({ error: 'Username required' });
-  const validPerms = ['console', 'files', 'settings', 'power'];
+  const validPerms = ['console', 'files', 'settings', 'power', 'sharelog'];
   const perms = Array.isArray(permissions) ? permissions.filter(p => validPerms.includes(p)) : ['console'];
   const target = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
   if (!target) return res.status(404).json({ error: 'User not found' });
@@ -726,7 +729,7 @@ router.patch('/:id/members/:userId', (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
-  const validPerms = ['console', 'files', 'settings', 'power'];
+  const validPerms = ['console', 'files', 'settings', 'power', 'sharelog'];
   const perms = Array.isArray(req.body.permissions) ? req.body.permissions.filter(p => validPerms.includes(p)) : [];
   const result = db.prepare('UPDATE server_members SET permissions = ? WHERE server_id = ? AND user_id = ?')
     .run(JSON.stringify(perms), req.params.id, req.params.userId);
@@ -748,6 +751,49 @@ router.post('/:id/leave', (req, res) => {
   const member = getMember(req.params.id, req.user.id);
   if (!member) return res.status(403).json({ error: 'Not a member of this server' });
   db.prepare('DELETE FROM server_members WHERE server_id = ? AND user_id = ?').run(req.params.id, req.user.id);
+  res.json({ ok: true });
+});
+
+// ── Log shares ────────────────────────────────────────────────────────────────
+
+const LOG_SHARE_MAX_BYTES = 512 * 1024; // 512 KB cap
+const LOG_SHARE_TTL_SECS  = 7 * 24 * 3600;
+
+function canManageLogShares(server, user) {
+  return hasPerm(server, user, 'sharelog');
+}
+
+router.get('/:id/log-shares', (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!canManageLogShares(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  const now = Math.floor(Date.now() / 1000);
+  const shares = db.prepare('SELECT id, label, view_count, created_at, expires_at FROM log_shares WHERE server_id = ? AND expires_at > ? ORDER BY created_at DESC')
+    .all(req.params.id, now);
+  res.json(shares);
+});
+
+router.post('/:id/log-shares', (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!canManageLogShares(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  const { content, label } = req.body;
+  if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content required' });
+  if (Buffer.byteLength(content, 'utf8') > LOG_SHARE_MAX_BYTES) return res.status(400).json({ error: 'Log too large (max 512 KB)' });
+  const now = Math.floor(Date.now() / 1000);
+  const activeCount = db.prepare('SELECT COUNT(*) as n FROM log_shares WHERE server_id = ? AND expires_at > ?').get(req.params.id, now)?.n ?? 0;
+  if (activeCount >= 5) return res.status(400).json({ error: 'Limit reached: max 5 active log shares per server. Delete one first.' });
+  const id = crypto.randomBytes(10).toString('hex');
+  db.prepare('INSERT INTO log_shares (id, server_id, label, content, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(id, req.params.id, label || null, content, now, now + LOG_SHARE_TTL_SECS);
+  res.json({ id, expires_at: now + LOG_SHARE_TTL_SECS });
+});
+
+router.delete('/:id/log-shares/:shareId', (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!canManageLogShares(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+  db.prepare('DELETE FROM log_shares WHERE id = ? AND server_id = ?').run(req.params.shareId, req.params.id);
   res.json({ ok: true });
 });
 

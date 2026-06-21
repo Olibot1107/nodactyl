@@ -12,23 +12,23 @@ router.get('/', (req, res) => {
   const nodes = db.prepare('SELECT * FROM nodes ORDER BY created_at DESC').all();
   const isAdmin = req.user.role === 'admin';
   res.json(nodes.map(n => {
-    const base = { id: n.id, name: n.name, online: nodeManager.isOnline(n.id) };
-    const sc = db.prepare('SELECT COUNT(*) as c FROM servers WHERE node_id = ?').get(n.id);
-    base.server_count = sc?.c ?? 0;
-    if (!isAdmin) return base;
     const alloc = db.prepare(`
       SELECT COALESCE(SUM(memory_limit), 0) as used_memory,
              COALESCE(SUM(CASE WHEN disk_limit > 0 THEN disk_limit ELSE 0 END), 0) as used_disk,
              COUNT(*) as server_count
       FROM servers WHERE node_id = ?
     `).get(n.id);
-    return {
-      ...n,
-      ...base,
+    const base = {
+      id: n.id, name: n.name, description: n.description || '',
+      online: nodeManager.isOnline(n.id),
+      memory: n.memory, cpu: n.cpu, disk_limit: n.disk_limit,
+      port_range_start: n.port_range_start, port_range_end: n.port_range_end,
       used_memory: alloc?.used_memory ?? 0,
-      used_disk:   alloc?.used_disk ?? 0,
+      used_disk:   alloc?.used_disk   ?? 0,
       server_count: alloc?.server_count ?? 0,
     };
+    if (!isAdmin) return base;
+    return { ...n, ...base };
   }));
 });
 
@@ -82,6 +82,33 @@ router.delete('/:id', requireAdmin, (req, res) => {
 
   db.prepare('DELETE FROM nodes WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
+});
+
+// Live node system stats (CPU %, system RAM)
+router.get('/:id/stats', async (req, res) => {
+  const node = db.prepare('SELECT id FROM nodes WHERE id = ?').get(req.params.id);
+  if (!node) return res.status(404).json({ error: 'Not found' });
+  if (!nodeManager.isOnline(node.id)) return res.status(503).json({ error: 'offline' });
+  try {
+    const result = await nodeManager.send(node.id, { type: 'node-stats' }, { timeout: 5000 });
+    res.json(result);
+  } catch {
+    res.status(503).json({ error: 'timeout' });
+  }
+});
+
+// Ping node — measures WebSocket round-trip latency in ms
+router.get('/:id/ping', async (req, res) => {
+  const node = db.prepare('SELECT id FROM nodes WHERE id = ?').get(req.params.id);
+  if (!node) return res.status(404).json({ error: 'Not found' });
+  if (!nodeManager.isOnline(node.id)) return res.status(503).json({ error: 'offline' });
+  const start = Date.now();
+  try {
+    await nodeManager.send(node.id, { type: 'ping' }, { timeout: 5000 });
+    res.json({ ping: Date.now() - start });
+  } catch {
+    res.status(503).json({ error: 'timeout' });
+  }
 });
 
 // Update daemon (git pull + restart)

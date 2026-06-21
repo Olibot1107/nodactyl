@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Nodactyl - Server</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -35,6 +36,9 @@ const UI = {
   clear: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>',
   termMode: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 9l4 3-4 3"/><path d="M13 15h4"/></svg>',
   copy: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>',
+  upload: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>',
+  link: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>',
+  edit: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
 };
 
 async function init() {
@@ -139,6 +143,7 @@ function render() {
             <button class="btn btn-ghost btn-sm" id="terminalModeBtn" onclick="doTerminal()">${UI.termMode} Terminal</button>
             <button class="btn btn-ghost btn-sm" onclick="copyConsole()" title="Copy all output">${UI.copy} Copy</button>
             <button class="btn btn-ghost btn-sm" onclick="clearConsole()">${UI.clear} Clear</button>
+            ${(user?.role === 'admin' || server?.owner_id === user?.id || (Array.isArray(server?.member_permissions) && server.member_permissions.includes('sharelog'))) ? `<button class="btn btn-ghost btn-sm" onclick="openLogShareModal()" title="Share logs">${UI.upload} Share</button>` : ''}
           </div>
         </div>
         <div class="console-wrap" id="consoleOut"></div>
@@ -555,6 +560,270 @@ window.addEventListener('beforeunload', () => {
   clearInterval(statsInterval);
   if (socket && logsSubscribed) socket.emit('unsubscribe-logs', { serverId });
 });
+
+// ── Log sharing ───────────────────────────────────────────────────────────────
+
+function openLogShareModal() {
+  let modal = document.getElementById('logShareModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'logShareModal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.65);backdrop-filter:blur(2px)';
+    modal.innerHTML = `
+      <div style="background:var(--card);border:1px solid var(--border2);border-radius:14px;width:480px;max-width:94vw;max-height:86vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 32px 80px rgba(0,0,0,.7)">
+
+        <div style="padding:16px 18px 14px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+          <div style="font-size:14px;font-weight:600;display:flex;align-items:center;gap:7px">${UI.upload} Share Logs</div>
+          <button onclick="document.getElementById('logShareModal').remove()" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;line-height:1;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='none'">&times;</button>
+        </div>
+
+        <div style="padding:0 18px 16px;flex-shrink:0">
+          <input id="logShareLabel" class="form-input" placeholder="Label (optional)" style="width:100%;margin-bottom:8px">
+          <button class="btn btn-primary" onclick="uploadLogShare()" id="uploadLogBtn" style="width:100%">${UI.upload} Share current console output</button>
+          <div id="logShareError" style="display:none;margin-top:8px;font-size:12px;color:var(--danger)"></div>
+          <div id="logShareSuccess" style="display:none;margin-top:10px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:500">Link ready — expires in 7 days</div>
+            <div style="display:flex;gap:6px">
+              <input id="logShareUrl" class="form-input" readonly style="flex:1;font-size:11.5px;font-family:monospace;background:var(--bg2)">
+              <button class="btn btn-ghost btn-sm" onclick="copyLogUrl(this)" style="flex-shrink:0">${UI.copy}</button>
+              <a id="logShareOpenBtn" href="#" target="_blank" class="btn btn-ghost btn-sm" style="flex-shrink:0">${UI.link}</a>
+            </div>
+          </div>
+        </div>
+
+        <div style="flex:1;overflow-y:auto;border-top:1px solid var(--border);padding:14px 18px">
+          <div style="font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--text-dim);margin-bottom:10px" id="logShareListHeader">SHARES</div>
+          <div id="logShareList"><div style="font-size:12.5px;color:var(--text-muted)">Loading…</div></div>
+        </div>
+
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  }
+  loadLogShares();
+}
+
+async function uploadLogShare() {
+  const consoleEl = document.getElementById('consoleOut');
+  const content = consoleEl ? consoleEl.innerText : '';
+  const errEl = document.getElementById('logShareError');
+  const successEl = document.getElementById('logShareSuccess');
+  errEl.style.display = 'none';
+  if (!content.trim()) { errEl.textContent = 'Console is empty — nothing to share.'; errEl.style.display = ''; return; }
+  const label = document.getElementById('logShareLabel').value.trim() || null;
+  const btn = document.getElementById('uploadLogBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Uploading…';
+  successEl.style.display = 'none';
+  try {
+    const result = await API.post('/servers/' + serverId + '/log-shares', { content, label });
+    const url = location.origin + '/logs/' + result.id;
+    document.getElementById('logShareUrl').value = url;
+    document.getElementById('logShareOpenBtn').href = url;
+    successEl.style.display = '';
+    document.getElementById('logShareLabel').value = '';
+    loadLogShares();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.style.display = '';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = UI.upload + ' Share current console output';
+  }
+}
+
+function copyLogUrl(btn) {
+  const url = document.getElementById('logShareUrl').value;
+  navigator.clipboard.writeText(url).catch(() => {});
+  const prev = btn.innerHTML;
+  btn.textContent = '✓';
+  setTimeout(() => { btn.innerHTML = prev; }, 1500);
+}
+
+async function loadLogShares() {
+  const el = document.getElementById('logShareList');
+  const hdr = document.getElementById('logShareListHeader');
+  if (!el) return;
+  try {
+    const shares = await API.get('/servers/' + serverId + '/log-shares');
+    if (hdr) hdr.textContent = 'SHARES (' + shares.length + '/5)';
+    if (!shares.length) {
+      el.innerHTML = '<div style="font-size:12.5px;color:var(--text-dim);padding:8px 0">No shares yet.</div>';
+      return;
+    }
+    el.innerHTML = shares.map(function(s) {
+      const url = location.origin + '/logs/' + s.id;
+      const expiresIn = fmtLogExpiry(s.expires_at);
+      const views = (s.view_count || 0) + ' view' + (s.view_count === 1 ? '' : 's');
+      return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">'
+        + '<div style="flex:1;min-width:0;cursor:pointer" onclick="window.open(\'' + url + '\',\'_blank\')">'
+        + '<div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)">' + esc(s.label || 'Untitled') + '</div>'
+        + '<div style="font-size:11px;color:var(--text-dim);margin-top:3px">' + expiresIn + ' · ' + views + '</div>'
+        + '</div>'
+        + '<button class="btn btn-ghost btn-xs" title="Copy link" onclick="copyShareUrl(\'' + url + '\',this)" style="flex-shrink:0">' + UI.copy + '</button>'
+        + '<button class="btn btn-ghost btn-xs" title="Redact lines" onclick="openRedactView(\'' + s.id + '\',\'' + esc(s.label || 'Untitled').replace(/'/g, "\\'") + '\')" style="flex-shrink:0">' + UI.edit + '</button>'
+        + '<button class="btn btn-ghost btn-xs" title="Delete" onclick="deleteLogShare(\'' + s.id + '\',this)" style="flex-shrink:0;color:var(--text-muted)" onmouseover="this.style.color=\'var(--danger)\'" onmouseout="this.style.color=\'var(--text-muted)\'">' + UI.trash + '</button>'
+        + '</div>';
+    }).join('');
+  } catch (e) {
+    el.innerHTML = '<div style="font-size:12.5px;color:var(--danger)">' + esc(e.message) + '</div>';
+  }
+}
+
+function copyShareUrl(url, btn) {
+  navigator.clipboard.writeText(url).catch(() => {});
+  const prev = btn.innerHTML;
+  btn.textContent = '✓';
+  setTimeout(() => { btn.innerHTML = prev; }, 1500);
+}
+
+function fmtLogExpiry(ts) {
+  const diff = ts - Math.floor(Date.now() / 1000);
+  if (diff <= 0) return 'Expired';
+  const d = Math.floor(diff / 86400), h = Math.floor((diff % 86400) / 3600);
+  if (d) return d + 'd ' + h + 'h left';
+  return h + 'h left';
+}
+
+async function deleteLogShare(shareId, btn) {
+  const row = btn.closest('div[style*="border-bottom"]');
+  const prev = btn.innerHTML;
+  btn.textContent = 'Sure?';
+  btn.style.color = 'var(--danger)';
+  btn.onclick = null;
+  const undo = setTimeout(() => {
+    btn.innerHTML = prev;
+    btn.style.color = 'var(--text-muted)';
+    btn.onclick = function() { deleteLogShare(shareId, btn); };
+  }, 2500);
+  btn.addEventListener('click', async function confirm() {
+    clearTimeout(undo);
+    btn.removeEventListener('click', confirm);
+    try {
+      await API.delete('/servers/' + serverId + '/log-shares/' + shareId);
+      if (row) row.remove();
+      const successEl = document.getElementById('logShareSuccess');
+      const urlEl = document.getElementById('logShareUrl');
+      if (successEl && urlEl && urlEl.value.includes(shareId)) successEl.style.display = 'none';
+      const remaining = document.querySelectorAll('#logShareList > div[style*="border-bottom"]').length;
+      const hdr = document.getElementById('logShareListHeader');
+      if (hdr) hdr.textContent = 'SHARES (' + remaining + '/5)';
+      if (!remaining) document.getElementById('logShareList').innerHTML = '<div style="font-size:12.5px;color:var(--text-dim);padding:8px 0">No shares yet.</div>';
+    } catch (e) { loadLogShares(); }
+  }, { once: true });
+}
+
+async function openRedactView(sid, label) {
+  const modal = document.getElementById('logShareModal');
+  if (!modal) return;
+  const inner = modal.firstElementChild;
+  const origHtml = inner.innerHTML;
+
+  inner.innerHTML = '<div style="padding:40px;text-align:center"><span class="spinner"></span></div>';
+
+  let lines;
+  try {
+    const res = await fetch('/api/log-shares/' + sid);
+    if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || 'Not found');
+    const share = await res.json();
+    lines = share.content.split('\n');
+  } catch(e) {
+    inner.innerHTML = origHtml;
+    loadLogShares();
+    alert('Could not load: ' + e.message);
+    return;
+  }
+
+  const markedLines = new Set();
+
+  function renderRedact() {
+    inner.innerHTML = ''
+      + '<div style="padding:14px 18px 12px;display:flex;align-items:center;gap:8px;flex-shrink:0;border-bottom:1px solid var(--border)">'
+      +   '<button id="redactBackBtn" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px 6px;border-radius:4px;font-size:12px;display:flex;align-items:center;gap:4px" onmouseover="this.style.color=\'var(--text)\'" onmouseout="this.style.color=\'var(--text-muted)\'">← Back</button>'
+      +   '<span style="font-size:13px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(label) + '</span>'
+      +   '<button onclick="document.getElementById(\'logShareModal\').remove()" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;line-height:1;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:6px" onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'none\'">&times;</button>'
+      + '</div>'
+      + '<div style="padding:7px 18px;font-size:11px;background:rgba(249,115,22,.06);border-bottom:1px solid rgba(249,115,22,.15);flex-shrink:0">'
+      +   '<span style="color:#fb923c;font-weight:600">Click lines to redact them.</span> <span style="color:var(--text-muted)">They\'ll show as blurred red. Click again to undo.</span>'
+      + '</div>'
+      + '<div id="redactLines" style="flex:1;overflow-y:auto;padding:6px 0;font-family:\'Cascadia Code\',Consolas,monospace;font-size:11.5px;background:var(--bg2)">'
+      + lines.map(function(line, i) {
+          const fixed = line.trim() === '[REDACTED]';
+          const isMarked = markedLines.has(i);
+          const bg = isMarked ? 'rgba(239,68,68,.1)' : '';
+          const color = (fixed || isMarked) ? '#f87171' : 'var(--text-muted)';
+          const blur = (fixed || isMarked) ? 'blur(4px)' : 'none';
+          return '<div data-ridx="' + i + '"' + (fixed ? ' data-fixed="1"' : '') + ' class="' + (isMarked ? 'r-marked' : '') + '" style="display:flex;gap:0;padding:1px 0;cursor:' + (fixed ? 'default' : 'pointer') + ';background:' + bg + '"'
+            + (fixed ? '' : ' onmouseover="if(!this.dataset.fixed&&!this.classList.contains(\'r-marked\'))this.style.background=\'rgba(249,115,22,.07)\'" onmouseout="if(!this.classList.contains(\'r-marked\'))this.style.background=\'\'"')
+            + '>'
+            + '<span style="min-width:38px;color:#3d444d;text-align:right;padding-right:10px;user-select:none;font-size:10.5px;padding-top:1px;flex-shrink:0">' + (i + 1) + '</span>'
+            + '<span class="r-content" style="flex:1;white-space:pre-wrap;word-break:break-all;color:' + color + ';filter:' + blur + ';user-select:' + (fixed ? 'none' : 'auto') + '">' + esc(line) + '</span>'
+            + '</div>';
+        }).join('')
+      + '</div>'
+      + '<div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0">'
+      +   '<button class="btn btn-ghost btn-sm" id="redactCancelBtn">Cancel</button>'
+      +   '<button class="btn btn-primary btn-sm" id="redactSaveBtn">Save</button>'
+      + '</div>';
+
+    inner.querySelector('#redactLines').addEventListener('click', function(e) {
+      const el = e.target.closest('[data-ridx]');
+      if (!el || el.dataset.fixed === '1') return;
+      const idx = parseInt(el.dataset.ridx);
+      const content = el.querySelector('.r-content');
+      if (markedLines.has(idx)) {
+        markedLines.delete(idx);
+        el.classList.remove('r-marked');
+        el.style.background = '';
+        if (content) { content.style.color = 'var(--text-muted)'; content.style.filter = 'none'; }
+      } else {
+        markedLines.add(idx);
+        el.classList.add('r-marked');
+        el.style.background = 'rgba(239,68,68,.1)';
+        if (content) { content.style.color = '#f87171'; content.style.filter = 'blur(4px)'; }
+      }
+    });
+
+    inner.querySelector('#redactBackBtn').addEventListener('click', goBack);
+    inner.querySelector('#redactCancelBtn').addEventListener('click', goBack);
+    inner.querySelector('#redactSaveBtn').addEventListener('click', doSave);
+  }
+
+  function goBack() {
+    inner.innerHTML = origHtml;
+    loadLogShares();
+  }
+
+  async function doSave() {
+    if (!markedLines.size && !confirm('No lines marked — save anyway?')) return;
+    const btn = inner.querySelector('#redactSaveBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    const newLines = lines.map(function(line, i) {
+      return markedLines.has(i) ? '[REDACTED]' : line;
+    });
+    try {
+      const res = await fetch('/api/log-shares/' + sid, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
+        body: JSON.stringify({ content: newLines.join('\n') }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(function() { return {}; });
+        alert(d.error || 'Failed to save');
+        if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+        return;
+      }
+      lines = newLines;
+      markedLines.clear();
+      renderRedact();
+    } catch(e) {
+      alert('Failed to save: ' + e.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+    }
+  }
+
+  renderRedact();
+}
 
 init();
 </script>

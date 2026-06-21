@@ -156,6 +156,8 @@ async function init() {
   try { _db.exec(`ALTER TABLE presets ADD COLUMN disk_limit INTEGER DEFAULT 0`); } catch {}
   try { _db.exec(`ALTER TABLE servers ADD COLUMN terminal_mode INTEGER NOT NULL DEFAULT 0`); } catch {}
   try { _db.exec(`CREATE TABLE IF NOT EXISTS server_members (server_id TEXT NOT NULL, user_id INTEGER NOT NULL, permissions TEXT NOT NULL DEFAULT '["console"]', created_at INTEGER DEFAULT (strftime('%s','now')), PRIMARY KEY (server_id, user_id))`); } catch {}
+  try { _db.exec(`CREATE TABLE IF NOT EXISTS log_shares (id TEXT PRIMARY KEY, server_id TEXT NOT NULL, label TEXT, content TEXT NOT NULL, view_count INTEGER NOT NULL DEFAULT 0, created_at INTEGER DEFAULT (strftime('%s','now')), expires_at INTEGER NOT NULL)`); } catch {}
+  try { _db.exec(`ALTER TABLE log_shares ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0`); } catch {}
 
   // Seed default ranks
   const rankCount = prepare('SELECT COUNT(*) as count FROM ranks').get();

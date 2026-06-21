@@ -59,6 +59,9 @@ async function loadPanelSettings() {
       if (s && typeof s === 'object') _panelSettings = { ..._panelSettings, ...s };
     }
   } catch {}
+  if (_panelSettings.panel_name && _panelSettings.panel_name !== 'Nodactyl') {
+    document.title = document.title.replace(/Nodactyl/g, _panelSettings.panel_name);
+  }
   return _panelSettings;
 }
 

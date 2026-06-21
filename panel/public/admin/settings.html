@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Nodactyl — Settings</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/css/style.css">
   <style>
     .upload-zone {
@@ -215,7 +216,6 @@ async function saveSettings() {
   btn.disabled = true;
   try {
     const body = { panel_name: document.getElementById('panel_name').value.trim() };
-    // Only send panel_logo if it has a value (don't wipe with empty string)
     if (logoVal) body.panel_logo = logoVal;
     await API.patch('/settings', body);
     showOk('Settings saved. Reload the page to see changes everywhere.');

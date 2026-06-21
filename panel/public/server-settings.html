@@ -4,7 +4,31 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Nodactyl - Server Settings</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .perm-pill { display: inline-flex; cursor: pointer; user-select: none; }
+    .perm-pill input[type="checkbox"] { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+    .perm-pill-btn {
+      padding: 4px 11px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      border: 1.5px solid var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      transition: background 0.13s, border-color 0.13s, color 0.13s;
+    }
+    .perm-pill input:checked + .perm-pill-btn {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+    .perm-pill:hover .perm-pill-btn { border-color: var(--primary); color: var(--primary); }
+    .perm-pill input:checked ~ .perm-pill-btn,
+    .perm-pill:hover input:checked + .perm-pill-btn { color: #fff; }
+  </style>
 </head>
 <body>
 <div class="layout" id="app"></div>
@@ -116,10 +140,13 @@ function buildContent() {
           <div class="form-label mb-2">Add member</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
             <input class="form-input" id="addMemberUser" placeholder="username" style="width:160px">
-            <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" id="permConsole" checked style="accent-color:var(--primary)"> Console</label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" id="permFiles" style="accent-color:var(--primary)"> Files</label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" id="permSettings" style="accent-color:var(--primary)"> Settings</label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" id="permPower" style="accent-color:var(--primary)"> Power</label>
+            <div style="display:flex;gap:4px;align-items:center">
+              <label class="perm-pill"><input type="checkbox" id="permConsole" checked><span class="perm-pill-btn">Console</span></label>
+              <label class="perm-pill"><input type="checkbox" id="permFiles"><span class="perm-pill-btn">Files</span></label>
+              <label class="perm-pill"><input type="checkbox" id="permSettings"><span class="perm-pill-btn">Settings</span></label>
+              <label class="perm-pill"><input type="checkbox" id="permPower"><span class="perm-pill-btn">Power</span></label>
+              <label class="perm-pill"><input type="checkbox" id="permSharelog"><span class="perm-pill-btn">Share Logs</span></label>
+            </div>
             <button class="btn btn-primary btn-sm" onclick="addMember()">Add</button>
           </div>
           <div id="memberError" class="alert alert-error mt-2" style="display:none"></div>
@@ -243,8 +270,8 @@ function attachListeners() {
   });
 }
 
-const ALL_PERMS = ['console', 'files', 'settings', 'power'];
-const PERM_LABELS = { console: 'Console', files: 'Files', settings: 'Settings', power: 'Power' };
+const ALL_PERMS = ['console', 'files', 'settings', 'power', 'sharelog'];
+const PERM_LABELS = { console: 'Console', files: 'Files', settings: 'Settings', power: 'Power', sharelog: 'Share Logs' };
 
 function memberAvatarHtml(m, size = 32) {
   const radius = size <= 28 ? '6px' : '8px';
@@ -267,10 +294,11 @@ async function loadMembers() {
           <div style="font-size:13px;font-weight:500;line-height:1.2">${esc(m.username)}</div>
           <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${esc(m.email)}</div>
         </div>
-        <div style="flex:1;display:flex;gap:6px;flex-wrap:wrap">
+        <div style="flex:1;display:flex;gap:4px;flex-wrap:wrap">
           ${ALL_PERMS.map(p => `
-            <label style="display:flex;align-items:center;gap:3px;font-size:12px;cursor:pointer;white-space:nowrap">
-              <input type="checkbox" class="mperm-${m.user_id}" data-perm="${p}" ${m.permissions.includes(p) ? 'checked' : ''} style="accent-color:var(--primary)"> ${PERM_LABELS[p]}
+            <label class="perm-pill">
+              <input type="checkbox" class="mperm-${m.user_id}" data-perm="${p}" ${m.permissions.includes(p) ? 'checked' : ''}>
+              <span class="perm-pill-btn">${PERM_LABELS[p]}</span>
             </label>`).join('')}
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
@@ -295,7 +323,7 @@ async function addMember() {
   const errEl = document.getElementById('memberError');
   errEl.style.display = 'none';
   if (!username) { errEl.textContent = 'Enter a username.'; errEl.style.display = ''; return; }
-  const permissions = ['console','files','settings','power'].filter(p => document.getElementById('perm'+p[0].toUpperCase()+p.slice(1))?.checked);
+  const permissions = ALL_PERMS.filter(p => document.getElementById('perm'+p[0].toUpperCase()+p.slice(1))?.checked);
   try {
     await API.post(`/servers/${serverId}/members`, { username, permissions });
     document.getElementById('addMemberUser').value = '';
