@@ -93,13 +93,14 @@ function renderSidebar(activePage) {
   ];
 
   const adminNav = isAdmin ? [
-    { href: '/admin/servers',   icon: ICONS.allServers, label: 'All Servers',  key: 'admin-servers' },
-    { href: '/admin/presets',   icon: ICONS.presets,    label: 'Presets',      key: 'admin-presets' },
-    { href: '/admin/templates', icon: ICONS.presets,    label: 'Templates',    key: 'admin-templates' },
-    { href: '/admin/ranks',     icon: ICONS.ranks,      label: 'Ranks',        key: 'admin-ranks' },
-    { href: '/admin/users',     icon: ICONS.users,      label: 'Users',        key: 'admin-users' },
-    { href: '/nodes',           icon: ICONS.nodes,      label: 'Nodes',        key: 'nodes' },
-    { href: '/admin/settings',  icon: ICONS.settings,   label: 'Settings',     key: 'admin-settings' },
+    { href: '/admin/servers',    icon: ICONS.allServers,  label: 'All Servers',  key: 'admin-servers' },
+    { href: '/admin/presets',    icon: ICONS.presets,     label: 'Presets',      key: 'admin-presets' },
+    { href: '/admin/templates',  icon: ICONS.presets,     label: 'Templates',    key: 'admin-templates' },
+    { href: '/admin/ranks',      icon: ICONS.ranks,       label: 'Ranks',        key: 'admin-ranks' },
+    { href: '/admin/users',      icon: ICONS.users,       label: 'Users',        key: 'admin-users' },
+    { href: '/nodes',            icon: ICONS.nodes,       label: 'Nodes',        key: 'nodes' },
+    { href: '/admin/connectors', icon: ICONS.connectors,  label: 'Connectors',   key: 'admin-connectors' },
+    { href: '/admin/settings',   icon: ICONS.settings,    label: 'Settings',     key: 'admin-settings' },
   ] : [];
 
   const navItem = (n) => `

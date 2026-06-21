@@ -69,7 +69,8 @@ async function main() {
   app.get('/connectors', (req, res) => res.sendFile(pub('connectors.html')));
   app.get('/admin/users', (req, res) => res.sendFile(pub('admin/users.html')));
   app.get('/admin/presets', (req, res) => res.sendFile(pub('admin/presets.html')));
-  app.get('/admin/templates', (req, res) => res.sendFile(pub('admin/templates.html')));
+  app.get('/admin/templates',   (req, res) => res.sendFile(pub('admin/templates.html')));
+  app.get('/admin/connectors', (req, res) => res.sendFile(pub('admin/connectors.html')));
   app.get('/admin/servers', (req, res) => res.sendFile(pub('admin/servers.html')));
   app.get('/admin/ranks', (req, res) => res.sendFile(pub('admin/ranks.html')));
   app.get('/admin/settings', (req, res) => res.sendFile(pub('admin/settings.html')));
