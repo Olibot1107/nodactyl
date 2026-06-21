@@ -451,8 +451,13 @@ async function disableTotp() {
 }
 
 // ── Passkeys ──────────────────────────────────────────────────────────────────
-function _b64ToBuf(b64url) {
-  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/').replace(/=/g, '');
+function _b64ToBuf(val) {
+  // Node.js Buffer JSON: {"type":"Buffer","data":[...]}
+  if (val && typeof val === 'object' && val.type === 'Buffer' && Array.isArray(val.data))
+    return new Uint8Array(val.data).buffer;
+  if (val instanceof ArrayBuffer) return val;
+  if (ArrayBuffer.isView(val)) return val.buffer;
+  const b64 = String(val).replace(/-/g, '+').replace(/_/g, '/').replace(/=/g, '');
   return Uint8Array.from(atob(b64 + '='.repeat((4 - b64.length % 4) % 4)), c => c.charCodeAt(0)).buffer;
 }
 function _bufToB64(buf) {

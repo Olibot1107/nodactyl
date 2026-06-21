@@ -47,6 +47,12 @@ router.post('/register/options', requireAuth, async (req, res) => {
       },
     });
 
+    // Normalize any Buffer fields to base64url strings (simplewebauthn v9 may return Buffers)
+    const toStr = v => (Buffer.isBuffer(v) || v instanceof Uint8Array) ? Buffer.from(v).toString('base64url') : v;
+    options.user.id = toStr(options.user.id);
+    options.challenge = toStr(options.challenge);
+    if (options.excludeCredentials) options.excludeCredentials = options.excludeCredentials.map(c => ({ ...c, id: toStr(c.id) }));
+
     challenges.set(options.challenge, { userId: req.user.id, expires: Date.now() + 60000 });
     res.json(options);
   } catch (e) {
@@ -107,6 +113,10 @@ router.post('/auth/options', async (req, res) => {
       allowCredentials,
       userVerification: 'preferred',
     });
+
+    const toStr = v => (Buffer.isBuffer(v) || v instanceof Uint8Array) ? Buffer.from(v).toString('base64url') : v;
+    options.challenge = toStr(options.challenge);
+    if (options.allowCredentials) options.allowCredentials = options.allowCredentials.map(c => ({ ...c, id: toStr(c.id) }));
 
     challenges.set(options.challenge, { userId: null, expires: Date.now() + 60000 });
     res.json(options);
