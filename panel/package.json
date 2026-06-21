@@ -15,7 +15,7 @@
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.2",
-    "otplib": "^13.4.1",
+    "otplib": "^11.0.1",
     "qrcode": "^1.5.4",
     "socket.io": "^4.6.2",
     "sql.js": "^1.12.0",
