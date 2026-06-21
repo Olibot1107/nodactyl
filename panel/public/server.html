@@ -26,8 +26,6 @@ let isTerminalMode = false;
 let liveScroll = true;
 let schedules = [];
 const schedDays = new Set();
-let _pushActive = false;
-
 const UI = {
   arrowLeft: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>',
   folder: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path d="M3 6.5A2.5 2.5 0 015.5 4H9l2 2h7.5A2.5 2.5 0 0121 8.5v8A2.5 2.5 0 0118.5 19h-13A2.5 2.5 0 013 16.5v-10z"/></svg>',
@@ -49,7 +47,6 @@ const UI = {
 
 async function init() {
   await loadPanelSettings();
-  initPushNotifications();
   document.getElementById('app').innerHTML = `
     ${renderSidebar('dashboard')}
     <div class="main">
@@ -436,7 +433,6 @@ function connectSocket() {
   socket.on('server-status', ({ serverId: sid, status }) => {
     if (sid !== serverId) return;
     server.status = status;
-    notifyServerStatus(status);
     if (status === 'running') { server.started_at = Math.floor(Date.now() / 1000); startUptimeTicker(); }
     else if (status === 'stopped' || status === 'error') { server.started_at = null; stopUptimeTicker(); isTerminalMode = false; }
     updateLiveBits();
@@ -924,194 +920,6 @@ async function openRedactView(sid, label) {
   }
 
   renderRedact();
-}
-
-// ── Push notifications ────────────────────────────────────────────────────────
-
-function _urlBase64ToUint8Array(b64) {
-  const pad = '='.repeat((4 - b64.length % 4) % 4);
-  const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
-  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
-}
-function _bufToBase64(buf) {
-  return btoa(String.fromCharCode(...new Uint8Array(buf)));
-}
-
-async function _cacheTokenForSW() {
-  try {
-    const token = getToken();
-    if (!token) return;
-    const cache = await caches.open('nodactyl-auth');
-    await cache.put('/sw-token', new Response(JSON.stringify({ token }), {
-      headers: { 'Content-Type': 'application/json' },
-    }));
-  } catch {}
-}
-
-function getMutedServers() {
-  try { return JSON.parse(localStorage.getItem('notif_muted_servers') || '[]'); } catch { return []; }
-}
-
-async function _cachePrefsForSW() {
-  try {
-    const cache = await caches.open('nodactyl-prefs');
-    await cache.put('/sw-prefs', new Response(JSON.stringify({ mutedServers: getMutedServers() }), {
-      headers: { 'Content-Type': 'application/json' },
-    }));
-  } catch {}
-}
-
-function _showNotifBanner(onAccept, onDismiss) {
-  if (document.getElementById('notif-prompt-overlay')) return;
-
-  const overlay = document.createElement('div');
-  overlay.id = 'notif-prompt-overlay';
-  overlay.style.cssText = `
-    position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(3px);
-    display:flex;align-items:center;justify-content:center;z-index:9999;
-    opacity:0;transition:opacity .2s ease;
-  `;
-
-  overlay.innerHTML = `
-    <div id="notif-prompt-card" style="
-      background:var(--card);border:1px solid var(--border);border-radius:16px;
-      box-shadow:0 20px 60px rgba(0,0,0,.6);padding:32px 28px;
-      max-width:400px;width:calc(100% - 40px);text-align:center;
-      transform:scale(.94);transition:transform .2s ease;
-    ">
-      <div style="
-        width:56px;height:56px;border-radius:50%;
-        background:rgba(249,115,22,.12);border:1px solid rgba(249,115,22,.25);
-        display:flex;align-items:center;justify-content:center;margin:0 auto 20px;
-      ">
-        <svg width="26" height="26" fill="none" stroke="#f97316" stroke-width="1.7" viewBox="0 0 24 24">
-          <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-          <path d="M13.73 21a2 2 0 01-3.46 0"/>
-        </svg>
-      </div>
-
-      <div style="font-size:17px;font-weight:700;color:var(--text);margin-bottom:10px">
-        Enable server notifications?
-      </div>
-      <div style="font-size:13px;color:var(--text-muted);line-height:1.6;margin-bottom:6px">
-        We'll only notify you if your server crashes — not for normal stops or restarts.
-      </div>
-
-      <div style="
-        background:rgba(255,255,255,.04);border:1px solid var(--border);
-        border-radius:10px;padding:14px 16px;margin:18px 0;
-        display:flex;flex-direction:column;gap:9px;text-align:left;
-      ">
-        <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-muted)">
-          <svg width="14" height="14" fill="none" stroke="#22c55e" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-          Server crashes or exits unexpectedly
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-muted)">
-          <svg width="14" height="14" fill="none" stroke="#ef4444" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          Not sent for manual stops, restarts, or any other actions
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-muted)">
-          <svg width="14" height="14" fill="none" stroke="#ef4444" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          No ads, no marketing, no spam — ever
-        </div>
-      </div>
-
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <button id="notif-accept" class="btn btn-primary" style="width:100%;justify-content:center">
-          Enable Notifications
-        </button>
-        <button id="notif-dismiss" class="btn" style="width:100%;justify-content:center">
-          Not now
-        </button>
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(overlay);
-  requestAnimationFrame(() => {
-    overlay.style.opacity = '1';
-    overlay.querySelector('#notif-prompt-card').style.transform = 'scale(1)';
-  });
-
-  const remove = () => {
-    overlay.style.opacity = '0';
-    overlay.querySelector('#notif-prompt-card').style.transform = 'scale(.94)';
-    setTimeout(() => overlay.remove(), 220);
-  };
-
-  document.getElementById('notif-accept').onclick  = () => { remove(); onAccept(); };
-  document.getElementById('notif-dismiss').onclick = () => { remove(); onDismiss?.(); };
-}
-
-async function _activatePush(reg) {
-  const keyRes = await fetch('/api/push/vapid-key');
-  if (!keyRes.ok) return;
-  const { publicKey } = await keyRes.json();
-
-  let sub = await reg.pushManager.getSubscription();
-  if (!sub) {
-    sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: _urlBase64ToUint8Array(publicKey),
-    });
-  }
-  await API.post('/push/subscribe', {
-    endpoint: sub.endpoint,
-    keys: { p256dh: _bufToBase64(sub.getKey('p256dh')), auth: _bufToBase64(sub.getKey('auth')) },
-  });
-  _pushActive = true;
-}
-
-async function initPushNotifications() {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    // Fallback: plain Notification permission for backgrounded-tab case
-    if ('Notification' in window && Notification.permission === 'default') {
-      _showNotifBanner(() => Notification.requestPermission(), null);
-    }
-    return;
-  }
-  try {
-    const reg = await navigator.serviceWorker.register('/sw.js');
-    await navigator.serviceWorker.ready;
-    _cacheTokenForSW();
-    _cachePrefsForSW();
-
-    // Already subscribed — reuse existing subscription silently
-    const existing = await reg.pushManager.getSubscription();
-    if (existing) {
-      await _activatePush(reg);
-      return;
-    }
-
-    // Permission already denied — don't nag
-    if (Notification.permission === 'denied') return;
-
-    // Permission already granted — subscribe silently (browser won't prompt again)
-    if (Notification.permission === 'granted') {
-      await _activatePush(reg);
-      return;
-    }
-
-    // First time — show our explanation banner before the browser prompt
-    _showNotifBanner(async () => {
-      try { await _activatePush(reg); } catch {}
-    }, null);
-  } catch {}
-}
-
-// ── Notifications ─────────────────────────────────────────────────────────────
-
-function notifyServerStatus(status) {
-  if (_pushActive) return; // push subscription handles it — avoids duplicates
-  if (!document.hidden || Notification.permission !== 'granted') return;
-  if (getMutedServers().includes(serverId)) return;
-  const cfg = {
-    error: { title: `${server.name} crashed`, body: 'Server stopped unexpectedly.' },
-  };
-  const c = cfg[status];
-  if (!c) return;
-  const n = new Notification(c.title, { body: c.body, icon: '/favicon.svg' });
-  n.onclick = () => { window.focus(); n.close(); };
 }
 
 // ── Schedules ─────────────────────────────────────────────────────────────────

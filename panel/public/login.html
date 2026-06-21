@@ -114,6 +114,10 @@
       background: var(--border);
       margin: 20px 0;
     }
+    .passkey-btn {
+      width: 100%; display: flex; align-items: center; justify-content: center;
+      gap: 8px; padding: 9px; margin-top: 8px;
+    }
   </style>
 </head>
 <body>
@@ -170,6 +174,14 @@
           Sign In
         </button>
       </form>
+
+      <div id="passkeySection" style="display:none">
+        <div class="auth-divider"></div>
+        <button onclick="passkeyLogin()" class="btn btn-ghost passkey-btn" id="passkeyBtn">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="8" cy="8" r="4"/><path d="M14 8h6m-3-3v6"/><path d="M2 20v-1a6 6 0 0 1 9.33-5"/></svg>
+          Sign in with Passkey
+        </button>
+      </div>
 
       <div id="oauthSection" style="display:none">
         <div class="auth-divider"></div>
@@ -261,6 +273,73 @@
 
   function loginWithGithub() {
     window.location.href = '/api/connectors/github/authorize?action=login';
+  }
+
+  // Show passkey button if WebAuthn is supported
+  if (window.PublicKeyCredential) document.getElementById('passkeySection').style.display = '';
+
+  function _b64ToBuf(b64url) {
+    const pad = '='.repeat((4 - b64url.length % 4) % 4);
+    const b64 = (b64url + pad).replace(/-/g, '+').replace(/_/g, '/');
+    return Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer;
+  }
+  function _bufToB64(buf) {
+    return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  }
+
+  async function passkeyLogin() {
+    const btn = document.getElementById('passkeyBtn');
+    const err = document.getElementById('loginError');
+    err.classList.remove('show');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Waiting for passkey…';
+    try {
+      const username = document.getElementById('username').value.trim();
+      const opts = await fetch('/api/passkey/auth/options', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username }),
+      }).then(r => r.json());
+      if (opts.error) throw new Error(opts.error);
+
+      const cred = await navigator.credentials.get({
+        publicKey: {
+          ...opts,
+          challenge: _b64ToBuf(opts.challenge),
+          allowCredentials: (opts.allowCredentials || []).map(c => ({ ...c, id: _b64ToBuf(c.id) })),
+        },
+      });
+
+      const result = await fetch('/api/passkey/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          credential: {
+            id: cred.id,
+            rawId: _bufToB64(cred.rawId),
+            type: cred.type,
+            response: {
+              clientDataJSON:    _bufToB64(cred.response.clientDataJSON),
+              authenticatorData: _bufToB64(cred.response.authenticatorData),
+              signature:         _bufToB64(cred.response.signature),
+              userHandle:        cred.response.userHandle ? _bufToB64(cred.response.userHandle) : null,
+            },
+          },
+        }),
+      }).then(r => r.json());
+
+      if (!result.token) throw new Error(result.error || 'Passkey verification failed');
+      localStorage.setItem('token', result.token);
+      localStorage.setItem('user', JSON.stringify(result.user));
+      window.location.href = '/dashboard';
+    } catch (e) {
+      if (e.name !== 'NotAllowedError') {
+        err.textContent = e.message;
+        err.classList.add('show');
+      }
+      btn.disabled = false;
+      btn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="8" cy="8" r="4"/><path d="M14 8h6m-3-3v6"/><path d="M2 20v-1a6 6 0 0 1 9.33-5"/></svg> Sign in with Passkey';
+    }
   }
 
   document.getElementById('loginForm').addEventListener('submit', async (e) => {

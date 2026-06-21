@@ -32,7 +32,6 @@ async function main() {
   // Init DB first (sql.js needs async WASM load)
   const { db, init } = require('./db');
   await init();
-  require('./push').initVapid();
 
   const authRoutes = require('./routes/auth');
   const nodeRoutes = require('./routes/nodes');
@@ -44,7 +43,7 @@ async function main() {
   const rankRoutes = require('./routes/ranks');
   const settingsRoutes = require('./routes/settings');
   const auditRoutes = require('./routes/audit');
-  const pushRoutes = require('./routes/push');
+  const passkeyRoutes = require('./routes/passkey');
   const app = express();
   const httpServer = http.createServer(app);
   const io = new SocketIO(httpServer);
@@ -68,7 +67,7 @@ async function main() {
   app.use('/api/ranks', rankRoutes);
   app.use('/api/settings', settingsRoutes);
   app.use('/api/audit', auditRoutes);
-  app.use('/api/push', pushRoutes);
+  app.use('/api/passkey', passkeyRoutes);
 
   app.get('/api/random-name', requireAuth, (req, res) => {
     const words = getWords();
@@ -99,7 +98,6 @@ async function main() {
   app.get('/admin/ranks', (req, res) => res.sendFile(pub('admin/ranks.html')));
   app.get('/admin/settings', (req, res) => res.sendFile(pub('admin/settings.html')));
   app.get('/admin/audit',          (req, res) => res.sendFile(pub('admin/audit.html')));
-  app.get('/admin/notifications',  (req, res) => res.sendFile(pub('admin/notifications.html')));
   app.get('/logs/:shareId', (req, res) => res.sendFile(pub('log-viewer.html')));
 
   // ── Favicon ───────────────────────────────────────────────────────────────────

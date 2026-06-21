@@ -166,7 +166,6 @@ class NodeManager {
           members.forEach(m => { if (this.io) this.io.to(`user:${m.user_id}`).emit('server-status', { serverId: msg.serverId, status: msg.status }); });
         }
         sendDiscordWebhook(msg.serverId, msg.status);
-        require('./push').sendStatusPush(server.owner_id, server.name, msg.serverId, msg.status).catch(() => {});
         break;
       }
 

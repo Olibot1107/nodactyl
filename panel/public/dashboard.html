@@ -630,6 +630,95 @@ document.getElementById('deployModal').addEventListener('click', e => { if (e.ta
 document.getElementById('deployTemplateModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeDeployTemplateModal(); });
 document.getElementById('createModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeCreateModal(); });
 
+// ── Easter egg: type "teddy" ──────────────────────────────────────────────────
+(function() {
+  const SECRET = 'teddy';
+  let buf = '';
+  let active = false;
+
+  document.addEventListener('keydown', e => {
+    if (active && e.key === 'Escape') { closeTeddy(); return; }
+    if (active) return;
+    if (e.key.length === 1) {
+      buf += e.key.toLowerCase();
+      if (buf.length > SECRET.length) buf = buf.slice(-SECRET.length);
+      if (buf === SECRET) { buf = ''; triggerTeddy(); }
+    }
+  });
+
+  function triggerTeddy() {
+    active = true;
+    const overlay = document.createElement('div');
+    overlay.id = 'teddy-overlay';
+    overlay.style.cssText = [
+      'position:fixed;inset:0;z-index:99999;overflow:hidden',
+      'background:#0a0a0a;cursor:pointer',
+      'display:flex;flex-wrap:wrap;align-content:flex-start',
+      'animation:teddyIn .3s ease'
+    ].join(';');
+
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes teddyIn { from{opacity:0;transform:scale(1.05)} to{opacity:1;transform:scale(1)} }
+      @keyframes teddyPop { from{opacity:0;transform:scale(.4) rotate(var(--r))} to{opacity:1;transform:scale(1) rotate(var(--r))} }
+      #teddy-overlay img {
+        animation: teddyPop var(--d) cubic-bezier(.34,1.56,.64,1) forwards;
+        opacity: 0;
+      }
+      #teddy-close {
+        position:fixed;top:18px;right:22px;z-index:100000;
+        background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);
+        color:#fff;font-size:13px;padding:6px 16px;border-radius:6px;cursor:pointer;
+        backdrop-filter:blur(8px);letter-spacing:.03em;
+      }
+      #teddy-close:hover { background:rgba(255,255,255,.22); }
+      #teddy-label {
+        position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:100000;
+        color:rgba(255,255,255,.55);font-size:12px;pointer-events:none;letter-spacing:.05em;
+      }
+    `;
+    document.head.appendChild(style);
+
+    const COUNT = 120;
+    for (let i = 0; i < COUNT; i++) {
+      const img = document.createElement('img');
+      const size = 100 + Math.floor(Math.random() * 120);
+      const rot  = (Math.random() * 16 - 8).toFixed(1);
+      const delay = (Math.random() * 0.9).toFixed(2);
+      img.src = `https://loremflickr.com/${size}/${size}/teddybear?lock=${i}`;
+      img.width = size;
+      img.height = size;
+      img.style.cssText = `object-fit:cover;flex-shrink:0;--r:${rot}deg;--d:${delay}s;`;
+      img.style.animationDelay = delay + 's';
+      overlay.appendChild(img);
+    }
+
+    const closeBtn = document.createElement('button');
+    closeBtn.id = 'teddy-close';
+    closeBtn.textContent = '✕  Close';
+    closeBtn.onclick = closeTeddy;
+
+    const label = document.createElement('div');
+    label.id = 'teddy-label';
+    label.textContent = 'press ESC or click × to escape the teddy bears';
+
+    document.body.appendChild(style);
+    document.body.appendChild(overlay);
+    document.body.appendChild(closeBtn);
+    document.body.appendChild(label);
+  }
+
+  function closeTeddy() {
+    active = false;
+    const overlay = document.getElementById('teddy-overlay');
+    const closeBtn = document.getElementById('teddy-close');
+    const label    = document.getElementById('teddy-label');
+    if (overlay) overlay.remove();
+    if (closeBtn) closeBtn.remove();
+    if (label) label.remove();
+  }
+})();
+
 init();
 </script>
 </body>

@@ -144,6 +144,15 @@ function render() {
         </div>
       </div>
 
+      <div class="card mb-4" id="passkeyCard" style="display:none">
+        <div class="card-title mb-1">Passkeys</div>
+        <p style="font-size:13px;color:var(--text-muted);margin:0 0 16px">Sign in without a password using your device's biometrics or PIN.</p>
+        <div id="passkeyList" style="margin-bottom:14px"></div>
+        <div class="alert alert-error" id="passkeyErr"></div>
+        <div class="alert alert-success" id="passkeyOk"></div>
+        <button class="btn btn-primary btn-sm" onclick="registerPasskey()">+ Add Passkey</button>
+      </div>
+
       <div class="card mb-4" style="border-color:var(--danger)">
         <div class="card-title mb-2" style="color:var(--danger)">Danger Zone</div>
         <p style="font-size:13px;color:var(--text-muted);margin:0 0 14px">Permanently delete your account and all servers you own. This cannot be undone.</p>
@@ -174,6 +183,7 @@ function render() {
     </div>`;
 
   document.getElementById('deleteModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeDeleteModal(); });
+  loadPasskeys();
   document.getElementById('avatarFile').addEventListener('change', function() {
     if (this.files[0]) handleFile(this.files[0]);
   });
@@ -342,6 +352,87 @@ async function confirmDelete() {
     errEl.textContent = e.message; errEl.classList.add('show');
     btn.textContent = 'Delete Forever'; btn.disabled = false;
   }
+}
+
+// ── Passkeys ──────────────────────────────────────────────────────────────────
+function _b64ToBuf(b64url) {
+  const pad = '='.repeat((4 - b64url.length % 4) % 4);
+  const b64 = (b64url + pad).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer;
+}
+function _bufToB64(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+async function loadPasskeys() {
+  if (!window.PublicKeyCredential) return;
+  document.getElementById('passkeyCard').style.display = '';
+  try {
+    const keys = await API.get('/passkey/list');
+    const el = document.getElementById('passkeyList');
+    if (!keys.length) {
+      el.innerHTML = '<div style="font-size:13px;color:var(--text-muted)">No passkeys registered yet.</div>';
+      return;
+    }
+    el.innerHTML = keys.map(k => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border)">
+        <div>
+          <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(k.name)}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Added ${new Date(k.created_at * 1000).toLocaleDateString()}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deletePasskey('${esc(k.id)}', this)">Remove</button>
+      </div>`).join('');
+  } catch {}
+}
+
+async function registerPasskey() {
+  const errEl = document.getElementById('passkeyErr');
+  const okEl  = document.getElementById('passkeyOk');
+  errEl.classList.remove('show'); okEl.classList.remove('show');
+  try {
+    const opts = await API.post('/passkey/register/options', {});
+
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        ...opts,
+        challenge: _b64ToBuf(opts.challenge),
+        user: { ...opts.user, id: _b64ToBuf(opts.user.id) },
+        excludeCredentials: (opts.excludeCredentials || []).map(c => ({ ...c, id: _b64ToBuf(c.id) })),
+      },
+    });
+
+    const name = prompt('Name this passkey (optional):', 'My Passkey') ?? 'Passkey';
+
+    await API.post('/passkey/register/verify', {
+      name,
+      credential: {
+        id: cred.id,
+        rawId: _bufToB64(cred.rawId),
+        type: cred.type,
+        response: {
+          clientDataJSON:    _bufToB64(cred.response.clientDataJSON),
+          attestationObject: _bufToB64(cred.response.attestationObject),
+        },
+      },
+    });
+
+    okEl.textContent = 'Passkey registered!'; okEl.classList.add('show');
+    setTimeout(() => okEl.classList.remove('show'), 3000);
+    await loadPasskeys();
+  } catch (e) {
+    if (e.name !== 'NotAllowedError') { errEl.textContent = e.message; errEl.classList.add('show'); }
+  }
+}
+
+async function deletePasskey(id, btn) {
+  const errEl = document.getElementById('passkeyErr');
+  errEl.classList.remove('show');
+  if (!confirm('Remove this passkey?')) return;
+  btn.disabled = true;
+  try {
+    await API.delete(`/passkey/${id}`);
+    await loadPasskeys();
+  } catch (e) { errEl.textContent = e.message; errEl.classList.add('show'); btn.disabled = false; }
 }
 
 init();
