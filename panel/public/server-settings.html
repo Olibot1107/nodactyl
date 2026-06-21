@@ -104,101 +104,106 @@ function renderTopbar() {
 function buildContent() {
   const isAdmin = getUser()?.role === 'admin';
   return `
-    <div style="max-width:640px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
 
-      <div class="card mb-4">
-        <div class="card-title mb-4">General</div>
-        <div class="form-group mb-3">
-          <label class="form-label">Name</label>
-          <input class="form-input" id="fieldName" value="${esc(server.name)}" placeholder="Server name">
-        </div>
-        <div class="form-group mb-3">
-          <label class="form-label">Description <span class="text-muted">(optional)</span></label>
-          <textarea class="form-input" id="fieldDesc" rows="2" placeholder="What is this server for?">${esc(server.description || '')}</textarea>
-        </div>
-        <div class="form-group mb-0">
-          <label class="form-label">Startup Command <span class="text-muted">(optional)</span></label>
-          <input class="form-input font-mono" id="fieldStartup" value="${esc(server.startup_command || '')}" placeholder="e.g. node server.js">
-          <div class="form-hint mt-2">${UI.info} Runs as <code style="font-size:11px;background:var(--bg3);padding:1px 4px;border-radius:3px">/bin/sh -c &lt;command&gt;</code> inside the container. Leave blank to use the image default. You can chain commands: <code style="font-size:11px;background:var(--bg3);padding:1px 4px;border-radius:3px">cd subfolder &amp;&amp; node index.js</code> or use npm scripts: <code style="font-size:11px;background:var(--bg3);padding:1px 4px;border-radius:3px">npm start</code></div>
-        </div>
-      </div>
-
-
-      <div class="card mb-4">
-        <div class="card-title mb-4">Environment Variables</div>
-        <div id="envList"></div>
-        <button class="btn btn-ghost btn-sm mt-3" type="button" onclick="addEnvRow()">+ Add Variable</button>
-        <div class="form-hint mt-2">Changes take effect after restarting the server.</div>
-      </div>
-
-      ${(isAdmin || server.owner_id === getUser()?.id) ? `
-      <div class="card mb-4" id="membersCard">
-        <div class="card-title mb-1">Access &amp; Members</div>
-        <div class="text-muted mb-4" style="font-size:12.5px">Share this server with other users and control what they can do.</div>
-        <div id="membersList"><div class="text-muted" style="font-size:13px">Loading...</div></div>
-        <div class="mt-4" style="border-top:1px solid var(--border);padding-top:16px">
-          <div class="form-label mb-2">Add member</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
-            <input class="form-input" id="addMemberUser" placeholder="username" style="width:160px">
-            <div style="display:flex;gap:4px;align-items:center">
-              <label class="perm-pill"><input type="checkbox" id="permConsole" checked><span class="perm-pill-btn">Console</span></label>
-              <label class="perm-pill"><input type="checkbox" id="permFiles"><span class="perm-pill-btn">Files</span></label>
-              <label class="perm-pill"><input type="checkbox" id="permSettings"><span class="perm-pill-btn">Settings</span></label>
-              <label class="perm-pill"><input type="checkbox" id="permPower"><span class="perm-pill-btn">Power</span></label>
-              <label class="perm-pill"><input type="checkbox" id="permSharelog"><span class="perm-pill-btn">Share Logs</span></label>
-            </div>
-            <button class="btn btn-primary btn-sm" onclick="addMember()">Add</button>
+      <!-- Left column -->
+      <div>
+        <div class="card mb-4">
+          <div class="card-title mb-4">General</div>
+          <div class="form-group mb-3">
+            <label class="form-label">Name</label>
+            <input class="form-input" id="fieldName" value="${esc(server.name)}" placeholder="Server name">
           </div>
-          <div id="memberError" class="alert alert-error mt-2" style="display:none"></div>
-        </div>
-      </div>
-      ` : ''}
-
-      <div class="card mb-4" id="notifCard">
-        <div class="card-title mb-4">Notifications</div>
-        ${buildNotifCard()}
-      </div>
-
-      <div id="settingsAlert" class="alert mb-3" style="display:none"></div>
-
-      <div class="flex-center gap-2">
-        <button class="btn btn-primary" id="saveBtn" onclick="saveSettings()">${UI.save} Save Changes</button>
-        <button class="btn btn-ghost" onclick="location.href='/server/${serverId}'">Cancel</button>
-      </div>
-
-      <div class="card mt-6" style="border-color:var(--danger-muted,#ef444422)">
-        <div class="card-title mb-1" style="color:var(--danger)">Danger Zone</div>
-        <div class="text-muted mb-4" style="font-size:12.5px">These actions are irreversible.</div>
-        ${isAdmin ? `
-        <div class="form-group mb-4">
-          <label class="form-label mb-2">Server Details (read-only)</label>
-          <div class="detail-list">
-            <div class="detail-row">
-              <div class="detail-label">Server ID</div>
-              <div class="detail-value font-mono">${esc(server.id)}</div>
-            </div>
-            <div class="detail-row">
-              <div class="detail-label">Image</div>
-              <div class="detail-value font-mono">${esc(server.image)}</div>
-            </div>
-            <div class="detail-row">
-              <div class="detail-label">Node</div>
-              <div class="detail-value">${esc(server.node_name || 'Unknown')}</div>
-            </div>
-            <div class="detail-row">
-              <div class="detail-label">Memory</div>
-              <div class="detail-value">${esc(String(server.memory_limit))} MB</div>
-            </div>
-            <div class="detail-row">
-              <div class="detail-label">CPU</div>
-              <div class="detail-value">${esc(String(server.cpu_limit))} cores</div>
-            </div>
+          <div class="form-group mb-3">
+            <label class="form-label">Description <span class="text-muted">(optional)</span></label>
+            <textarea class="form-input" id="fieldDesc" rows="2" placeholder="What is this server for?">${esc(server.description || '')}</textarea>
           </div>
-        </div>` : ''}
-        <div>
-          <button class="btn btn-danger btn-sm" onclick="deleteServer()">Delete Server</button>
+          <div class="form-group mb-0">
+            <label class="form-label">Startup Command <span class="text-muted">(optional)</span></label>
+            <input class="form-input font-mono" id="fieldStartup" value="${esc(server.startup_command || '')}" placeholder="e.g. node server.js">
+            <div class="form-hint mt-2">${UI.info} Runs as <code style="font-size:11px;background:var(--bg3);padding:1px 4px;border-radius:3px">/bin/sh -c &lt;command&gt;</code> inside the container. Leave blank to use the image default.</div>
+          </div>
+        </div>
+
+        <div class="card mb-4">
+          <div class="card-title mb-4">Environment Variables</div>
+          <div id="envList"></div>
+          <button class="btn btn-ghost btn-sm mt-3" type="button" onclick="addEnvRow()">+ Add Variable</button>
+          <div class="form-hint mt-2">Changes take effect after restarting the server.</div>
+        </div>
+
+        <div id="settingsAlert" class="alert mb-3" style="display:none"></div>
+        <div class="flex-center gap-2 mb-4">
+          <button class="btn btn-primary" id="saveBtn" onclick="saveSettings()">${UI.save} Save Changes</button>
+          <button class="btn btn-ghost" onclick="location.href='/server/${serverId}'">Cancel</button>
         </div>
       </div>
+
+      <!-- Right column -->
+      <div>
+        ${(isAdmin || server.owner_id === getUser()?.id) ? `
+        <div class="card mb-4" id="membersCard">
+          <div class="card-title mb-1">Access &amp; Members</div>
+          <div class="text-muted mb-4" style="font-size:12.5px">Share this server with other users and control what they can do.</div>
+          <div id="membersList"><div class="text-muted" style="font-size:13px">Loading...</div></div>
+          <div class="mt-4" style="border-top:1px solid var(--border);padding-top:16px">
+            <div class="form-label mb-2">Add member</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+              <input class="form-input" id="addMemberUser" placeholder="username" style="width:160px">
+              <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+                <label class="perm-pill"><input type="checkbox" id="permConsole" checked><span class="perm-pill-btn">Console</span></label>
+                <label class="perm-pill"><input type="checkbox" id="permFiles"><span class="perm-pill-btn">Files</span></label>
+                <label class="perm-pill"><input type="checkbox" id="permSettings"><span class="perm-pill-btn">Settings</span></label>
+                <label class="perm-pill"><input type="checkbox" id="permPower"><span class="perm-pill-btn">Power</span></label>
+                <label class="perm-pill"><input type="checkbox" id="permSharelog"><span class="perm-pill-btn">Share Logs</span></label>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="addMember()">Add</button>
+            </div>
+            <div id="memberError" class="alert alert-error mt-2" style="display:none"></div>
+          </div>
+        </div>
+        ` : ''}
+
+        <div class="card mb-4" id="notifCard">
+          <div class="card-title mb-4">Notifications</div>
+          ${buildNotifCard()}
+        </div>
+
+        <div class="card" style="border-color:var(--danger-muted,#ef444422)">
+          <div class="card-title mb-1" style="color:var(--danger)">Danger Zone</div>
+          <div class="text-muted mb-4" style="font-size:12.5px">These actions are irreversible.</div>
+          ${isAdmin ? `
+          <div class="form-group mb-4">
+            <label class="form-label mb-2">Server Details (read-only)</label>
+            <div class="detail-list">
+              <div class="detail-row">
+                <div class="detail-label">Server ID</div>
+                <div class="detail-value font-mono" style="font-size:11px;word-break:break-all">${esc(server.id)}</div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-label">Image</div>
+                <div class="detail-value font-mono" style="font-size:11px;word-break:break-all">${esc(server.image)}</div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-label">Node</div>
+                <div class="detail-value">${esc(server.node_name || 'Unknown')}</div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-label">Memory</div>
+                <div class="detail-value">${esc(String(server.memory_limit))} MB</div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-label">CPU</div>
+                <div class="detail-value">${esc(String(server.cpu_limit))} cores</div>
+              </div>
+            </div>
+          </div>` : ''}
+          <div>
+            <button class="btn btn-danger btn-sm" onclick="deleteServer()">Delete Server</button>
+          </div>
+        </div>
+      </div>
+
     </div>`;
 }
 
