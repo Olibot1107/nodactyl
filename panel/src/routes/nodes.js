@@ -39,14 +39,14 @@ router.get('/:id', requireAdmin, (req, res) => {
 });
 
 router.post('/', requireAdmin, (req, res) => {
-  const { name, description, memory = 4096, cpu = 4, disk_limit = 0, port_range_start = 10000, port_range_end = 30000 } = req.body;
+  const { name, description, memory = 4096, cpu = 4, disk_limit = 0, port_range_start = 10000, port_range_end = 30000, ip_address = '' } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
   const id = uuidv4();
   const token = crypto.randomBytes(32).toString('hex');
 
-  db.prepare(`INSERT INTO nodes (id, name, description, token, memory, cpu, disk_limit, port_range_start, port_range_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, name, description || '', token, memory, cpu, Math.max(0, parseInt(disk_limit) || 0), parseInt(port_range_start) || 10000, parseInt(port_range_end) || 30000);
+  db.prepare(`INSERT INTO nodes (id, name, description, token, memory, cpu, disk_limit, port_range_start, port_range_end, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, name, description || '', token, memory, cpu, Math.max(0, parseInt(disk_limit) || 0), parseInt(port_range_start) || 10000, parseInt(port_range_end) || 30000, ip_address || '');
 
   const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(id);
   res.status(201).json(node);
@@ -55,7 +55,7 @@ router.post('/', requireAdmin, (req, res) => {
 router.patch('/:id', requireAdmin, (req, res) => {
   const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(req.params.id);
   if (!node) return res.status(404).json({ error: 'Not found' });
-  const { name, description, memory, cpu, disk_limit, port_range_start, port_range_end } = req.body;
+  const { name, description, memory, cpu, disk_limit, port_range_start, port_range_end, ip_address } = req.body;
   const updates = [];
   const values = [];
   if (name !== undefined) { updates.push('name = ?'); values.push(name.trim() || node.name); }
@@ -65,10 +65,50 @@ router.patch('/:id', requireAdmin, (req, res) => {
   if (disk_limit !== undefined) { updates.push('disk_limit = ?'); values.push(Math.max(0, parseInt(disk_limit) || 0)); }
   if (port_range_start !== undefined) { updates.push('port_range_start = ?'); values.push(Math.max(1024, parseInt(port_range_start) || 10000)); }
   if (port_range_end !== undefined) { updates.push('port_range_end = ?'); values.push(Math.min(65535, parseInt(port_range_end) || 30000)); }
+  if (ip_address !== undefined) { updates.push('ip_address = ?'); values.push(ip_address || ''); }
   if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
+  const rangeChanged = port_range_start !== undefined || port_range_end !== undefined;
   values.push(req.params.id);
   db.prepare(`UPDATE nodes SET ${updates.join(', ')} WHERE id = ?`).run(...values);
-  res.json(db.prepare('SELECT * FROM nodes WHERE id = ?').get(req.params.id));
+
+  const updatedNode = db.prepare('SELECT * FROM nodes WHERE id = ?').get(req.params.id);
+
+  // If the port range changed, reassign any server ports that now fall outside it
+  let portsReassigned = 0;
+  if (rangeChanged) {
+    const { port_range_start: rangeStart, port_range_end: rangeEnd } = updatedNode;
+    const servers = db.prepare('SELECT id, port_mappings FROM servers WHERE node_id = ?').all(req.params.id);
+
+    // First pass: collect ports that are already in range (don't touch them)
+    const portsInUse = new Set();
+    const needsReassign = [];
+    for (const s of servers) {
+      let mappings;
+      try { mappings = JSON.parse(s.port_mappings); } catch { mappings = []; }
+      const hostPort = mappings[0]?.hostPort;
+      if (!hostPort) continue;
+      if (hostPort >= rangeStart && hostPort <= rangeEnd) {
+        portsInUse.add(Number(hostPort));
+      } else {
+        needsReassign.push({ id: s.id, mappings });
+      }
+    }
+
+    // Second pass: assign new in-range ports to out-of-range servers
+    for (const s of needsReassign) {
+      let newPort = null;
+      for (let p = rangeStart; p <= rangeEnd; p++) {
+        if (!portsInUse.has(p)) { newPort = p; break; }
+      }
+      if (!newPort) break; // range is full
+      portsInUse.add(newPort);
+      const newMappings = s.mappings.map(m => ({ ...m, hostPort: newPort, containerPort: newPort }));
+      db.prepare('UPDATE servers SET port_mappings = ? WHERE id = ?').run(JSON.stringify(newMappings), s.id);
+      portsReassigned++;
+    }
+  }
+
+  res.json({ ...updatedNode, ports_reassigned: portsReassigned });
 });
 
 router.delete('/:id', requireAdmin, (req, res) => {

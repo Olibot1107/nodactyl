@@ -129,8 +129,8 @@ function checkAccountLimits(userId, addMemoryMb, addDiskMb) {
 
 router.get('/', (req, res) => {
   const servers = req.user.role === 'admin'
-    ? db.prepare('SELECT s.*, u.username as owner_name, n.name as node_name FROM servers s JOIN users u ON s.owner_id = u.id JOIN nodes n ON s.node_id = n.id ORDER BY s.created_at DESC').all()
-    : db.prepare(`SELECT s.*, u.username as owner_name, n.name as node_name,
+    ? db.prepare('SELECT s.*, u.username as owner_name, n.name as node_name, n.ip_address as node_ip_address FROM servers s JOIN users u ON s.owner_id = u.id JOIN nodes n ON s.node_id = n.id ORDER BY s.created_at DESC').all()
+    : db.prepare(`SELECT s.*, u.username as owner_name, n.name as node_name, n.ip_address as node_ip_address,
     CASE WHEN s.owner_id = ? THEN 0 ELSE 1 END as shared,
     (SELECT sm.permissions FROM server_members sm WHERE sm.server_id = s.id AND sm.user_id = ?) as member_permissions
     FROM servers s JOIN users u ON s.owner_id = u.id JOIN nodes n ON s.node_id = n.id
@@ -149,7 +149,7 @@ router.get('/', (req, res) => {
 });
 
 router.get('/:id', (req, res) => {
-  const server = db.prepare('SELECT s.*, u.username as owner_name, n.name as node_name FROM servers s JOIN users u ON s.owner_id = u.id JOIN nodes n ON s.node_id = n.id WHERE s.id = ?').get(req.params.id);
+  const server = db.prepare('SELECT s.*, u.username as owner_name, n.name as node_name, n.ip_address as node_ip_address FROM servers s JOIN users u ON s.owner_id = u.id JOIN nodes n ON s.node_id = n.id WHERE s.id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
 
@@ -467,6 +467,22 @@ router.get('/:id/files/read', async (req, res) => {
   try {
     const result = await nodeManager.send(server.node_id,
       fileMsg(server, { type: 'read-file', path: filePath }));
+    res.json(result);
+  } catch (err) { sendFileError(res, err); }
+});
+
+router.get('/:id/files/read-binary', async (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
+  const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
+  const accessError = fileAccessError(server);
+  if (accessError) return res.status(accessError.status).json({ error: accessError.error });
+  const { path: filePath } = req.query;
+  if (!filePath) return res.status(400).json({ error: 'path is required' });
+  try {
+    const result = await nodeManager.send(server.node_id,
+      fileMsg(server, { type: 'read-file-binary', path: filePath }));
     res.json(result);
   } catch (err) { sendFileError(res, err); }
 });

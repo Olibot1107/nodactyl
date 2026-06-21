@@ -500,6 +500,22 @@ async function handleMessage(msg) {
       break;
     }
 
+    case 'read-file-binary': {
+      const { requestId, serverId, containerId, path: filePath } = msg;
+      try {
+        let content;
+        if (hasDataDir(serverId)) {
+          content = hostfs.readFileBinary(serverDataDir(serverId), toHostPath(filePath));
+        } else {
+          content = await docker.readFileBinary(containerId, filePath);
+        }
+        respond(requestId, { content });
+      } catch (err) {
+        respond(requestId, {}, err);
+      }
+      break;
+    }
+
     case 'write-file': {
       const { requestId, serverId, containerId, path: filePath, content, encoding } = msg;
       try {

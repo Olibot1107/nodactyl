@@ -21,6 +21,11 @@
     .selection-bar { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:5px 10px; border-top:1px solid var(--border); background:rgba(99,102,241,.08); flex-shrink:0; font-size:12px; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+  <style>
+    #imageViewer { display:none; flex:1; min-height:0; overflow:auto; align-items:center; justify-content:center; background:var(--bg2); }
+    #imageViewer.open { display:flex; }
+    #imageViewer img { max-width:100%; max-height:100%; object-fit:contain; border-radius:4px; }
+  </style>
 </head>
 <body>
 <div class="layout" id="app"></div>
@@ -318,6 +323,75 @@ function detectLanguage(filename) {
   return specials[lname] || map[ext] || 'plaintext';
 }
 
+// ── File type detection ───────────────────────────────────────────────────────
+const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','bmp','ico','tiff','tif','avif']);
+
+function getExt(name) { return name.includes('.') ? name.toLowerCase().split('.').pop() : ''; }
+function isImageFile(name) { return IMAGE_EXTS.has(getExt(name)); }
+function isBinaryFile(name) {
+  const ext = getExt(name);
+  const BINARY_EXTS = new Set([...IMAGE_EXTS,
+    'db','sqlite','sqlite3','s3db','sl3',
+    'zip','gz','tar','rar','7z','bz2','xz','zst',
+    'jar','war','ear','class','pyc','pyd',
+    'exe','dll','so','dylib','bin','obj','o','a',
+    'pdf','doc','docx','xls','xlsx','ppt','pptx',
+    'mp3','mp4','avi','mov','mkv','wav','ogg','flac',
+    'ttf','otf','woff','woff2','eot',
+  ]);
+  return BINARY_EXTS.has(ext);
+}
+
+function imgMimeType(name) {
+  const m = { png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif',
+    webp:'image/webp', bmp:'image/bmp', ico:'image/x-icon', tiff:'image/tiff',
+    tif:'image/tiff', avif:'image/avif', svg:'image/svg+xml' };
+  return m[getExt(name)] || 'image/octet-stream';
+}
+
+// ── Binary fetch helper ───────────────────────────────────────────────────────
+async function fetchBinary(filePath) {
+  const r = await API.get(`/servers/${serverId}/files/read-binary?path=${encodeURIComponent(filePath)}`);
+  return r.content; // base64 string
+}
+
+function base64ToBlob(b64, mimeType) {
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: mimeType });
+}
+
+// ── Image viewer ─────────────────────────────────────────────────────────────
+async function openImageViewer(filePath) {
+  setStatusState('Loading...');
+  setActiveRow(filePath);
+  const fname = filePath.split('/').filter(Boolean).pop();
+  const relPath = filePath.startsWith(HOME + '/') ? '~/' + filePath.slice(HOME.length + 1) : filePath;
+  document.getElementById('editorFilename').textContent = fname;
+  document.getElementById('editorSubline').textContent = relPath;
+  document.getElementById('editorEmpty').style.display = 'none';
+  document.getElementById('editorArea').classList.remove('open');
+  document.getElementById('sqliteViewer').classList.remove('open');
+  document.getElementById('saveBtn').disabled = true;
+  document.getElementById('closeBtn').disabled = false;
+  document.getElementById('downloadBtn').disabled = false;
+  document.getElementById('statusLang').textContent = 'image';
+  try {
+    const b64 = await fetchBinary(filePath);
+    const mime = imgMimeType(fname);
+    document.getElementById('imageViewerImg').src = `data:${mime};base64,${b64}`;
+    document.getElementById('imageViewer').classList.add('open');
+    openFile = filePath;
+    modified = false;
+    setStatusState('Ready');
+  } catch (e) {
+    setStatusState('Error: ' + e.message);
+    document.getElementById('editorSubline').textContent = e.message;
+  }
+}
+
+
 // ── Breadcrumb: shows ~ for HOME, relative segments below ─────────────────────
 function renderBreadcrumb(path) {
   const el = document.getElementById('breadcrumb');
@@ -467,6 +541,7 @@ function buildShell() {
           </div>
 
           <div id="editorArea"></div>
+          <div id="imageViewer"><img id="imageViewerImg" src="" alt=""></div>
 
           <div class="status-bar" id="statusBar">
             <span id="statusPath" style="min-width:0;overflow:hidden;text-overflow:ellipsis">~</span>
@@ -610,8 +685,15 @@ function renderFileList(files, dirPath) {
 // ── Editor ────────────────────────────────────────────────────────────────────
 async function openFileForEdit(filePath) {
   if (modified && openFile && !confirm('You have unsaved changes. Discard them?')) return;
+  const fname = filePath.split('/').filter(Boolean).pop();
+
+  if (isImageFile(fname)) { openFile = null; modified = false; return openImageViewer(filePath); }
+
   setActiveRow(filePath);
   setStatusState('Loading...');
+
+  // Close image viewer if open
+  document.getElementById('imageViewer').classList.remove('open');
 
   let waited = 0;
   while (!monacoReady) {
@@ -624,7 +706,6 @@ async function openFileForEdit(filePath) {
     openFile = filePath;
     modified = false;
 
-    const fname = filePath.split('/').filter(Boolean).pop();
     const lang = detectLanguage(fname);
     const relPath = filePath.startsWith(HOME + '/') ? '~/' + filePath.slice(HOME.length + 1) : filePath;
 
@@ -688,6 +769,8 @@ function closeFile() {
   document.getElementById('editorSubline').textContent = 'Select a file from the explorer';
   document.getElementById('editorEmpty').style.display = 'flex';
   document.getElementById('editorArea').classList.remove('open');
+  document.getElementById('imageViewer').classList.remove('open');
+  document.getElementById('imageViewerImg').src = '';
   document.getElementById('saveBtn').disabled = true;
   document.getElementById('closeBtn').disabled = true;
   document.getElementById('downloadBtn').disabled = true;
@@ -698,15 +781,33 @@ function closeFile() {
 
 async function downloadOpenFile() {
   if (!openFile) return;
-  const content = (monacoReady && monacoEditor) ? monacoEditor.getValue()
-    : (await API.get(`/servers/${serverId}/files/read?path=${encodeURIComponent(openFile)}`)).content;
-  const blob = new Blob([content]);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = openFile.split('/').filter(Boolean).pop();
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const fname = openFile.split('/').filter(Boolean).pop();
+  if (isBinaryFile(fname)) {
+    await downloadFileBinary(openFile, fname);
+  } else {
+    const content = (monacoReady && monacoEditor) ? monacoEditor.getValue()
+      : (await API.get(`/servers/${serverId}/files/read?path=${encodeURIComponent(openFile)}`)).content;
+    const blob = new Blob([content]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fname; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+}
+
+async function downloadFileBinary(filePath, name) {
+  setStatusState('Downloading...');
+  try {
+    const b64 = await fetchBinary(filePath);
+    const blob = base64ToBlob(b64, 'application/octet-stream');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setStatusState('Ready');
+  } catch (e) {
+    setStatusState('Error: ' + e.message);
+  }
 }
 
 // ── Upload ────────────────────────────────────────────────────────────────────
@@ -873,12 +974,16 @@ function showCtx(e, path, isDir, name) {
   dlDiv.style.display = isDir ? 'none' : '';
   dlBtn.onclick = () => {
     closeCtx();
-    API.get(`/servers/${serverId}/files/read?path=${encodeURIComponent(path)}`).then(({ content }) => {
-      const blob = new Blob([content]);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = name; a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    });
+    if (isBinaryFile(name)) {
+      downloadFileBinary(path, name);
+    } else {
+      API.get(`/servers/${serverId}/files/read?path=${encodeURIComponent(path)}`).then(({ content }) => {
+        const blob = new Blob([content]);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = name; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      });
+    }
   };
 
   menu.style.display = 'block';

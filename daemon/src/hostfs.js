@@ -44,6 +44,13 @@ function readFile(dataDir, filePath) {
   return fs.readFileSync(fullPath, 'utf8');
 }
 
+function readFileBinary(dataDir, filePath) {
+  const fullPath = safePath(dataDir, filePath);
+  if (!fs.existsSync(fullPath)) throw new Error('File not found');
+  if (fs.statSync(fullPath).isDirectory()) throw new Error('Cannot read a directory');
+  return fs.readFileSync(fullPath).toString('base64');
+}
+
 function writeFile(dataDir, filePath, content, encoding = 'utf8') {
   const fullPath = safePath(dataDir, filePath);
   fs.mkdirSync(nodePath.dirname(fullPath), { recursive: true });
@@ -82,4 +89,4 @@ function getDiskUsage(dir) {
   return bytes;
 }
 
-module.exports = { listFiles, readFile, writeFile, createDirectory, deleteFile, renameFile, getDiskUsage };
+module.exports = { listFiles, readFile, readFileBinary, writeFile, createDirectory, deleteFile, renameFile, getDiskUsage };

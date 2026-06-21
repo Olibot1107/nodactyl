@@ -130,6 +130,11 @@
           </div>
         </div>
       </div>
+      <div class="form-group">
+        <label class="form-label">IP / Domain Template</label>
+        <input type="text" class="form-input font-mono" id="n_ip" placeholder="e.g. 1.2.3.4 or {port}.voidium.uk">
+        <div class="form-hint">Use <code>{port}</code> in the domain to replace it with the server's port. Leave blank to show port only.</div>
+      </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-ghost" onclick="closeCreateModal()">Cancel</button>
         <button class="btn btn-primary" id="createBtn" onclick="createNode()">Add Node</button>
@@ -181,6 +186,11 @@
             <div class="form-hint">End</div>
           </div>
         </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">IP / Domain Template</label>
+        <input type="text" class="form-input font-mono" id="e_ip" placeholder="e.g. 1.2.3.4 or {port}.voidium.uk">
+        <div class="form-hint">Use <code>{port}</code> in the domain to replace it with the server's port. Leave blank to show port only.</div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-ghost" onclick="closeEditModal()">Cancel</button>
@@ -405,6 +415,7 @@ function renderAdminCard(n) {
     '<div style="padding:0 18px 12px;display:flex;justify-content:flex-end">' +
       '<span style="font-size:11px;color:var(--text-dim)">seen ' + lastSeen + '</span>' +
     '</div>' +
+    (n.ip_address ? '<div class="node-token-preview" title="IP/Domain template">' + esc(n.ip_address) + '</div>' : '') +
     '<div class="node-token-preview">' + n.token.slice(0, 8) + '&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;' + n.token.slice(-4) + '</div>' +
     '<div class="node-footer">' +
       '<button class="btn btn-ghost btn-sm" onclick="openEdit(\'' + n.id + '\')">Edit</button>' +
@@ -446,6 +457,7 @@ function openCreate() {
   document.getElementById('n_disk').value = 0;
   document.getElementById('n_portStart').value = 10000;
   document.getElementById('n_portEnd').value = 30000;
+  document.getElementById('n_ip').value = '';
   document.getElementById('createError').classList.remove('show');
   document.getElementById('createModal').classList.add('open');
 }
@@ -466,6 +478,7 @@ async function createNode() {
       disk_limit: parseInt(document.getElementById('n_disk').value) * 1024,
       port_range_start: parseInt(document.getElementById('n_portStart').value) || 10000,
       port_range_end:   parseInt(document.getElementById('n_portEnd').value)   || 30000,
+      ip_address: document.getElementById('n_ip').value.trim(),
     });
     closeCreateModal();
     await loadData();
@@ -490,6 +503,7 @@ function openEdit(id) {
   document.getElementById('e_disk').value = n.disk_limit > 0 ? (n.disk_limit / 1024).toFixed(1) : 0;
   document.getElementById('e_portStart').value = n.port_range_start || 10000;
   document.getElementById('e_portEnd').value   = n.port_range_end   || 30000;
+  document.getElementById('e_ip').value = n.ip_address || '';
   document.getElementById('editError').classList.remove('show');
   document.getElementById('editModal').classList.add('open');
 }
@@ -502,7 +516,7 @@ async function saveEdit() {
   btn.innerHTML = '<span class="spinner"></span> Saving...';
   btn.disabled = true;
   try {
-    await API.patch('/nodes/' + editNodeId, {
+    var result = await API.patch('/nodes/' + editNodeId, {
       name: document.getElementById('e_name').value,
       description: document.getElementById('e_desc').value,
       memory: Math.round(parseFloat(document.getElementById('e_mem').value) * 1024),
@@ -510,9 +524,13 @@ async function saveEdit() {
       disk_limit: Math.round(parseFloat(document.getElementById('e_disk').value) * 1024),
       port_range_start: parseInt(document.getElementById('e_portStart').value) || 10000,
       port_range_end:   parseInt(document.getElementById('e_portEnd').value)   || 30000,
+      ip_address: document.getElementById('e_ip').value.trim(),
     });
     closeEditModal();
     await loadData();
+    if (result.ports_reassigned > 0) {
+      alert('Port range updated. ' + result.ports_reassigned + ' server' + (result.ports_reassigned !== 1 ? 's were' : ' was') + ' reassigned to new ports within the range. Servers will use the new ports on next start.');
+    }
   } catch(e) {
     errEl.textContent = e.message;
     errEl.classList.add('show');

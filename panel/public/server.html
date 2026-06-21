@@ -195,17 +195,27 @@ function render() {
           </div>
         </div>
 
-        ${server.port_mappings?.length ? `
+        ${server.port_mappings?.length ? (() => {
+          const pm = server.port_mappings[0];
+          const port = pm.hostPort;
+          const tmpl = server.node_ip_address || '';
+          const addr = tmpl
+            ? (tmpl.includes('{port}') ? tmpl.replace(/\{port\}/g, String(port)) : tmpl + ':' + port)
+            : String(port);
+          const copyVal = tmpl ? addr : String(port);
+          const label = tmpl ? 'Copy Address' : 'Copy Port';
+          return `
         <div class="card">
-          <div class="card-title mb-4">Connection Port</div>
+          <div class="card-title mb-4">Connection Info</div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <span style="font-size:28px;font-weight:700;color:var(--primary);letter-spacing:-1px">${esc(String(server.port_mappings[0].hostPort))}</span>
+            <span class="font-mono" style="font-size:${addr.length > 20 ? '16px' : '22px'};font-weight:700;color:var(--primary);letter-spacing:-0.5px;word-break:break-all">${esc(addr)}</span>
             <div style="font-size:12px;color:var(--text-dim);line-height:1.5">
-              ${esc((server.port_mappings[0].protocol || 'tcp').toUpperCase())} · container port ${esc(String(server.port_mappings[0].containerPort))}
-              <br><button class="btn btn-ghost btn-xs mt-1" onclick="copyText('${esc(String(server.port_mappings[0].hostPort))}', this)">Copy Port</button>
+              ${esc((pm.protocol || 'tcp').toUpperCase())} · port ${esc(String(port))}
+              <br><button class="btn btn-ghost btn-xs mt-1" onclick="copyText('${esc(copyVal)}', this)">${label}</button>
             </div>
           </div>
-        </div>` : ''}
+        </div>`;
+        })() : ''}
       </aside>
     </div>`;
 

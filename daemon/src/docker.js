@@ -389,6 +389,36 @@ async function readFile(containerId, filePath) {
   });
 }
 
+async function readFileBinary(containerId, filePath) {
+  const targetPath = toContainerPath(filePath);
+  const c = docker.getContainer(containerId);
+  const archiveStream = await c.getArchive({ path: targetPath });
+  return new Promise((resolve, reject) => {
+    const extract = tarStream.extract();
+    const chunks = [];
+    let foundFile = false;
+    let foundDirectory = false;
+    let settled = false;
+    function fail(err) { if (!settled) { settled = true; reject(err); } }
+    extract.on('entry', (header, stream, next) => {
+      if (header.type === 'directory') { foundDirectory = true; }
+      else if (!foundFile) { foundFile = true; stream.on('data', chunk => chunks.push(chunk)); }
+      stream.on('end', next);
+      stream.resume();
+    });
+    extract.on('finish', () => {
+      if (settled) return;
+      settled = true;
+      if (foundDirectory && !foundFile) return reject(new Error('Cannot read a directory'));
+      if (!foundFile) return reject(new Error('File not found'));
+      resolve(Buffer.concat(chunks).toString('base64'));
+    });
+    extract.on('error', fail);
+    archiveStream.on('error', fail);
+    archiveStream.pipe(extract);
+  });
+}
+
 async function writeFile(containerId, filePath, content, encoding = 'utf8') {
   const targetPath = toContainerPath(filePath);
   if (targetPath === '/') throw new Error('Cannot write to root directory');
@@ -502,4 +532,4 @@ async function renameFile(containerId, oldPath, newPath) {
   if (out.trim()) throw new Error(out.trim());
 }
 
-module.exports = { docker, pullImage, createContainer, getStats, getContainerInfo, streamLogs, execCommand, containerAction, listFiles, readFile, writeFile, createDirectory, deleteFile, renameFile };
+module.exports = { docker, pullImage, createContainer, getStats, getContainerInfo, streamLogs, execCommand, containerAction, listFiles, readFile, readFileBinary, writeFile, createDirectory, deleteFile, renameFile };
