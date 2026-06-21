@@ -144,7 +144,6 @@ function render() {
           <div class="card-title">${UI.terminal} Console <span id="termModeBadge" style="display:none;font-size:10px;font-weight:600;background:var(--primary);color:#fff;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle;letter-spacing:.04em">TERMINAL MODE</span></div>
           <div class="console-header-actions">
             <button class="btn btn-ghost btn-sm" id="terminalModeBtn" onclick="doTerminal()">${UI.termMode} Terminal</button>
-            <button class="btn btn-ghost btn-sm" id="liveScrollBtn" onclick="toggleLiveScroll()" title="Toggle live scroll" style="color:var(--success,#22c55e)">${UI.live} Live</button>
             <button class="btn btn-ghost btn-sm" onclick="copyConsole()" title="Copy all output">${UI.copy} Copy</button>
             <button class="btn btn-ghost btn-sm" onclick="clearConsole()">${UI.clear} Clear</button>
             ${(user?.role === 'admin' || server?.owner_id === user?.id || (Array.isArray(server?.member_permissions) && server.member_permissions.includes('sharelog'))) ? `<button class="btn btn-ghost btn-sm" onclick="openLogShareModal()" title="Share logs">${UI.upload} Share</button>` : ''}
