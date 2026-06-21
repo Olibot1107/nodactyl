@@ -91,6 +91,14 @@ router.post('/logout', (req, res) => {
   res.json({ ok: true });
 });
 
+// Refreshes the httpOnly cookie from a Bearer token (used before browser-navigation OAuth flows)
+router.post('/set-cookie', requireAuth, (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token;
+  if (!token) return res.status(400).json({ error: 'No token' });
+  res.cookie('token', token, cookieOpts());
+  res.json({ ok: true });
+});
+
 router.patch('/me', requireAuth, (req, res) => {
   const { username, avatar, current_password, new_password } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);

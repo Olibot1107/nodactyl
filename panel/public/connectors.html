@@ -186,7 +186,10 @@ function renderConnectors() {
   document.getElementById('connectorsList').innerHTML = cards.join('<div style="height:16px"></div>');
 }
 
-function linkDiscord() { window.location.href = '/api/connectors/discord/authorize?action=link'; }
+async function linkDiscord() {
+  await fetch('/api/auth/set-cookie', { method: 'POST', headers: { Authorization: 'Bearer ' + getToken() } }).catch(() => {});
+  window.location.href = '/api/connectors/discord/authorize?action=link';
+}
 async function unlinkDiscord() {
   if (!confirm('Unlink your Discord account? You will no longer be able to log in with Discord.')) return;
   try {
@@ -196,7 +199,10 @@ async function unlinkDiscord() {
   } catch (e) { showBanner('error', e.message); }
 }
 
-function linkGithub() { window.location.href = '/api/connectors/github/authorize?action=link'; }
+async function linkGithub() {
+  await fetch('/api/auth/set-cookie', { method: 'POST', headers: { Authorization: 'Bearer ' + getToken() } }).catch(() => {});
+  window.location.href = '/api/connectors/github/authorize?action=link';
+}
 async function unlinkGithub() {
   if (!confirm('Unlink your GitHub account? You will no longer be able to log in with GitHub.')) return;
   try {
