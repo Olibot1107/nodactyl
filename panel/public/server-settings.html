@@ -141,6 +141,11 @@ function buildContent() {
 
       <!-- Right column -->
       <div>
+        <div class="card mb-4">
+          <div class="card-title mb-4">Notifications</div>
+          ${buildNotifCard()}
+        </div>
+
         ${(isAdmin || server.owner_id === getUser()?.id) ? `
         <div class="card mb-4" id="membersCard">
           <div class="card-title mb-1">Access &amp; Members</div>
@@ -344,6 +349,23 @@ async function saveSettings() {
   const description = document.getElementById('fieldDesc').value.trim();
   const startup_command = document.getElementById('fieldStartup').value.trim();
   const discord_webhook = document.getElementById('fieldWebhook').value.trim();
+  const alertEl = document.getElementById('settingsAlert');
+  const btn = document.getElementById('saveBtn');
+
+  if (!name) {
+    showAlert('error', 'Name is required.');
+    return;
+  }
+
+  if (discord_webhook && !/^https:\/\/discord(app)?\.com\/api\/webhooks\//.test(discord_webhook)) {
+    showAlert('error', 'Invalid Discord webhook URL. Must start with https://discord.com/api/webhooks/');
+    return;
+  }
+
+  btn.innerHTML = '<span class="spinner"></span> Saving...';
+  btn.disabled = true;
+  alertEl.style.display = 'none';
+
   const discord_config = {
     username: document.getElementById('fieldBotName')?.value.trim() || null,
     mention: document.getElementById('fieldMention')?.value.trim() || null,
@@ -353,21 +375,6 @@ async function saveSettings() {
       document.getElementById('evtError')?.checked && 'error',
     ].filter(Boolean),
   };
-  const alertEl = document.getElementById('settingsAlert');
-  const btn = document.getElementById('saveBtn');
-
-  if (!name) {
-    showAlert('error', 'Name is required.');
-    return;
-  }
-  if (discord_webhook && !/^https:\/\/discord(app)?\.com\/api\/webhooks\//.test(discord_webhook)) {
-    showAlert('error', 'Invalid Discord webhook URL. Must start with https://discord.com/api/webhooks/');
-    return;
-  }
-
-  btn.innerHTML = '<span class="spinner"></span> Saving...';
-  btn.disabled = true;
-  alertEl.style.display = 'none';
 
   const body = { name, description, startup_command, env_vars: getEnvVars(), discord_webhook: discord_webhook || null, discord_config };
 
