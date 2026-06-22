@@ -110,7 +110,11 @@ function connect() {
     }, 15000);
   });
 
-  ws.on('message', (raw) => handleMessage(JSON.parse(raw)));
+  ws.on('message', (raw) => {
+    let msg;
+    try { msg = JSON.parse(raw); } catch { console.error('[daemon] Received non-JSON message, ignoring'); return; }
+    handleMessage(msg);
+  });
 
   ws.on('close', (code) => {
     console.log(`[daemon] Disconnected (${code}) — reconnecting in ${reconnectDelay / 1000}s`);
@@ -393,13 +397,13 @@ async function handleMessage(msg) {
       // pip installs to --target so packages land in the bind-mounted /home/container/packages
       // and survive container recreation. PYTHONPATH is injected automatically on server start.
       const CMDS = {
-        npm:      isManifest ? 'npm install'                     : `npm install ${pkg}`,
-        yarn:     isManifest ? 'yarn install'                    : `yarn add ${pkg}`,
-        pip:      isManifest ? 'pip install --target /home/container/packages -r requirements.txt'  : `pip install --target /home/container/packages ${pkg}`,
-        pip3:     isManifest ? 'pip3 install --target /home/container/packages -r requirements.txt' : `pip3 install --target /home/container/packages ${pkg}`,
-        composer: isManifest ? 'composer install'                : `composer require ${pkg}`,
-        gem:      isManifest ? null                              : `gem install ${pkg}`,
-        cargo:    isManifest ? 'cargo build'                     : `cargo add ${pkg}`,
+        npm:      isManifest ? ['npm', 'install']                                                                    : ['npm', 'install', pkg],
+        yarn:     isManifest ? ['yarn', 'install']                                                                   : ['yarn', 'add', pkg],
+        pip:      isManifest ? ['pip',  'install', '--target', '/home/container/packages', '-r', 'requirements.txt'] : ['pip',  'install', '--target', '/home/container/packages', pkg],
+        pip3:     isManifest ? ['pip3', 'install', '--target', '/home/container/packages', '-r', 'requirements.txt'] : ['pip3', 'install', '--target', '/home/container/packages', pkg],
+        composer: isManifest ? ['composer', 'install']                                                               : ['composer', 'require', pkg],
+        gem:      isManifest ? null                                                                                  : ['gem', 'install', pkg],
+        cargo:    isManifest ? ['cargo', 'build']                                                                    : ['cargo', 'add', pkg],
       };
       if (!CMDS[manager]) {
         respond(requestId, {}, new Error(isManifest ? `${manager} does not support manifest installs` : `Unknown package manager: ${manager}`));
@@ -410,11 +414,11 @@ async function handleMessage(msg) {
         const binds = dataPath && serverId ? [`${nodePath.join(hostDataPath, serverId)}:/home/container`] : [];
         const memBytes = (memoryLimit || 512) * 1024 * 1024;
 
-        send({ type: 'log', serverId, line: `\r\n\x1b[33m[Nodactyl] Running: ${CMDS[manager]}\x1b[0m\r\n` });
+        send({ type: 'log', serverId, line: `\r\n\x1b[33m[Nodactyl] Running: ${CMDS[manager].join(' ')}\x1b[0m\r\n` });
 
         pkgContainer = await docker.docker.createContainer({
           Image: image,
-          Cmd: ['/bin/sh', '-c', CMDS[manager]],
+          Cmd: CMDS[manager],
           WorkingDir: '/home/container',
           Env: (envVars || []).map(e => `${e.key}=${e.value}`),
           HostConfig: { Binds: binds, Memory: memBytes, MemorySwap: memBytes },
@@ -956,6 +960,11 @@ async function handleMessage(msg) {
           break;
         }
 
+        // Strip embedded credentials from .git/config so they aren't readable via the file manager
+        if (!isGitRepo && safeUrl !== url) {
+          spawnSync('git', ['-C', targetFull, 'remote', 'set-url', 'origin', safeUrl], { timeout: 10000, encoding: 'utf8' });
+        }
+
         const output = (result.stdout + result.stderr).trim() || (isGitRepo ? 'Already up to date.' : 'Clone complete.');
         respond(requestId, { output, pulled: isGitRepo, folder: repoName });
       } catch (err) {
@@ -1006,9 +1015,13 @@ async function watchDockerEvents() {
             console.log(`[server:${serverId.slice(0, 8)}] Container started — notifying panel`);
             send({ type: 'server-status', serverId, status: 'running', containerId: ev.id });
           } else {
-            const exitCode = ev.Actor?.Attributes?.exitCode ?? ev.Actor?.Attributes?.ExitCode;
-            console.log(`[server:${serverId.slice(0, 8)}] Container exited (code ${exitCode ?? '?'}) — notifying panel`);
-            send({ type: 'server-status', serverId, status: 'stopped' });
+            const rawExit = ev.Actor?.Attributes?.exitCode ?? ev.Actor?.Attributes?.ExitCode;
+            const exitCode = Number(rawExit);
+            // 0=clean, 130=SIGINT, 137=SIGKILL (docker stop timeout), 143=SIGTERM (docker stop)
+            const normalExits = new Set([0, 130, 137, 143]);
+            const status = !isNaN(exitCode) && !normalExits.has(exitCode) ? 'error' : 'stopped';
+            console.log(`[server:${serverId.slice(0, 8)}] Container exited (code ${rawExit ?? '?'}) — notifying panel (${status})`);
+            send({ type: 'server-status', serverId, status });
             const dieEntry = activeLogStreams.get(serverId);
             if (dieEntry) { try { dieEntry.stream.destroy(); } catch {} activeLogStreams.delete(serverId); }
           }

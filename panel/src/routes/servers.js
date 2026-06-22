@@ -150,10 +150,26 @@ router.get('/', (req, res) => {
   })));
 });
 
+// Must be before /:id to avoid Express matching 'transfers' as a server ID
+router.get('/transfers/incoming', (req, res) => {
+  const rows = db.prepare(`
+    SELECT s.id, s.name, s.image, u.username as owner_name
+    FROM servers s JOIN users u ON s.owner_id = u.id
+    WHERE s.transfer_to_user_id = ?
+  `).all(String(req.user.id));
+  res.json(rows);
+});
+
 router.get('/:id', (req, res) => {
   const server = db.prepare('SELECT s.*, u.username as owner_name, n.name as node_name, n.ip_address as node_ip_address FROM servers s JOIN users u ON s.owner_id = u.id JOIN nodes n ON s.node_id = n.id WHERE s.id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
+
+  let transfer_to_username = null;
+  if (server.transfer_to_user_id) {
+    const tu = db.prepare('SELECT username FROM users WHERE id = ?').get(server.transfer_to_user_id);
+    transfer_to_username = tu?.username || null;
+  }
 
   const member = getMember(server.id, req.user.id);
   res.json({
@@ -163,6 +179,7 @@ router.get('/:id', (req, res) => {
     discord_config: server.discord_config ? JSON.parse(server.discord_config) : null,
     node_online: nodeManager.isOnline(server.node_id),
     member_permissions: member ? JSON.parse(member.permissions || '[]') : null,
+    transfer_to_username,
   });
 });
 
@@ -580,6 +597,10 @@ router.post('/:id/files/git', async (req, res) => {
     if (/^(localhost|.*\.local|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|fd[0-9a-f]{2}:)/i.test(parsed.hostname)) {
       return res.status(400).json({ error: 'Private or loopback URLs are not allowed' });
     }
+    // Block decimal-encoded IPs (e.g. 2130706433 = 127.0.0.1) — no public URL uses a pure-integer hostname
+    if (/^\d+$/.test(parsed.hostname)) {
+      return res.status(400).json({ error: 'Private or loopback URLs are not allowed' });
+    }
   } catch {
     return res.status(400).json({ error: 'Invalid URL' });
   }
@@ -932,6 +953,63 @@ router.post('/:id/leave', (req, res) => {
   const member = getMember(req.params.id, req.user.id);
   if (!member) return res.status(403).json({ error: 'Not a member of this server' });
   db.prepare('DELETE FROM server_members WHERE server_id = ? AND user_id = ?').run(req.params.id, req.user.id);
+  res.json({ ok: true });
+});
+
+// ── Transfer ownership ────────────────────────────────────────────────────────
+
+// Owner or admin initiates a pending transfer — target user must accept
+router.post('/:id/transfer', (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+  const { username } = req.body;
+  if (!username) return res.status(400).json({ error: 'Username required' });
+  const target = db.prepare('SELECT id, rank_id FROM users WHERE username = ?').get(username);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.id === server.owner_id) return res.status(400).json({ error: 'User already owns this server' });
+  const targetRank = target.rank_id ? db.prepare('SELECT max_servers FROM ranks WHERE id = ?').get(target.rank_id) : null;
+  const maxServers = targetRank ? targetRank.max_servers : 1;
+  if (maxServers !== -1) {
+    const { count } = db.prepare('SELECT COUNT(*) as count FROM servers WHERE owner_id = ?').get(String(target.id));
+    if (count >= maxServers) return res.status(400).json({ error: `${username} is at their server limit (${maxServers})` });
+  }
+  db.prepare('UPDATE servers SET transfer_to_user_id = ? WHERE id = ?').run(String(target.id), req.params.id);
+  res.json({ ok: true });
+});
+
+// Owner or admin cancels a pending transfer
+router.delete('/:id/transfer', (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+  db.prepare('UPDATE servers SET transfer_to_user_id = NULL WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// Target user accepts the transfer
+router.post('/:id/transfer/accept', (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (server.transfer_to_user_id !== String(req.user.id)) return res.status(403).json({ error: 'No pending transfer for you on this server' });
+  const me = db.prepare('SELECT rank_id FROM users WHERE id = ?').get(req.user.id);
+  const myRank = me?.rank_id ? db.prepare('SELECT max_servers FROM ranks WHERE id = ?').get(me.rank_id) : null;
+  const maxServers = myRank ? myRank.max_servers : 1;
+  if (maxServers !== -1) {
+    const { count } = db.prepare('SELECT COUNT(*) as count FROM servers WHERE owner_id = ?').get(String(req.user.id));
+    if (count >= maxServers) return res.status(400).json({ error: 'You are at your server limit and cannot accept this transfer' });
+  }
+  db.prepare('UPDATE servers SET owner_id = ?, transfer_to_user_id = NULL WHERE id = ?').run(req.user.id, req.params.id);
+  db.prepare('DELETE FROM server_members WHERE server_id = ? AND user_id = ?').run(req.params.id, req.user.id);
+  res.json({ ok: true });
+});
+
+// Target user declines the transfer
+router.post('/:id/transfer/decline', (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (server.transfer_to_user_id !== String(req.user.id) && req.user.role !== 'admin') return res.status(403).json({ error: 'No pending transfer for you on this server' });
+  db.prepare('UPDATE servers SET transfer_to_user_id = NULL WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 

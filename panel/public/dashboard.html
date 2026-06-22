@@ -184,6 +184,7 @@ async function init() {
         </div>
       </div>
       <div class="content">
+        <div id="transferBanner"></div>
         <div class="grid-stats mb-6" id="statsRow"></div>
         <div id="serverSection">
           <div class="empty-state"><span class="spinner"></span></div>
@@ -216,6 +217,43 @@ async function loadData() {
   renderStats();
   renderServers();
   renderDeploySection();
+  loadPendingTransfers();
+}
+
+async function loadPendingTransfers() {
+  const el = document.getElementById('transferBanner');
+  if (!el) return;
+  try {
+    const pending = await API.get('/servers/transfers/incoming');
+    if (!pending.length) { el.innerHTML = ''; return; }
+    el.innerHTML = pending.map(s => `
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;margin-bottom:12px;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.25);border-radius:10px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600">${esc(s.name)}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px"><b>${esc(s.owner_name)}</b> wants to transfer this server to you.</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          <button class="btn btn-primary btn-sm" onclick="acceptTransfer('${esc(s.id)}',this)">Accept</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="declineTransfer('${esc(s.id)}',this)">Decline</button>
+        </div>
+      </div>`).join('');
+  } catch { el.innerHTML = ''; }
+}
+
+async function acceptTransfer(serverId, btn) {
+  btn.disabled = true; btn.textContent = '...';
+  try {
+    await API.post(`/servers/${serverId}/transfer/accept`, {});
+    await loadData();
+  } catch (e) { alert(e.message); btn.disabled = false; btn.textContent = 'Accept'; }
+}
+
+async function declineTransfer(serverId, btn) {
+  btn.disabled = true; btn.textContent = '...';
+  try {
+    await API.post(`/servers/${serverId}/transfer/decline`, {});
+    loadPendingTransfers();
+  } catch (e) { alert(e.message); btn.disabled = false; btn.textContent = 'Decline'; }
 }
 
 function quotaBar(used, limit, label) {

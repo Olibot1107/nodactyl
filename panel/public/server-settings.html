@@ -198,6 +198,21 @@ function buildContent() {
               </div>
             </div>
           </div>` : ''}
+          ${(isAdmin || server.owner_id === getUser()?.id) ? `
+          <div class="form-group mb-4" style="border-top:1px solid var(--border);padding-top:16px;margin-top:4px">
+            <label class="form-label mb-2">Transfer Ownership</label>
+            ${server.transfer_to_user_id ? `
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.25);border-radius:8px">
+              <span style="font-size:13px;flex:1">Pending — waiting for <b>${esc(server.transfer_to_username || '...')}</b> to accept.</span>
+              <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="cancelTransfer()">Cancel</button>
+            </div>` : `
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input class="form-input" id="transferUsername" placeholder="New owner username" style="width:200px">
+              <button class="btn btn-warning btn-sm" onclick="transferOwnership()">Transfer</button>
+            </div>
+            <div class="form-hint mt-2">${UI.info} The new owner will receive a request and must accept before ownership changes.</div>`}
+            <div id="transferAlert" class="alert mt-2" style="display:none"></div>
+          </div>` : ''}
           <div>
             <button class="btn btn-danger btn-sm" onclick="deleteServer()">Delete Server</button>
           </div>
@@ -402,6 +417,46 @@ async function deleteServer() {
     window.location.href = '/dashboard';
   } catch (e) {
     alert('Delete failed: ' + e.message);
+  }
+}
+
+async function transferOwnership() {
+  const username = document.getElementById('transferUsername')?.value.trim();
+  const alertEl = document.getElementById('transferAlert');
+  if (!alertEl) return;
+  alertEl.style.display = 'none';
+  if (!username) { alertEl.className = 'alert alert-error show'; alertEl.textContent = 'Enter a username.'; alertEl.style.display = ''; return; }
+  if (!confirm(`Send a transfer request for "${server.name}" to "${username}"?\n\nOwnership won't change until they accept.`)) return;
+  try {
+    await API.post(`/servers/${serverId}/transfer`, { username });
+    server.transfer_to_user_id = '(pending)';
+    server.transfer_to_username = username;
+    document.getElementById('content').innerHTML = buildContent();
+    populateForm();
+    attachListeners();
+    if (getUser()?.role === 'admin' || server.owner_id === getUser()?.id) loadMembers();
+    const a = document.getElementById('transferAlert');
+    if (a) { a.className = 'alert alert-success show'; a.textContent = `Transfer request sent to ${username}.`; a.style.display = ''; }
+  } catch (e) {
+    alertEl.className = 'alert alert-error show';
+    alertEl.textContent = e.message;
+    alertEl.style.display = '';
+  }
+}
+
+async function cancelTransfer() {
+  if (!confirm('Cancel the pending transfer request?')) return;
+  const alertEl = document.getElementById('transferAlert');
+  try {
+    await API.delete(`/servers/${serverId}/transfer`);
+    server.transfer_to_user_id = null;
+    server.transfer_to_username = null;
+    document.getElementById('content').innerHTML = buildContent();
+    populateForm();
+    attachListeners();
+    if (getUser()?.role === 'admin' || server.owner_id === getUser()?.id) loadMembers();
+  } catch (e) {
+    if (alertEl) { alertEl.className = 'alert alert-error show'; alertEl.textContent = e.message; alertEl.style.display = ''; }
   }
 }
 

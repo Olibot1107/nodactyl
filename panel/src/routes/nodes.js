@@ -102,7 +102,7 @@ router.patch('/:id', requireAdmin, (req, res) => {
       for (let p = rangeStart; p <= rangeEnd; p++) {
         if (!portsInUse.has(p)) { newPort = p; break; }
       }
-      if (!newPort) break; // range is full
+      if (newPort === null) { console.warn(`[nodes] Port range full — could not reassign server ${s.id}`); continue; }
       portsInUse.add(newPort);
       const newMappings = s.mappings.map(m => ({ ...m, hostPort: newPort, containerPort: newPort }));
       db.prepare('UPDATE servers SET port_mappings = ? WHERE id = ?').run(JSON.stringify(newMappings), s.id);

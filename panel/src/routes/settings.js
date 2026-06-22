@@ -39,12 +39,7 @@ router.patch('/', requireAuth, requireAdmin, (req, res) => {
     if (typeof value !== 'string') continue;
     const trimmed = value.trim();
     if (trimmed.length > 300000) return res.status(400).json({ error: 'Value too large (max ~300 KB)' });
-    const existing = db.prepare('SELECT key FROM settings WHERE key = ?').get(key);
-    if (existing) {
-      db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(trimmed, key);
-    } else {
-      db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(key, trimmed);
-    }
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, trimmed);
   }
 
   res.json({ ok: true });

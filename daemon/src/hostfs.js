@@ -8,7 +8,18 @@ function safePath(dataDir, userPath) {
   if (!full.startsWith(base + nodePath.sep) && full !== base) {
     throw new Error('Path traversal detected');
   }
-  return full;
+  // Resolve symlinks for existing paths so a symlink pointing outside dataDir is caught.
+  // For paths that don't exist yet (new file writes) the lexical check above is sufficient.
+  try {
+    const real = fs.realpathSync(full);
+    if (!real.startsWith(base + nodePath.sep) && real !== base) {
+      throw new Error('Path traversal detected');
+    }
+    return real;
+  } catch (e) {
+    if (e.message === 'Path traversal detected') throw e;
+    return full;
+  }
 }
 
 function fileSort(a, b) {

@@ -174,6 +174,7 @@ async function init() {
   try { _db.exec(`ALTER TABLE users ADD COLUMN totp_secret TEXT DEFAULT NULL`); } catch {}
   try { _db.exec(`ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0`); } catch {}
   try { _db.exec(`CREATE TABLE IF NOT EXISTS passkeys (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, credential_id TEXT NOT NULL UNIQUE, public_key TEXT NOT NULL, counter INTEGER DEFAULT 0, name TEXT DEFAULT 'Passkey', created_at INTEGER DEFAULT (strftime('%s','now')))`); } catch {}
+  try { _db.exec(`ALTER TABLE servers ADD COLUMN transfer_to_user_id TEXT DEFAULT NULL`); } catch {}
 
   // Seed default ranks
   const rankCount = prepare('SELECT COUNT(*) as count FROM ranks').get();

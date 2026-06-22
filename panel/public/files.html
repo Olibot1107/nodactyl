@@ -272,6 +272,8 @@ const HOME = '/home/container';
 let server = null;
 let currentPath = HOME;
 let openFile = null;
+let cachedDirFiles = [];
+let fileSearchQuery = '';
 let modified = false;
 let ctxTarget = null;
 let newItemType = 'file';
@@ -557,6 +559,11 @@ function buildShell() {
             <button class="btn btn-ghost btn-xs" onclick="openUploadModal()" title="Upload files or folders">${UI.upload} Upload</button>
             <button class="btn btn-ghost btn-xs" onclick="openGitModal()">Git</button>
           </div>
+          <div style="padding:4px 8px 2px;display:flex;align-items:center;gap:5px">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="13" height="13" style="flex-shrink:0;color:var(--text-dim)"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            <input type="text" id="fileSearch" style="flex:1;height:24px;font-size:12px;background:transparent;border:none;outline:none;color:var(--text);caret-color:var(--primary)" placeholder="Search files…" oninput="onFileSearch(this.value)" autocomplete="off">
+            <button id="fileSearchClear" onclick="clearFileSearch()" style="display:none;background:none;border:none;color:var(--text-dim);cursor:pointer;padding:0 2px;font-size:13px;line-height:1" title="Clear search">✕</button>
+          </div>
 
           <div class="file-banner" id="fileBanner"></div>
           <div class="file-list" id="fileList"><div class="file-state"><span class="spinner"></span></div></div>
@@ -648,7 +655,14 @@ function syncBanner() {
 // ── Directory listing ─────────────────────────────────────────────────────────
 async function listDir(dirPath) {
   const nextPath = normalizePath(dirPath);
-  if (nextPath !== currentPath) clearSelection();
+  if (nextPath !== currentPath) {
+    clearSelection();
+    fileSearchQuery = '';
+    const si = document.getElementById('fileSearch');
+    const sc = document.getElementById('fileSearchClear');
+    if (si) si.value = '';
+    if (sc) sc.style.display = 'none';
+  }
   currentPath = nextPath;
   // Clamp: never go above HOME
   if (!currentPath.startsWith(HOME)) currentPath = HOME;
@@ -657,7 +671,8 @@ async function listDir(dirPath) {
   setStatusState('Loading...');
   try {
     const { files } = await API.get(`/servers/${serverId}/files?path=${encodeURIComponent(currentPath)}`);
-    renderFileList(files || [], currentPath);
+    cachedDirFiles = files || [];
+    renderFileList(cachedDirFiles, currentPath);
     setStatusState('Ready');
   } catch (e) {
     showDirError(e.message);
@@ -665,16 +680,34 @@ async function listDir(dirPath) {
   }
 }
 
+function onFileSearch(val) {
+  fileSearchQuery = val.trim().toLowerCase();
+  const sc = document.getElementById('fileSearchClear');
+  if (sc) sc.style.display = fileSearchQuery ? '' : 'none';
+  renderFileList(cachedDirFiles, currentPath);
+}
+
+function clearFileSearch() {
+  fileSearchQuery = '';
+  const si = document.getElementById('fileSearch');
+  const sc = document.getElementById('fileSearchClear');
+  if (si) si.value = '';
+  if (sc) sc.style.display = 'none';
+  renderFileList(cachedDirFiles, currentPath);
+}
+
 async function refreshDirectory() { await listDir(currentPath); }
 
 // ── File list ─────────────────────────────────────────────────────────────────
 function renderFileList(files, dirPath) {
-  const dirs = files.filter(f => f.type === 'dir').sort((a, b) => a.name.localeCompare(b.name));
-  const docs = files.filter(f => f.type !== 'dir').sort((a, b) => a.name.localeCompare(b.name));
+  const q = fileSearchQuery;
+  const visible = q ? files.filter(f => f.name.toLowerCase().includes(q)) : files;
+  const dirs = visible.filter(f => f.type === 'dir').sort((a, b) => a.name.localeCompare(b.name));
+  const docs = visible.filter(f => f.type !== 'dir').sort((a, b) => a.name.localeCompare(b.name));
   const rows = [];
 
-  // ".." only shown when we're below the home root
-  if (dirPath !== HOME) {
+  // ".." only shown when we're below the home root and not filtering
+  if (dirPath !== HOME && !q) {
     rows.push(`
       <button class="file-row" data-dir-path="${esc(parentPath(dirPath))}">
         <span class="file-row-icon ftype-dir">${UI.up}</span>
@@ -703,14 +736,9 @@ function renderFileList(files, dirPath) {
   }
 
   if (!rows.length) {
-    document.getElementById('fileList').innerHTML = `
-      <div class="file-state">
-        <div style="text-align:center">
-          <div style="font-size:24px;opacity:.15;margin-bottom:8px">📁</div>
-          <div>Empty directory</div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Drop files here to upload</div>
-        </div>
-      </div>`;
+    document.getElementById('fileList').innerHTML = q
+      ? `<div class="file-state"><div style="text-align:center"><div style="font-size:11px;color:var(--text-muted)">No files match <b>${esc(q)}</b></div></div></div>`
+      : `<div class="file-state"><div style="text-align:center"><div style="font-size:24px;opacity:.15;margin-bottom:8px">📁</div><div>Empty directory</div><div style="font-size:11px;color:var(--text-muted);margin-top:6px">Drop files here to upload</div></div></div>`;
     return;
   }
 
@@ -1262,7 +1290,10 @@ function onKeyDown(e) {
     closeCtx();
     const openModals = document.querySelectorAll('.modal-overlay.open');
     openModals.forEach(m => m.classList.remove('open'));
-    if (!openModals.length) clearSelection();
+    if (!openModals.length) {
+      if (fileSearchQuery) { clearFileSearch(); return; }
+      clearSelection();
+    }
   }
   if (e.key === 'Enter') {
     if (document.getElementById('newItemModal').classList.contains('open')) { e.preventDefault(); submitNewItem(); }

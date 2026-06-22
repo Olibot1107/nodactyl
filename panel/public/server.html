@@ -39,6 +39,7 @@ const UI = {
   copy: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>',
   live: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>',
   upload: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>',
+  download: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
   link: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>',
   edit: '<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
 };
@@ -145,6 +146,7 @@ function render() {
           <div class="console-header-actions">
             <button class="btn btn-ghost btn-sm" id="terminalModeBtn" onclick="doTerminal()">${UI.termMode} Terminal</button>
             <button class="btn btn-ghost btn-sm" onclick="copyConsole()" title="Copy all output">${UI.copy} Copy</button>
+            <button class="btn btn-ghost btn-sm" onclick="downloadLogs()" title="Download logs as .txt">${UI.download} Download</button>
             <button class="btn btn-ghost btn-sm" onclick="clearConsole()">${UI.clear} Clear</button>
             ${(user?.role === 'admin' || server?.owner_id === user?.id || (Array.isArray(server?.member_permissions) && server.member_permissions.includes('sharelog'))) ? `<button class="btn btn-ghost btn-sm" onclick="openLogShareModal()" title="Share logs">${UI.upload} Share</button>` : ''}
           </div>
@@ -180,7 +182,10 @@ function render() {
           <div class="detail-list">
             <div class="detail-row">
               <div class="detail-label">Server ID</div>
-              <div class="detail-value font-mono" style="font-size:11px;word-break:break-all">${esc(server.id)}</div>
+              <div class="detail-value" style="display:flex;align-items:center;gap:6px;min-width:0">
+                <span class="font-mono" style="font-size:11px;word-break:break-all;flex:1">${esc(server.id)}</span>
+                <button class="btn btn-ghost btn-xs" style="flex-shrink:0" onclick="copyText('${esc(server.id)}',this)" title="Copy ID">${UI.copy}</button>
+              </div>
             </div>
             <div class="detail-row">
               <div class="detail-label">Node</div>
@@ -334,6 +339,19 @@ function copyConsole() {
   const el = document.getElementById('consoleOut');
   if (!el) return;
   navigator.clipboard.writeText(el.innerText).catch(() => {});
+}
+
+function downloadLogs() {
+  const el = document.getElementById('consoleOut');
+  if (!el || !el.innerText.trim()) return;
+  const blob = new Blob([el.innerText], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const date = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+  a.href = url;
+  a.download = `${(server?.name || 'server').replace(/[^a-z0-9]/gi, '-')}-${date}.txt`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function clearConsole() {
