@@ -6,7 +6,6 @@ const zlib = require('zlib');
 const { spawnSync } = require('child_process');
 const docker = require('./docker');
 const hostfs = require('./hostfs');
-const scanner = require('./scanner');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const configPath = nodePath.join(__dirname, '..', 'config.json');
@@ -525,16 +524,6 @@ async function handleMessage(msg) {
     case 'write-file': {
       const { requestId, serverId, containerId, path: filePath, content, encoding } = msg;
       try {
-        // Decode base64 to a string for scanning so content rules run on actual text
-        const rawContent = encoding === 'base64'
-          ? Buffer.from(content || '', 'base64')
-          : (content || '');
-        const scan = scanner.checkContent(filePath, rawContent);
-        if (scan.blocked) {
-          respond(requestId, {}, new Error(`File blocked: ${scan.reason}`));
-          console.warn(`[server:${serverId?.slice(0,8)}] Blocked write to ${filePath}: ${scan.reason}`);
-          break;
-        }
         if (hasDataDir(serverId)) {
           hostfs.writeFile(serverDataDir(serverId), toHostPath(filePath), content || '', encoding);
         } else {
@@ -832,14 +821,6 @@ async function handleMessage(msg) {
       try {
         const dataDir = serverDataDir(serverId);
         for (const f of files) {
-          const scan = scanner.checkContent(f.path, f.content || '');
-          if (scan.blocked) {
-            respond(requestId, {}, new Error(`File blocked (${f.path}): ${scan.reason}`));
-            console.warn(`[server:${serverId?.slice(0,8)}] Blocked write to ${f.path}: ${scan.reason}`);
-            return;
-          }
-        }
-        for (const f of files) {
           hostfs.writeFile(dataDir, toHostPath(f.path), f.content || '');
         }
         respond(requestId, { written: files.length });
@@ -976,18 +957,6 @@ async function handleMessage(msg) {
         }
 
         const output = (result.stdout + result.stderr).trim() || (isGitRepo ? 'Already up to date.' : 'Clone complete.');
-
-        // Scan cloned/pulled files for prohibited content
-        const violation = scanner.scanDirectory(targetFull);
-        if (violation) {
-          console.warn(`[server:${serverId.slice(0,8)}] Blocked git ${isGitRepo ? 'pull' : 'clone'}: ${violation.reason} (${violation.file})`);
-          if (!isGitRepo) {
-            try { fs.rmSync(targetFull, { recursive: true, force: true }); } catch {}
-          }
-          respond(requestId, {}, new Error(`Repository blocked: ${violation.reason} detected in ${violation.file}`));
-          break;
-        }
-
         respond(requestId, { output, pulled: isGitRepo, folder: repoName });
       } catch (err) {
         respond(requestId, {}, err);
