@@ -258,6 +258,40 @@ async function main() {
     });
   });
 
+  // Background job: auto-delete servers with no files after 24h (checks every 30 min)
+  setInterval(async () => {
+    try {
+      const checkable = db.prepare(`SELECT * FROM servers WHERE status NOT IN ('installing')`).all();
+      const now = Math.floor(Date.now() / 1000);
+      for (const server of checkable) {
+        if (!nodeManager.isOnline(server.node_id) || !server.container_id) continue;
+        try {
+          const result = await nodeManager.send(server.node_id, {
+            type: 'list-files', serverId: server.id, containerId: server.container_id, path: '/',
+          }, { timeout: 10000 });
+          const files = result?.files || [];
+          const hasFiles = Array.isArray(files) && files.length > 0;
+          if (hasFiles) {
+            if (server.no_files_since) {
+              db.prepare('UPDATE servers SET no_files_since = NULL WHERE id = ?').run(server.id);
+              io.to(`user:${server.owner_id}`).emit('no-files-changed', { serverId: server.id, no_files_since: null });
+            }
+          } else if (!server.no_files_since) {
+            db.prepare('UPDATE servers SET no_files_since = ? WHERE id = ?').run(now, server.id);
+            io.to(`user:${server.owner_id}`).emit('no-files-changed', { serverId: server.id, no_files_since: now });
+          } else if (now - server.no_files_since >= 24 * 3600) {
+            console.log(`[cleanup] Auto-deleting server ${server.id.slice(0, 8)} — no files for 24h`);
+            nodeManager.send(server.node_id, {
+              type: 'delete-server', serverId: server.id, containerId: server.container_id,
+            }, { timeout: 30000 }).catch(() => {});
+            db.prepare('DELETE FROM servers WHERE id = ?').run(server.id);
+            io.to(`user:${server.owner_id}`).to('admins').emit('server-deleted', { serverId: server.id });
+          }
+        } catch {}
+      }
+    } catch {}
+  }, 30 * 60 * 1000);
+
   // Background disk limit enforcement — checks all running servers every 60 seconds
   setInterval(async () => {
     try {
