@@ -226,7 +226,7 @@ async function loadRolesGuilds() {
   if (!sel) return;
   try {
     const guilds = await API.get('/discord/guilds');
-    const savedGuild = cfg.statsGuildId || (guilds[0]?.id || '');
+    const savedGuild = cfg.rolesGuildId || (guilds[0]?.id || '');
     sel.innerHTML = `<option value="">— Select a server —</option>` +
       guilds.map(g => `<option value="${esc(g.id)}" ${savedGuild===g.id?'selected':''}>${esc(g.name)}</option>`).join('');
     if (savedGuild) loadRoleSync(savedGuild);
@@ -323,7 +323,7 @@ async function disconnect() {
   if (!confirm('Remove the Discord bot token and all configuration?')) return;
   try {
     await API.delete('/discord/token');
-    cfg={hasToken:false}; botInfo={online:false}; render();
+    cfg={hasToken:false}; botInfo={online:false}; activeTab='stats'; render();
   } catch (e) { showAlert('tokenAlert','error',e.message); }
 }
 
