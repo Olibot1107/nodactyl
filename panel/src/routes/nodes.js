@@ -168,42 +168,6 @@ router.get('/:id/stats', async (req, res) => {
   }
 });
 
-// Speed test — measures WS upload/download throughput and node internet speed
-router.post('/:id/speedtest', requireAdmin, async (req, res) => {
-  const node = db.prepare('SELECT id FROM nodes WHERE id = ?').get(req.params.id);
-  if (!node) return res.status(404).json({ error: 'Not found' });
-  if (!nodeManager.isOnline(node.id)) return res.status(503).json({ error: 'offline' });
-
-  const WS_BYTES = 5 * 1024 * 1024; // 5 MB per direction
-
-  try {
-    // 1. Upload: send 2 MB to daemon, measure time until ack
-    const uploadPayload = Buffer.alloc(WS_BYTES, 0xAA).toString('base64');
-    const t1 = Date.now();
-    await nodeManager.send(node.id, { type: 'speedtest-upload', data: uploadPayload }, { timeout: 30000 });
-    const uploadMs = Date.now() - t1;
-
-    // 2. Download: ask daemon to send 2 MB back, measure time
-    const t2 = Date.now();
-    const dl = await nodeManager.send(node.id, { type: 'speedtest-download', bytes: WS_BYTES }, { timeout: 30000 });
-    const downloadMs = Date.now() - t2;
-    const downloadBytes = dl.data ? Buffer.byteLength(dl.data, 'utf8') : WS_BYTES;
-
-    // 3. Internet: daemon downloads 5 MB from Cloudflare
-    const inet = await nodeManager.send(node.id, { type: 'speedtest-internet' }, { timeout: 22000 });
-
-    res.json({
-      uploadMbps:   parseFloat(((WS_BYTES * 8) / (uploadMs / 1000) / (1024 * 1024)).toFixed(2)),
-      downloadMbps: parseFloat(((downloadBytes * 8) / (downloadMs / 1000) / (1024 * 1024)).toFixed(2)),
-      internetMbps: inet.mbps ?? null,
-      internetError: inet.error ?? null,
-      uploadMs,
-      downloadMs,
-    });
-  } catch (e) {
-    res.status(503).json({ error: e.message });
-  }
-});
 
 // Ping node — measures WebSocket round-trip latency in ms
 router.get('/:id/ping', async (req, res) => {

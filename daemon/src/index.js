@@ -3,7 +3,6 @@ const nodePath = require('path');
 const fs = require('fs');
 const os = require('os');
 const zlib = require('zlib');
-const https = require('https');
 const { spawnSync } = require('child_process');
 const docker = require('./docker');
 const hostfs = require('./hostfs');
@@ -150,44 +149,6 @@ function envWithPythonPath(serverId, envVars) {
   return [...list, { key: 'PYTHONPATH', value: '/home/container/packages' }];
 }
 
-// ── Internet speed test helper ────────────────────────────────────────────────
-// Downloads from Cloudflare for a fixed DURATION_MS window, then cuts off and
-// reports Mbps based on bytes actually received. Using a time-bound window
-// (rather than a fixed file size) ensures the test always runs for the full
-// duration regardless of connection speed.
-const INTERNET_TEST_DURATION_MS = 15000;
-const INTERNET_TEST_BYTES = 104857600; // 100 MB — enough headroom even on fast links
-
-function runInternetSpeedTest() {
-  return new Promise((resolve) => {
-    let bytesReceived = 0;
-    const startTime = Date.now();
-
-    const finish = (req) => {
-      if (req) try { req.destroy(); } catch {}
-      const elapsedS = (Date.now() - startTime) / 1000;
-      if (bytesReceived < 1024) return resolve({ mbps: null, error: 'No data received' });
-      resolve({ mbps: parseFloat(((bytesReceived * 8) / elapsedS / 1024 / 1024).toFixed(2)), bytes: bytesReceived });
-    };
-
-    const req = https.get({
-      hostname: 'speed.cloudflare.com',
-      path: `/__down?bytes=${INTERNET_TEST_BYTES}`,
-      headers: { 'User-Agent': 'nodactyl-speedtest/1.0' },
-    }, (res) => {
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        res.resume();
-        return resolve({ mbps: null, error: `HTTP ${res.statusCode}` });
-      }
-      res.on('data', (chunk) => { bytesReceived += chunk.length; });
-      res.on('end', () => { clearTimeout(timer); finish(null); });
-      res.on('error', (e) => { clearTimeout(timer); resolve({ mbps: null, error: e.message }); });
-    });
-
-    const timer = setTimeout(() => finish(req), INTERNET_TEST_DURATION_MS);
-    req.on('error', (e) => { clearTimeout(timer); resolve({ mbps: null, error: e.message }); });
-  });
-}
 
 // ── Message handlers ──────────────────────────────────────────────────────────
 async function handleMessage(msg) {
@@ -937,25 +898,6 @@ async function handleMessage(msg) {
       break;
     }
 
-    case 'speedtest-upload': {
-      // Panel sent a payload — just ack so the panel can measure upload time
-      respond(msg.requestId, { bytes: msg.data ? Buffer.byteLength(msg.data, 'utf8') : 0 });
-      break;
-    }
-
-    case 'speedtest-download': {
-      // Panel wants us to send data — generate payload so panel can measure download time
-      const dlBytes = Math.min(msg.bytes || 5242880, 10 * 1024 * 1024);
-      const data = Buffer.alloc(dlBytes, 0xAB).toString('base64');
-      respond(msg.requestId, { data });
-      break;
-    }
-
-    case 'speedtest-internet': {
-      const result = await runInternetSpeedTest();
-      respond(msg.requestId, result);
-      break;
-    }
 
     case 'ping': {
       respond(msg.requestId, { pong: true });
