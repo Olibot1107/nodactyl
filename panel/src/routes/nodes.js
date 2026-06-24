@@ -174,7 +174,7 @@ router.post('/:id/speedtest', requireAdmin, async (req, res) => {
   if (!node) return res.status(404).json({ error: 'Not found' });
   if (!nodeManager.isOnline(node.id)) return res.status(503).json({ error: 'offline' });
 
-  const WS_BYTES = 2 * 1024 * 1024; // 2 MB per direction
+  const WS_BYTES = 5 * 1024 * 1024; // 5 MB per direction
 
   try {
     // 1. Upload: send 2 MB to daemon, measure time until ack
@@ -190,7 +190,7 @@ router.post('/:id/speedtest', requireAdmin, async (req, res) => {
     const downloadBytes = dl.data ? Buffer.byteLength(dl.data, 'utf8') : WS_BYTES;
 
     // 3. Internet: daemon downloads 5 MB from Cloudflare
-    const inet = await nodeManager.send(node.id, { type: 'speedtest-internet' }, { timeout: 35000 });
+    const inet = await nodeManager.send(node.id, { type: 'speedtest-internet' }, { timeout: 22000 });
 
     res.json({
       uploadMbps:   parseFloat(((WS_BYTES * 8) / (uploadMs / 1000) / (1024 * 1024)).toFixed(2)),

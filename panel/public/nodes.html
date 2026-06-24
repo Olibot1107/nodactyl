@@ -467,7 +467,7 @@ async function speedTest(nodeId) {
   document.getElementById('speedtestBody').innerHTML =
     '<div style="text-align:center;padding:32px 0">' +
     '<span class="spinner" style="width:36px;height:36px;display:inline-block"></span>' +
-    '<div style="margin-top:16px;color:var(--text-muted);font-size:13px">Running speed test…<br><span style="font-size:11px">Testing WebSocket bandwidth then node internet speed.<br>This may take up to 30 seconds.</span></div>' +
+    '<div style="margin-top:16px;color:var(--text-muted);font-size:13px">Running speed test…<br><span style="font-size:11px">5 MB WS test + 15 s internet test. Takes ~20 seconds.</span></div>' +
     '</div>';
   document.getElementById('speedtestModal').classList.add('open');
   try {
@@ -507,9 +507,9 @@ function speedRow(label, sub, mbps, errorText) {
 
 function renderSpeedtestResults(r) {
   return '<div>' +
-    speedRow('WS Upload',   'panel → node (2 MB)',  r.uploadMbps,   null) +
-    speedRow('WS Download', 'node → panel (2 MB)',  r.downloadMbps, null) +
-    speedRow('Internet',    'node → internet (5 MB via Cloudflare)', r.internetMbps, r.internetError || null) +
+    speedRow('WS Upload',   'panel → node (5 MB)',  r.uploadMbps,   null) +
+    speedRow('WS Download', 'node → panel (5 MB)',  r.downloadMbps, null) +
+    speedRow('Internet',    'node → internet (15 s via Cloudflare)', r.internetMbps, r.internetError || null) +
     '<div style="margin-top:14px;font-size:11px;color:var(--text-dim)">' +
       'Upload: ' + (r.uploadMs || '—') + ' ms &nbsp;·&nbsp; Download: ' + (r.downloadMs || '—') + ' ms' +
     '</div>' +
