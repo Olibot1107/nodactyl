@@ -79,7 +79,7 @@ router.post('/token', async (req, res) => {
 
 // DELETE /token — remove all discord status config
 router.delete('/token', (req, res) => {
-  ['discord_status_token', 'discord_stats_guild_id', 'discord_stats_guild_name', 'discord_stats_channel_id', 'discord_stats_channel_name', 'discord_stats_message_id']
+  ['discord_status_token', 'discord_stats_guild_id', 'discord_stats_guild_name', 'discord_stats_channel_id', 'discord_stats_channel_name', 'discord_stats_message_id', 'discord_roles_guild_id']
     .forEach(k => setSetting(k, null));
   res.json({ ok: true });
 });
@@ -170,19 +170,20 @@ router.get('/rank-roles', (req, res) => {
 
 // PATCH /rank-roles — save rank→role mappings + linked role
 router.patch('/rank-roles', (req, res) => {
-  const { rankRoles, linkedRole } = req.body;
+  const { rankRoles, linkedRole, guildId } = req.body;
   if (rankRoles && typeof rankRoles === 'object') {
     setSetting('discord_rank_roles', JSON.stringify(rankRoles));
   }
   setSetting('discord_linked_role', linkedRole || null);
+  if (guildId) setSetting('discord_roles_guild_id', guildId);
   res.json({ ok: true });
 });
 
 // POST /sync-roles — push roles to all linked users now
 router.post('/sync-roles', async (req, res) => {
   const token = getSetting('discord_status_token');
-  const guildId = getSetting('discord_stats_guild_id');
-  if (!token || !guildId) return res.status(400).json({ error: 'Bot token and guild must be configured first' });
+  const guildId = getSetting('discord_roles_guild_id') || getSetting('discord_stats_guild_id');
+  if (!token || !guildId) return res.status(400).json({ error: 'Save role mappings with a server selected first' });
   try {
     await syncAllLinkedUsers();
     res.json({ ok: true });
