@@ -143,6 +143,7 @@ router.get('/', (req, res) => {
     ...s,
     port_mappings: JSON.parse(s.port_mappings),
     env_vars: JSON.parse(s.env_vars),
+    secret_vars: JSON.parse(s.secret_vars || '[]').map(v => ({ key: v.key, value: null })),
     discord_config: s.discord_config ? JSON.parse(s.discord_config) : null,
     node_online: nodeManager.isOnline(s.node_id),
     shared: s.shared || 0,
@@ -176,6 +177,7 @@ router.get('/:id', (req, res) => {
     ...server,
     port_mappings: JSON.parse(server.port_mappings),
     env_vars: JSON.parse(server.env_vars),
+    secret_vars: JSON.parse(server.secret_vars || '[]').map(v => ({ key: v.key, value: null })),
     discord_config: server.discord_config ? JSON.parse(server.discord_config) : null,
     node_online: nodeManager.isOnline(server.node_id),
     member_permissions: member ? JSON.parse(member.permissions || '[]') : null,
@@ -416,10 +418,12 @@ router.post('/:id/action', async (req, res) => {
     const terminalMode = req.body.terminalMode === true;
     msg.startupCommand = terminalMode ? 'sh' : (server.startup_command || '');
     db.prepare('UPDATE servers SET terminal_mode = ? WHERE id = ?').run(terminalMode ? 1 : 0, server.id);
+    const envVars = JSON.parse(server.env_vars);
+    const secretVars = JSON.parse(server.secret_vars || '[]');
     msg.serverConfig = {
       image: server.image,
       portMappings: JSON.parse(server.port_mappings),
-      envVars: JSON.parse(server.env_vars),
+      envVars: [...envVars, ...secretVars],
       memoryLimit: server.memory_limit,
       cpuLimit: server.cpu_limit,
     };
@@ -722,7 +726,7 @@ router.patch('/:id/settings', async (req, res) => {
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'settings')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr2 = suspendedBlock(server, req.user); if (suspErr2) return res.status(suspErr2.status).json({ error: suspErr2.error });
-  const { name, description, startup_command, disk_limit, memory_limit, cpu_limit, discord_webhook, discord_config, env_vars } = req.body;
+  const { name, description, startup_command, disk_limit, memory_limit, cpu_limit, discord_webhook, discord_config, env_vars, secret_vars } = req.body;
   const updates = [];
   const values = [];
   if (name !== undefined) { updates.push('name = ?'); values.push(name.trim() || server.name); }
@@ -744,6 +748,22 @@ router.patch('/:id/settings', async (req, res) => {
     updates.push('env_vars = ?');
     values.push(JSON.stringify(sanitized));
   }
+  if (secret_vars !== undefined && Array.isArray(secret_vars)) {
+    const existing = JSON.parse(server.secret_vars || '[]');
+    const existingMap = Object.fromEntries(existing.map(e => [e.key, e.value]));
+    const sanitized = secret_vars
+      .filter(e => e.key && String(e.key).trim())
+      .map(e => {
+        const key = String(e.key).trim();
+        // Empty value means "keep existing" — look up the stored value
+        const value = (e.value === '' || e.value == null) && key in existingMap
+          ? existingMap[key]
+          : String(e.value ?? '');
+        return { key, value };
+      });
+    updates.push('secret_vars = ?');
+    values.push(JSON.stringify(sanitized));
+  }
   if (discord_config !== undefined) {
     const cfg = discord_config ? {
       events: (Array.isArray(discord_config.events) ? discord_config.events : ['running', 'stopped', 'error'])
@@ -760,7 +780,7 @@ router.patch('/:id/settings', async (req, res) => {
   const changedFields = updates.map(u => u.split(' = ')[0]);
   if (req.user.role !== 'admin') audit(req.user.id, server.id, 'server.settings', { changed: changedFields }, req);
   const updated = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
-  res.json({ ...updated, port_mappings: JSON.parse(updated.port_mappings), env_vars: JSON.parse(updated.env_vars), discord_config: updated.discord_config ? JSON.parse(updated.discord_config) : null });
+  res.json({ ...updated, port_mappings: JSON.parse(updated.port_mappings), env_vars: JSON.parse(updated.env_vars), secret_vars: JSON.parse(updated.secret_vars || '[]').map(v => ({ key: v.key, value: null })), discord_config: updated.discord_config ? JSON.parse(updated.discord_config) : null });
 });
 
 router.delete('/:id', async (req, res) => {

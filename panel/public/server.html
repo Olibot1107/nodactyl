@@ -445,10 +445,6 @@ function connectSocket() {
     if (nodeId !== server.node_id) return;
     const wasOnline = server.node_online;
     server.node_online = status === 'online';
-    if (wasOnline && !server.node_online && document.hidden && Notification.permission === 'granted') {
-      const n = new Notification(`Node offline — ${server.name}`, { body: 'The hosting node went offline.', icon: '/favicon.svg' });
-      n.onclick = () => { window.focus(); n.close(); };
-    }
     updateLiveBits();
   });
 }

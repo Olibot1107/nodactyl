@@ -132,6 +132,14 @@ function buildContent() {
           <div class="form-hint mt-2">Changes take effect after restarting the server.</div>
         </div>
 
+        <div class="card mb-4">
+          <div class="card-title mb-2">Secrets</div>
+          <div class="form-hint mb-4">${UI.info} Secret values are write-only — they are never shown after saving. Leave the value blank to keep an existing secret unchanged.</div>
+          <div id="secretList"></div>
+          <button class="btn btn-ghost btn-sm mt-3" type="button" onclick="addSecretRow()">+ Add Secret</button>
+          <div class="form-hint mt-2">Secrets are injected as env vars at startup, alongside regular variables.</div>
+        </div>
+
         <div id="settingsAlert" class="alert mb-3" style="display:none"></div>
         <div class="flex-center gap-2 mb-4">
           <button class="btn btn-primary" id="saveBtn" onclick="saveSettings()">${UI.save} Save Changes</button>
@@ -279,8 +287,35 @@ function getEnvVars() {
   return envs;
 }
 
+let secretCount = 0;
+
+function addSecretRow(key = '', existing = false) {
+  const id = ++secretCount;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:6px';
+  div.dataset.secretId = id;
+  div.innerHTML = `
+    <input type="text" class="form-input" id="sk_${id}" placeholder="SECRET_KEY" value="${esc(key)}" ${existing ? 'readonly style="flex:1;font-family:monospace;opacity:.7"' : 'style="flex:1;font-family:monospace"'}>
+    <span class="text-muted">=</span>
+    <input type="password" class="form-input" id="sv_${id}" placeholder="${existing ? 'leave blank to keep' : 'value'}" style="flex:2">
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px" type="button">✕</button>`;
+  document.getElementById('secretList').appendChild(div);
+}
+
+function getSecretVars() {
+  const secrets = [];
+  document.querySelectorAll('[data-secret-id]').forEach(div => {
+    const id = div.dataset.secretId;
+    const key = document.getElementById(`sk_${id}`)?.value.trim();
+    const value = document.getElementById(`sv_${id}`)?.value ?? '';
+    if (key) secrets.push({ key, value });
+  });
+  return secrets;
+}
+
 function populateForm() {
   (server.env_vars || []).forEach(e => addEnvRow(e.key, e.value));
+  (server.secret_vars || []).forEach(e => addSecretRow(e.key, true));
 }
 
 function attachListeners() {
@@ -391,15 +426,20 @@ async function saveSettings() {
     ].filter(Boolean),
   };
 
-  const body = { name, description, startup_command, env_vars: getEnvVars(), discord_webhook: discord_webhook || null, discord_config };
+  const body = { name, description, startup_command, env_vars: getEnvVars(), secret_vars: getSecretVars(), discord_webhook: discord_webhook || null, discord_config };
 
   try {
-    await API.patch(`/servers/${serverId}/settings`, body);
+    const updated = await API.patch(`/servers/${serverId}/settings`, body);
     server.name = name;
     server.description = description;
     server.startup_command = startup_command;
     server.discord_webhook = discord_webhook || null;
     server.discord_config = discord_config;
+    server.secret_vars = updated.secret_vars || [];
+    // Re-render secrets list to reflect saved keys (with blank values)
+    document.getElementById('secretList').innerHTML = '';
+    secretCount = 0;
+    server.secret_vars.forEach(e => addSecretRow(e.key, true));
     renderTopbar();
     showAlert('success', 'Settings saved.');
   } catch (e) {
