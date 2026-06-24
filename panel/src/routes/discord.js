@@ -142,10 +142,10 @@ router.delete('/stats-message', (req, res) => {
   res.json({ ok: true });
 });
 
-// GET /guild-roles — list roles in the configured guild (for the role sync UI)
+// GET /guild-roles — list roles in a guild (guildId from query param or saved setting)
 router.get('/guild-roles', async (req, res) => {
   const token = getSetting('discord_status_token');
-  const guildId = getSetting('discord_stats_guild_id');
+  const guildId = req.query.guildId || getSetting('discord_stats_guild_id');
   if (!token || !guildId) return res.status(400).json({ error: 'Bot token and guild must be configured first' });
   try {
     const roles = await discordGet(`/guilds/${guildId}/roles`, token);
