@@ -9,6 +9,7 @@ router.use(requireAuth, requireAdmin);
 router.get('/', (req, res) => {
   const users = db.prepare(`
     SELECT u.id, u.username, u.email, u.role, u.suspended, u.rank_id, u.avatar, u.created_at,
+           u.discord_id, u.discord_username,
            r.name as rank_name, r.color as rank_color
     FROM users u
     LEFT JOIN ranks r ON u.rank_id = r.id
@@ -47,6 +48,27 @@ router.patch('/:id/rank', (req, res) => {
     if (!rank) return res.status(404).json({ error: 'Rank not found' });
   }
   const result = db.prepare('UPDATE users SET rank_id = ? WHERE id = ?').run(rank_id || null, req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'User not found' });
+  const { syncUserRoles } = require('../discordStatus');
+  syncUserRoles(req.params.id).catch(() => {});
+  res.json({ ok: true });
+});
+
+router.patch('/:id/discord', (req, res) => {
+  const { discord_id, discord_username } = req.body;
+  if (!discord_id) return res.status(400).json({ error: 'discord_id is required' });
+  const conflict = db.prepare('SELECT id FROM users WHERE discord_id = ? AND id != ?').get(String(discord_id), req.params.id);
+  if (conflict) return res.status(409).json({ error: 'That Discord ID is already linked to another account' });
+  const result = db.prepare('UPDATE users SET discord_id = ?, discord_username = ? WHERE id = ?')
+    .run(String(discord_id), discord_username || null, req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'User not found' });
+  const { syncUserRoles } = require('../discordStatus');
+  syncUserRoles(req.params.id).catch(() => {});
+  res.json({ ok: true });
+});
+
+router.delete('/:id/discord', (req, res) => {
+  const result = db.prepare('UPDATE users SET discord_id = NULL, discord_username = NULL WHERE id = ?').run(req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'User not found' });
   res.json({ ok: true });
 });
