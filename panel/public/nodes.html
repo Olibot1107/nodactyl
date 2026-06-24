@@ -81,6 +81,26 @@
       padding: 1px 6px;
       color: var(--text-muted);
     }
+    .speed-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .speed-row:last-of-type { border-bottom: none; }
+    .speed-label { font-size: 13px; }
+    .speed-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+    .speed-val {
+      font-size: 13px;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 20px;
+    }
+    .speed-val.fast   { background: rgba(34,197,94,.12);  color: #4ade80; }
+    .speed-val.medium { background: rgba(234,179,8,.12);  color: #fbbf24; }
+    .speed-val.slow   { background: rgba(239,68,68,.12);  color: #f87171; }
+    .speed-val.na     { background: var(--bg3); color: var(--text-dim); }
   </style>
 </head>
 <body>
@@ -216,6 +236,17 @@
   </div>
 </div>
 
+<!-- Speed Test Modal -->
+<div class="modal-overlay" id="speedtestModal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h2 class="modal-title" id="speedtestTitle">Speed Test</h2>
+      <button class="modal-close" onclick="closeSpeedtest()">&#x2715;</button>
+    </div>
+    <div class="modal-body" id="speedtestBody"></div>
+  </div>
+</div>
+
 <script src="/socket.io/socket.io.js"></script>
 <script src="/js/api.js"></script>
 <script>
@@ -225,6 +256,7 @@ var currentUser = getUser();
 var isAdmin = currentUser && currentUser.role === 'admin';
 var nodes = [];
 var editNodeId = null;
+var speedtestNodeId = null;
 var pingCache = {};
 var statsCache = {};
 
@@ -421,8 +453,69 @@ function renderAdminCard(n) {
       '<button class="btn btn-ghost btn-sm" onclick="openEdit(\'' + n.id + '\')">Edit</button>' +
       '<button class="btn btn-ghost btn-sm" onclick="showToken(\'' + n.id + '\',\'' + n.token + '\')">Token</button>' +
       (n.online ? '<button class="btn btn-ghost btn-sm" onclick="pingNode(\'' + n.id + '\')">Ping</button>' : '') +
+      (n.online ? '<button class="btn btn-ghost btn-sm" onclick="speedTest(\'' + n.id + '\')">Speed Test</button>' : '') +
       '<button class="btn btn-warning btn-sm" onclick="resetToken(\'' + n.id + '\')">New Token</button>' +
       '<button class="btn btn-danger btn-sm" onclick="deleteNode(\'' + n.id + '\',\'' + esc(n.name).replace(/'/g, "\\'") + '\')">Delete</button>' +
+    '</div>' +
+  '</div>';
+}
+
+async function speedTest(nodeId) {
+  speedtestNodeId = nodeId;
+  var n = nodes.find(function(x) { return x.id === nodeId; });
+  document.getElementById('speedtestTitle').textContent = 'Speed Test' + (n ? ' — ' + n.name : '');
+  document.getElementById('speedtestBody').innerHTML =
+    '<div style="text-align:center;padding:32px 0">' +
+    '<span class="spinner" style="width:36px;height:36px;display:inline-block"></span>' +
+    '<div style="margin-top:16px;color:var(--text-muted);font-size:13px">Running speed test…<br><span style="font-size:11px">Testing WebSocket bandwidth then node internet speed.<br>This may take up to 30 seconds.</span></div>' +
+    '</div>';
+  document.getElementById('speedtestModal').classList.add('open');
+  try {
+    var r = await API.post('/nodes/' + nodeId + '/speedtest', {});
+    document.getElementById('speedtestBody').innerHTML = renderSpeedtestResults(r);
+  } catch(e) {
+    document.getElementById('speedtestBody').innerHTML =
+      '<div class="alert alert-error show" style="margin-bottom:0">' + esc(e.message) + '</div>';
+  }
+}
+
+function closeSpeedtest() {
+  document.getElementById('speedtestModal').classList.remove('open');
+}
+
+function speedClass(mbps) {
+  if (mbps === null || mbps === undefined) return 'na';
+  if (mbps >= 100) return 'fast';
+  if (mbps >= 10)  return 'medium';
+  return 'slow';
+}
+
+function fmtMbps(mbps) {
+  if (mbps === null || mbps === undefined) return 'N/A';
+  return mbps + ' Mbps';
+}
+
+function speedRow(label, sub, mbps, errorText) {
+  var valHtml = errorText
+    ? '<span class="speed-val na" title="' + esc(errorText) + '">Error</span>'
+    : '<span class="speed-val ' + speedClass(mbps) + '">' + fmtMbps(mbps) + '</span>';
+  return '<div class="speed-row">' +
+    '<div><div class="speed-label">' + label + '</div><div class="speed-sub">' + sub + '</div></div>' +
+    valHtml +
+    '</div>';
+}
+
+function renderSpeedtestResults(r) {
+  return '<div>' +
+    speedRow('WS Upload',   'panel → node (2 MB)',  r.uploadMbps,   null) +
+    speedRow('WS Download', 'node → panel (2 MB)',  r.downloadMbps, null) +
+    speedRow('Internet',    'node → internet (5 MB via Cloudflare)', r.internetMbps, r.internetError || null) +
+    '<div style="margin-top:14px;font-size:11px;color:var(--text-dim)">' +
+      'Upload: ' + (r.uploadMs || '—') + ' ms &nbsp;·&nbsp; Download: ' + (r.downloadMs || '—') + ' ms' +
+    '</div>' +
+    '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">' +
+      '<button class="btn btn-ghost btn-sm" onclick="speedTest(\'' + speedtestNodeId + '\')">Run Again</button>' +
+      '<button class="btn btn-primary btn-sm" onclick="closeSpeedtest()">Done</button>' +
     '</div>' +
   '</div>';
 }
@@ -546,7 +639,7 @@ async function saveEdit() {
   }
 }
 
-['createModal','editModal','tokenModal'].forEach(function(id) {
+['createModal','editModal','tokenModal','speedtestModal'].forEach(function(id) {
   document.getElementById(id).addEventListener('click', function(e) {
     if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
   });

@@ -3,6 +3,7 @@ const nodePath = require('path');
 const fs = require('fs');
 const os = require('os');
 const zlib = require('zlib');
+const https = require('https');
 const { spawnSync } = require('child_process');
 const docker = require('./docker');
 const hostfs = require('./hostfs');
@@ -147,6 +148,43 @@ function envWithPythonPath(serverId, envVars) {
       : e);
   }
   return [...list, { key: 'PYTHONPATH', value: '/home/container/packages' }];
+}
+
+// ── Internet speed test helper ────────────────────────────────────────────────
+// Downloads 5 MB from Cloudflare's public speed test endpoint and reports Mbps.
+function runInternetSpeedTest() {
+  return new Promise((resolve) => {
+    let bytesReceived = 0;
+    const startTime = Date.now();
+    const req = https.get({
+      hostname: 'speed.cloudflare.com',
+      path: '/__down?bytes=5242880',
+      headers: { 'User-Agent': 'nodactyl-speedtest/1.0' },
+      timeout: 20000,
+    }, (res) => {
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        res.resume();
+        return resolve({ mbps: null, error: `HTTP ${res.statusCode}` });
+      }
+      res.on('data', (chunk) => { bytesReceived += chunk.length; });
+      res.on('end', () => {
+        const elapsedS = (Date.now() - startTime) / 1000;
+        if (bytesReceived < 1024) return resolve({ mbps: null, error: 'No data received' });
+        resolve({ mbps: parseFloat(((bytesReceived * 8) / elapsedS / 1024 / 1024).toFixed(2)), bytes: bytesReceived });
+      });
+      res.on('error', (e) => resolve({ mbps: null, error: e.message }));
+    });
+    req.on('error', (e) => resolve({ mbps: null, error: e.message }));
+    req.on('timeout', () => {
+      req.destroy();
+      const elapsedS = (Date.now() - startTime) / 1000;
+      if (bytesReceived > 102400) {
+        resolve({ mbps: parseFloat(((bytesReceived * 8) / elapsedS / 1024 / 1024).toFixed(2)), bytes: bytesReceived, partial: true });
+      } else {
+        resolve({ mbps: null, error: 'Timeout' });
+      }
+    });
+  });
 }
 
 // ── Message handlers ──────────────────────────────────────────────────────────
@@ -894,6 +932,26 @@ async function handleMessage(msg) {
       } catch (err) {
         respond(requestId, {}, err);
       }
+      break;
+    }
+
+    case 'speedtest-upload': {
+      // Panel sent a payload — just ack so the panel can measure upload time
+      respond(msg.requestId, { bytes: msg.data ? Buffer.byteLength(msg.data, 'utf8') : 0 });
+      break;
+    }
+
+    case 'speedtest-download': {
+      // Panel wants us to send data — generate payload so panel can measure download time
+      const dlBytes = Math.min(msg.bytes || 2097152, 5 * 1024 * 1024);
+      const data = Buffer.alloc(dlBytes, 0xAB).toString('base64');
+      respond(msg.requestId, { data });
+      break;
+    }
+
+    case 'speedtest-internet': {
+      const result = await runInternetSpeedTest();
+      respond(msg.requestId, result);
       break;
     }
 
