@@ -165,7 +165,6 @@ router.get('/discord/callback', async (req, res) => {
       const conflict = db.prepare('SELECT id FROM users WHERE discord_id = ? AND id != ?').get(discordUser.id, stateData.userId);
       if (conflict) return res.redirect('/connectors?error=already_linked_other&provider=discord');
       db.prepare('UPDATE users SET discord_id = ?, discord_username = ? WHERE id = ?').run(discordUser.id, displayName, stateData.userId);
-      require('../discordStatus').syncUserRoles(stateData.userId).catch(() => {});
       return res.redirect('/connectors?linked=discord');
     } else {
       const user = db.prepare('SELECT * FROM users WHERE discord_id = ?').get(discordUser.id);
