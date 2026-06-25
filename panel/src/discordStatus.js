@@ -159,7 +159,7 @@ async function _createStatusMessage(token, channelId, payload) {
 async function syncUserRoles(panelUserId) {
   try {
     const token = getSetting('discord_status_token');
-    const guildId = getSetting('discord_roles_guild_id') || getSetting('discord_stats_guild_id');
+    const guildId = getSetting('discord_stats_guild_id');
     if (!token || !guildId) return;
 
     const { db } = require('./db');

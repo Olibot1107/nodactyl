@@ -289,9 +289,8 @@ async function saveRoleSync() {
     const val = document.getElementById(`rankRole_${r.id}`)?.value;
     if (val) newRankRoles[r.id] = val;
   }
-  const guildId = document.getElementById('rolesGuildSelect')?.value || null;
   try {
-    await API.patch('/discord/rank-roles', { rankRoles: newRankRoles, linkedRole: newLinkedRole, guildId });
+    await API.patch('/discord/rank-roles', { rankRoles: newRankRoles, linkedRole: newLinkedRole });
     rankRolesMap = newRankRoles; linkedRole = newLinkedRole;
     showAlert('roleAlert','success','Mappings saved.');
   } catch (e) { showAlert('roleAlert','error',e.message); }
