@@ -52,13 +52,9 @@ class NodeManager {
   }
 
   register(nodeId, nodeData, ws) {
-    this.connections.set(nodeId, { ws, nodeData, connectedAt: Date.now() });
+    this.connections.set(nodeId, { ws, nodeData });
     ws.on('close', () => this.unregister(nodeId));
     ws.on('message', (raw) => this._handleMessage(nodeId, raw));
-  }
-
-  getConnectedAt(nodeId) {
-    return this.connections.get(nodeId)?.connectedAt ?? null;
   }
 
   unregister(nodeId) {

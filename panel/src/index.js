@@ -42,7 +42,6 @@ async function main() {
   const connectorRoutes = require('./routes/connectors');
   const rankRoutes = require('./routes/ranks');
   const settingsRoutes = require('./routes/settings');
-  const discordStatusRoutes = require('./routes/discord');
   const auditRoutes = require('./routes/audit');
   const passkeyRoutes = require('./routes/passkey');
   const totpRoutes = require('./routes/totp');
@@ -52,15 +51,6 @@ async function main() {
   const PORT = process.env.PORT || 3000;
 
   nodeManager.setIO(io);
-
-  // Discord status message — dynamic interval read from settings each cycle
-  const { updateStatusMessage, getSetting: dsGetSetting } = require('./discordStatus');
-  async function runStatsLoop() {
-    await updateStatusMessage().catch(() => {});
-    const secs = Math.max(30, parseInt(dsGetSetting('discord_stats_interval')) || 60);
-    setTimeout(runStatsLoop, secs * 1000);
-  }
-  setTimeout(runStatsLoop, 15 * 1000);
 
   app.set('trust proxy', 1);
   app.use(helmet({ contentSecurityPolicy: false })); // CSP disabled — panel uses inline scripts; enable & configure once ready
@@ -77,7 +67,6 @@ async function main() {
   app.use('/api/connectors', connectorRoutes);
   app.use('/api/ranks', rankRoutes);
   app.use('/api/settings', settingsRoutes);
-  app.use('/api/discord', discordStatusRoutes);
   app.use('/api/audit', auditRoutes);
   app.use('/api/passkey', passkeyRoutes);
   app.use('/api/totp', totpRoutes);
@@ -110,7 +99,6 @@ async function main() {
   app.get('/admin/servers', (req, res) => res.sendFile(pub('admin/servers.html')));
   app.get('/admin/ranks', (req, res) => res.sendFile(pub('admin/ranks.html')));
   app.get('/admin/settings', (req, res) => res.sendFile(pub('admin/settings.html')));
-  app.get('/admin/discord', (req, res) => res.sendFile(pub('admin/discord.html')));
   app.get('/admin/audit',          (req, res) => res.sendFile(pub('admin/audit.html')));
   app.get('/logs/:shareId', (req, res) => res.sendFile(pub('log-viewer.html')));
 
