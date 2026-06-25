@@ -115,13 +115,9 @@ function render() {
       <!-- Role Sync tab -->
       <div id="tab-roles" class="tab-pane ${activeTab==='roles'?'active':''}">
         <div class="card" id="roleCard">
-          ${!cfg.hasToken ? `<div class="alert alert-error">Configure a bot token first.</div>` : `
-          <div class="form-group mb-4">
-            <label class="form-label">Server (Guild)</label>
-            <select class="form-input" id="rolesGuildSelect" onchange="onRolesGuildChange()"><option>Loading...</option></select>
-          </div>
+          ${!cfg.hasToken || !cfg.statsGuildId ? `<div class="alert alert-error">Configure a bot token and guild (in Stats Message tab) first.</div>` : `
           <div class="text-muted mb-4" style="font-size:12.5px">Map panel ranks to Discord roles. Users with a linked Discord account get these roles automatically when their rank changes. The bot must have <b>Manage Roles</b> permission and its role must be above the roles it assigns.</div>
-          <div id="roleSyncContent"></div>
+          <div id="roleSyncContent"><div class="text-muted" style="font-size:13px">Loading...</div></div>
           <div id="roleAlert" class="alert mt-3" style="display:none"></div>
           <div style="display:flex;gap:8px;margin-top:14px">
             <button class="btn btn-primary btn-sm" onclick="saveRoleSync()">Save Mappings</button>
@@ -149,7 +145,7 @@ function render() {
     </div>`;
 
   if (cfg.hasToken) loadStatsGuilds();
-  if (cfg.hasToken && activeTab === 'roles') loadRolesGuilds();
+  if (cfg.hasToken && cfg.statsGuildId && activeTab === 'roles') loadRoleSync();
 }
 
 function switchTab(tab) {
@@ -158,7 +154,7 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
   document.querySelector(`.tab-btn[data-tab="${tab}"]`)?.classList.add('active');
   document.getElementById(`tab-${tab}`).classList.add('active');
-  if (tab === 'roles' && cfg.hasToken) loadRolesGuilds();
+  if (tab === 'roles' && cfg.hasToken && cfg.statsGuildId) loadRoleSync();
 }
 
 // ── Stats Message ─────────────────────────────────────────────────────────────
@@ -221,33 +217,13 @@ async function clearStatsMessage() {
 
 // ── Role Sync ─────────────────────────────────────────────────────────────────
 
-async function loadRolesGuilds() {
-  const sel = document.getElementById('rolesGuildSelect');
-  if (!sel) return;
-  try {
-    const guilds = await API.get('/discord/guilds');
-    const savedGuild = cfg.statsGuildId || (guilds[0]?.id || '');
-    sel.innerHTML = `<option value="">— Select a server —</option>` +
-      guilds.map(g => `<option value="${esc(g.id)}" ${savedGuild===g.id?'selected':''}>${esc(g.name)}</option>`).join('');
-    if (savedGuild) loadRoleSync(savedGuild);
-  } catch (e) { if (sel) sel.innerHTML = `<option>Failed: ${esc(e.message)}</option>`; }
-}
-
-async function onRolesGuildChange() {
-  const guildId = document.getElementById('rolesGuildSelect')?.value;
-  const el = document.getElementById('roleSyncContent');
-  if (!guildId) { if (el) el.innerHTML = ''; return; }
-  loadRoleSync(guildId);
-}
-
-async function loadRoleSync(guildId) {
+async function loadRoleSync() {
   const el = document.getElementById('roleSyncContent');
   if (!el) return;
-  el.innerHTML = `<div class="text-muted" style="font-size:13px">Loading...</div>`;
   try {
     [ranks, guildRoles, { rankRoles: rankRolesMap, linkedRole }] = await Promise.all([
       API.get('/ranks'),
-      API.get(`/discord/guild-roles?guildId=${encodeURIComponent(guildId)}`),
+      API.get('/discord/guild-roles'),
       API.get('/discord/rank-roles'),
     ]);
     renderRoleSync();
