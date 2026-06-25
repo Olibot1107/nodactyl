@@ -169,6 +169,7 @@ function buildContent() {
                 <label class="perm-pill"><input type="checkbox" id="permSettings"><span class="perm-pill-btn">Settings</span></label>
                 <label class="perm-pill"><input type="checkbox" id="permPower"><span class="perm-pill-btn">Power</span></label>
                 <label class="perm-pill"><input type="checkbox" id="permSharelog"><span class="perm-pill-btn">Share Logs</span></label>
+                <label class="perm-pill"><input type="checkbox" id="permSharefile"><span class="perm-pill-btn">Share Files</span></label>
               </div>
               <button class="btn btn-primary btn-sm" onclick="addMember()">Add</button>
             </div>
@@ -327,8 +328,8 @@ function attachListeners() {
   });
 }
 
-const ALL_PERMS = ['console', 'files', 'settings', 'power', 'sharelog'];
-const PERM_LABELS = { console: 'Console', files: 'Files', settings: 'Settings', power: 'Power', sharelog: 'Share Logs' };
+const ALL_PERMS = ['console', 'files', 'settings', 'power', 'sharelog', 'sharefile'];
+const PERM_LABELS = { console: 'Console', files: 'Files', settings: 'Settings', power: 'Power', sharelog: 'Share Logs', sharefile: 'Share Files' };
 
 function memberAvatarHtml(m, size = 32) {
   const radius = size <= 28 ? '6px' : '8px';

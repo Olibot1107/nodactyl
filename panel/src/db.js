@@ -176,6 +176,7 @@ async function init() {
   try { _db.exec(`CREATE TABLE IF NOT EXISTS passkeys (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, credential_id TEXT NOT NULL UNIQUE, public_key TEXT NOT NULL, counter INTEGER DEFAULT 0, name TEXT DEFAULT 'Passkey', created_at INTEGER DEFAULT (strftime('%s','now')))`); } catch {}
   try { _db.exec(`ALTER TABLE servers ADD COLUMN transfer_to_user_id TEXT DEFAULT NULL`); } catch {}
   try { _db.exec(`ALTER TABLE servers ADD COLUMN secret_vars TEXT DEFAULT '[]'`); } catch {}
+  try { _db.exec(`CREATE TABLE IF NOT EXISTS file_shares (id TEXT PRIMARY KEY, server_id TEXT NOT NULL, label TEXT, file_path TEXT, content TEXT NOT NULL, language TEXT, view_count INTEGER NOT NULL DEFAULT 0, created_at INTEGER DEFAULT (strftime('%s','now')), expires_at INTEGER NOT NULL)`); } catch {}
 
   // Seed default ranks
   const rankCount = prepare('SELECT COUNT(*) as count FROM ranks').get();

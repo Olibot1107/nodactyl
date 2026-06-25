@@ -74,6 +74,8 @@
   <button class="ctx-item" id="ctxDownload">Download</button>
   <div class="ctx-divider" id="ctxExtractDivider" style="display:none"></div>
   <button class="ctx-item" id="ctxExtract" style="display:none">Extract here</button>
+  <div class="ctx-divider" id="ctxShareDivider" style="display:none"></div>
+  <button class="ctx-item" id="ctxShare" style="display:none">Share</button>
 </div>
 
 <!-- Modal: new file / folder -->
@@ -259,6 +261,51 @@
   </div>
 </div>
 
+<!-- Modal: file share -->
+<div class="modal-overlay" id="fileShareModal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <div class="modal-title">Share File</div>
+      <button class="modal-close" onclick="closeModal('fileShareModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group mb-3">
+        <label class="form-label">Label <span class="text-muted">(optional)</span></label>
+        <input class="form-input" id="fileShareLabel" placeholder="e.g. main config snippet" autocomplete="off">
+      </div>
+      <div class="form-group mb-3">
+        <label class="form-label">Expires after</label>
+        <select class="form-input" id="fileShareTtl">
+          <option value="3600">1 hour</option>
+          <option value="14400">4 hours</option>
+          <option value="43200">12 hours</option>
+          <option value="86400" selected>1 day</option>
+          <option value="259200">3 days</option>
+          <option value="604800">7 days</option>
+        </select>
+      </div>
+      <div id="fileShareSuccess" style="display:none;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">Share link created:</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input class="form-input font-mono" id="fileShareUrl" readonly style="font-size:12px;flex:1">
+          <button class="btn btn-ghost btn-sm" onclick="copyFileShareUrl()">Copy</button>
+          <a id="fileShareOpenBtn" class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="#">Open</a>
+        </div>
+        <div id="fileShareExpiry" style="font-size:11px;color:var(--text-muted);margin-top:6px"></div>
+      </div>
+      <div id="fileShareError" class="alert alert-error" style="display:none"></div>
+      <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+        <div id="fileShareListHeader" style="font-size:10.5px;color:var(--text-dim);letter-spacing:.06em;margin-bottom:8px">SHARES</div>
+        <div id="fileShareList"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('fileShareModal')">Close</button>
+      <button class="btn btn-primary btn-sm" id="createFileShareBtn" onclick="createFileShare()">Create Share</button>
+    </div>
+  </div>
+</div>
+
 <script src="/js/api.js"></script>
 <script>
 requireAuth();
@@ -299,6 +346,7 @@ const UI = {
   extract:  `<svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" width="13" height="13"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/><path d="M9 3h6"/></svg>`,
   info:     `<svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24" width="13" height="13" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`,
   home:     `<svg fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24" width="11" height="11"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
+  share:    `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`,
 };
 
 // ── File type badges ──────────────────────────────────────────────────────────
@@ -409,6 +457,7 @@ async function openImageViewer(filePath) {
   document.getElementById('saveBtn').disabled = true;
   document.getElementById('closeBtn').disabled = false;
   document.getElementById('downloadBtn').disabled = false;
+  if (canShare()) document.getElementById('shareFileBtn').disabled = true;
   document.getElementById('statusLang').textContent = 'image';
   try {
     const b64 = await fetchBinary(filePath);
@@ -444,6 +493,7 @@ function openBinaryViewer(filePath, fname) {
   document.getElementById('saveBtn').disabled = true;
   document.getElementById('closeBtn').disabled = false;
   document.getElementById('downloadBtn').disabled = false;
+  if (canShare()) document.getElementById('shareFileBtn').disabled = true;
   document.getElementById('statusLang').textContent = 'binary';
   setStatusState('Ready');
   updateStatusBar();
@@ -522,6 +572,7 @@ async function init() {
     server = await API.get(`/servers/${serverId}`);
     renderHeader();
     syncBanner();
+    if (canShare()) document.getElementById('shareFileBtn').style.display = '';
     await listDir(HOME);
   } catch (e) {
     showDirError(e.message);
@@ -589,6 +640,7 @@ function buildShell() {
             </div>
             <div class="flex-center gap-2">
               <button class="btn btn-ghost btn-sm" id="downloadBtn" onclick="downloadOpenFile()" disabled title="Download">${UI.download}</button>
+              <button class="btn btn-ghost btn-sm" id="shareFileBtn" onclick="openFileShareModal(openFile)" disabled title="Share file" style="display:none">${UI.share} Share</button>
               <button class="btn btn-ghost btn-sm" id="closeBtn" onclick="closeFile()" disabled>${UI.close} Close</button>
               <button class="btn btn-primary btn-sm" id="saveBtn" onclick="saveFile()" disabled>${UI.save} Save</button>
             </div>
@@ -820,6 +872,7 @@ async function openFileForEdit(filePath) {
     document.getElementById('saveBtn').disabled = true;
     document.getElementById('closeBtn').disabled = false;
     document.getElementById('downloadBtn').disabled = false;
+    if (canShare()) document.getElementById('shareFileBtn').disabled = false;
     document.getElementById('statusLang').textContent = lang !== 'plaintext' ? lang : '';
     setStatusState('Ready');
     updateStatusBar();
@@ -867,6 +920,7 @@ function closeFile() {
   document.getElementById('saveBtn').disabled = true;
   document.getElementById('closeBtn').disabled = true;
   document.getElementById('downloadBtn').disabled = true;
+  if (canShare()) document.getElementById('shareFileBtn').disabled = true;
   document.getElementById('statusLang').textContent = '';
   if (monacoReady) monacoEditor.setValue('');
   updateStatusBar();
@@ -1086,6 +1140,13 @@ function showCtx(e, path, isDir, name) {
   extractBtn.style.display = showExtract ? '' : 'none';
   extractDiv.style.display = showExtract ? '' : 'none';
   extractBtn.onclick = () => { closeCtx(); extractArchive(path, name); };
+
+  const shareBtn = document.getElementById('ctxShare');
+  const shareDiv = document.getElementById('ctxShareDivider');
+  const showShare = !isDir && !isBinaryFile(name) && !isImageFile(name) && canShare();
+  shareBtn.style.display = showShare ? '' : 'none';
+  shareDiv.style.display = showShare ? '' : 'none';
+  if (showShare) shareBtn.onclick = () => { closeCtx(); openFileShareModal(path); };
 
   menu.style.display = 'block';
   const rx = e.clientX, ry = e.clientY;
@@ -1604,6 +1665,255 @@ async function submitBulkMove() {
   clearSelection();
   await listDir(currentPath);
   if (errors.length) alert('Some moves failed:\n' + errors.join('\n'));
+}
+
+// ── File sharing ──────────────────────────────────────────────────────────────
+
+function canShare() {
+  const user = getUser();
+  if (!user || !server) return false;
+  return user.role === 'admin' || server.owner_id === user.id ||
+         (Array.isArray(server.member_permissions) && server.member_permissions.includes('sharefile'));
+}
+
+let fileShareTarget = null;
+
+async function openFileShareModal(filePath) {
+  if (!filePath || !canShare()) return;
+  const fname = filePath.split('/').filter(Boolean).pop();
+  if (isBinaryFile(fname) || isImageFile(fname)) return;
+
+  let content;
+  if (filePath === openFile && monacoReady && monacoEditor) {
+    content = monacoEditor.getValue();
+  } else {
+    try {
+      const res = await API.get(`/servers/${serverId}/files/read?path=${encodeURIComponent(filePath)}`);
+      content = res.content;
+    } catch (e) {
+      alert('Could not read file: ' + e.message);
+      return;
+    }
+  }
+
+  const language = detectLanguage(fname);
+  fileShareTarget = { filePath, content, language, fname };
+
+  document.getElementById('fileShareLabel').value = '';
+  document.getElementById('fileShareSuccess').style.display = 'none';
+  document.getElementById('fileShareError').style.display = 'none';
+  const btn = document.getElementById('createFileShareBtn');
+  btn.disabled = false;
+  btn.textContent = 'Create Share';
+  document.getElementById('fileShareList').innerHTML = '<div style="font-size:12.5px;color:var(--text-dim)">Loading...</div>';
+  document.getElementById('fileShareModal').classList.add('open');
+  setTimeout(() => document.getElementById('fileShareLabel').focus(), 60);
+  loadFileShares();
+}
+
+async function createFileShare() {
+  if (!fileShareTarget) return;
+  const { filePath, content, language, fname } = fileShareTarget;
+  const label = document.getElementById('fileShareLabel').value.trim() || fname;
+  const ttl_seconds = parseInt(document.getElementById('fileShareTtl').value) || 86400;
+  const errEl = document.getElementById('fileShareError');
+  const btn = document.getElementById('createFileShareBtn');
+  errEl.style.display = 'none';
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Creating...';
+  try {
+    const result = await API.post(`/servers/${serverId}/file-shares`, {
+      content, label, file_path: filePath, language, ttl_seconds,
+    });
+    const url = location.origin + '/file-share/' + result.id;
+    document.getElementById('fileShareUrl').value = url;
+    document.getElementById('fileShareOpenBtn').href = url;
+    const ttlEl = document.getElementById('fileShareTtl');
+    document.getElementById('fileShareExpiry').textContent = 'Expires in ' + ttlEl.options[ttlEl.selectedIndex].text.toLowerCase();
+    document.getElementById('fileShareSuccess').style.display = '';
+    btn.textContent = 'Create Another';
+    btn.disabled = false;
+    loadFileShares();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.style.display = '';
+    btn.textContent = 'Create Share';
+    btn.disabled = false;
+  }
+}
+
+function copyFileShareUrl() {
+  const url = document.getElementById('fileShareUrl').value;
+  navigator.clipboard.writeText(url).catch(() => {});
+}
+
+async function loadFileShares() {
+  const el = document.getElementById('fileShareList');
+  const hdr = document.getElementById('fileShareListHeader');
+  if (!el) return;
+  try {
+    const shares = await API.get(`/servers/${serverId}/file-shares`);
+    if (hdr) hdr.textContent = `SHARES (${shares.length}/10)`;
+    if (!shares.length) {
+      el.innerHTML = '<div style="font-size:12.5px;color:var(--text-dim);padding:8px 0">No shares yet.</div>';
+      return;
+    }
+    el.innerHTML = shares.map(s => {
+      const sname = (s.file_path || '').split('/').filter(Boolean).pop() || 'file';
+      const relPath = s.file_path
+        ? (s.file_path.startsWith('/home/container/') ? '~/' + s.file_path.slice('/home/container/'.length) : s.file_path)
+        : '';
+      return `
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.label || sname)}</div>
+            ${relPath ? `<div style="font-size:11px;color:var(--text-dim);font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(relPath)}</div>` : ''}
+            <div style="font-size:11px;color:var(--text-dim);margin-top:2px">${s.view_count} view${s.view_count !== 1 ? 's' : ''}</div>
+          </div>
+          <a href="/file-share/${s.id}" target="_blank" rel="noopener" class="btn btn-ghost btn-xs" style="font-size:11px">Open</a>
+          <button class="btn btn-ghost btn-xs" style="font-size:11px" onclick="copyShareLink('/file-share/${s.id}', this)">Copy</button>
+          <button class="btn btn-ghost btn-xs" style="font-size:11px" onclick="openFileRedactView('${s.id}', '${esc(s.label || sname).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')">Edit</button>
+          <button class="btn btn-ghost btn-xs" style="font-size:11px;color:var(--danger)" onclick="deleteFileShareItem('${s.id}', this.closest('div[style]'))">Delete</button>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = `<div style="font-size:12.5px;color:var(--danger)">${esc(e.message)}</div>`;
+  }
+}
+
+function copyShareLink(path, btn) {
+  const url = location.origin + path;
+  navigator.clipboard.writeText(url).then(() => {
+    const prev = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = prev, 1500);
+  }).catch(() => {});
+}
+
+async function deleteFileShareItem(shareId, row) {
+  try {
+    await API.delete(`/servers/${serverId}/file-shares/${shareId}`);
+    row?.remove();
+    const remaining = document.querySelectorAll('#fileShareList [style*="border-bottom"]').length;
+    const hdr = document.getElementById('fileShareListHeader');
+    if (hdr) hdr.textContent = `SHARES (${remaining}/10)`;
+    if (!remaining) document.getElementById('fileShareList').innerHTML = '<div style="font-size:12.5px;color:var(--text-dim);padding:8px 0">No shares yet.</div>';
+  } catch (e) {
+    alert('Delete failed: ' + e.message);
+  }
+}
+
+async function openFileRedactView(sid, label) {
+  const modal = document.getElementById('fileShareModal');
+  if (!modal) return;
+  const inner = modal.firstElementChild;
+  const origHtml = inner.innerHTML;
+
+  inner.innerHTML = '<div style="padding:40px;text-align:center"><span class="spinner"></span></div>';
+
+  let lines;
+  try {
+    const res = await fetch('/api/file-shares/' + sid);
+    if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || 'Not found');
+    const share = await res.json();
+    lines = share.content.split('\n');
+    if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  } catch (e) {
+    inner.innerHTML = origHtml;
+    loadFileShares();
+    alert('Could not load: ' + e.message);
+    return;
+  }
+
+  const markedLines = new Set();
+
+  function renderRedact() {
+    inner.innerHTML = ''
+      + '<div style="padding:14px 18px 12px;display:flex;align-items:center;gap:8px;flex-shrink:0;border-bottom:1px solid var(--border)">'
+      +   '<button id="fRedactBackBtn" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px 6px;border-radius:4px;font-size:12px;display:flex;align-items:center;gap:4px" onmouseover="this.style.color=\'var(--text)\'" onmouseout="this.style.color=\'var(--text-muted)\'">← Back</button>'
+      +   '<span style="font-size:13px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(label) + '</span>'
+      +   '<button onclick="closeModal(\'fileShareModal\')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;line-height:1;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:6px" onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'none\'">&times;</button>'
+      + '</div>'
+      + '<div style="padding:7px 18px;font-size:11px;background:rgba(249,115,22,.06);border-bottom:1px solid rgba(249,115,22,.15);flex-shrink:0">'
+      +   '<span style="color:#fb923c;font-weight:600">Click lines to redact them.</span> <span style="color:var(--text-muted)">They\'ll show as blurred. Click again to undo.</span>'
+      + '</div>'
+      + '<div id="fRedactLines" style="flex:1;overflow-y:auto;padding:6px 0;font-family:\'Cascadia Code\',Consolas,monospace;font-size:11.5px;background:var(--bg2)">'
+      + lines.map(function(line, i) {
+          const fixed = line.trim() === '[REDACTED]';
+          const isMarked = markedLines.has(i);
+          const bg = isMarked ? 'rgba(239,68,68,.1)' : '';
+          const color = (fixed || isMarked) ? '#f87171' : 'var(--text-muted)';
+          const blur = (fixed || isMarked) ? 'blur(4px)' : 'none';
+          return '<div data-ridx="' + i + '"' + (fixed ? ' data-fixed="1"' : '') + ' class="' + (isMarked ? 'r-marked' : '') + '" style="display:flex;padding:1px 0;cursor:' + (fixed ? 'default' : 'pointer') + ';background:' + bg + '"'
+            + (fixed ? '' : ' onmouseover="if(!this.dataset.fixed&&!this.classList.contains(\'r-marked\'))this.style.background=\'rgba(249,115,22,.07)\'" onmouseout="if(!this.classList.contains(\'r-marked\'))this.style.background=\'\'"')
+            + '>'
+            + '<span style="min-width:38px;color:#3d444d;text-align:right;padding-right:10px;user-select:none;font-size:10.5px;padding-top:1px;flex-shrink:0">' + (i + 1) + '</span>'
+            + '<span class="r-content" style="flex:1;white-space:pre-wrap;word-break:break-all;color:' + color + ';filter:' + blur + ';user-select:' + (fixed ? 'none' : 'auto') + '">' + esc(line) + '</span>'
+            + '</div>';
+        }).join('')
+      + '</div>'
+      + '<div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0">'
+      +   '<button class="btn btn-ghost btn-sm" id="fRedactCancelBtn">Cancel</button>'
+      +   '<button class="btn btn-primary btn-sm" id="fRedactSaveBtn">Save</button>'
+      + '</div>';
+
+    inner.querySelector('#fRedactLines').addEventListener('click', function(e) {
+      const el = e.target.closest('[data-ridx]');
+      if (!el || el.dataset.fixed === '1') return;
+      const idx = parseInt(el.dataset.ridx);
+      const content = el.querySelector('.r-content');
+      if (markedLines.has(idx)) {
+        markedLines.delete(idx);
+        el.classList.remove('r-marked');
+        el.style.background = '';
+        if (content) { content.style.color = 'var(--text-muted)'; content.style.filter = 'none'; }
+      } else {
+        markedLines.add(idx);
+        el.classList.add('r-marked');
+        el.style.background = 'rgba(239,68,68,.1)';
+        if (content) { content.style.color = '#f87171'; content.style.filter = 'blur(4px)'; }
+      }
+    });
+
+    inner.querySelector('#fRedactBackBtn').addEventListener('click', goBack);
+    inner.querySelector('#fRedactCancelBtn').addEventListener('click', goBack);
+    inner.querySelector('#fRedactSaveBtn').addEventListener('click', doSave);
+  }
+
+  function goBack() {
+    inner.innerHTML = origHtml;
+    loadFileShares();
+  }
+
+  async function doSave() {
+    if (!markedLines.size && !confirm('No lines marked — save anyway?')) return;
+    const btn = inner.querySelector('#fRedactSaveBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    const newLines = lines.map(function(line, i) {
+      return markedLines.has(i) ? '[REDACTED]' : line;
+    });
+    try {
+      const res = await fetch('/api/file-shares/' + sid, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
+        body: JSON.stringify({ content: newLines.join('\n') }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(function() { return {}; });
+        alert(d.error || 'Failed to save');
+        if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+        return;
+      }
+      lines = newLines;
+      markedLines.clear();
+      renderRedact();
+    } catch (e) {
+      alert('Failed to save: ' + e.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+    }
+  }
+
+  renderRedact();
 }
 
 init();

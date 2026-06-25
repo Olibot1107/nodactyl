@@ -936,7 +936,7 @@ router.post('/:id/members', (req, res) => {
   if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
   const { username, permissions } = req.body;
   if (!username) return res.status(400).json({ error: 'Username required' });
-  const validPerms = ['console', 'files', 'settings', 'power', 'sharelog'];
+  const validPerms = ['console', 'files', 'settings', 'power', 'sharelog', 'sharefile'];
   const perms = Array.isArray(permissions) ? permissions.filter(p => validPerms.includes(p)) : ['console'];
   const target = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
   if (!target) return res.status(404).json({ error: 'User not found' });
@@ -951,7 +951,7 @@ router.patch('/:id/members/:userId', (req, res) => {
   const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
-  const validPerms = ['console', 'files', 'settings', 'power', 'sharelog'];
+  const validPerms = ['console', 'files', 'settings', 'power', 'sharelog', 'sharefile'];
   const perms = Array.isArray(req.body.permissions) ? req.body.permissions.filter(p => validPerms.includes(p)) : [];
   const result = db.prepare('UPDATE server_members SET permissions = ? WHERE server_id = ? AND user_id = ?')
     .run(JSON.stringify(perms), req.params.id, req.params.userId);
@@ -1074,6 +1074,46 @@ router.delete('/:id/log-shares/:shareId', (req, res) => {
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canManageLogShares(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
   db.prepare('DELETE FROM log_shares WHERE id = ? AND server_id = ?').run(req.params.shareId, req.params.id);
+  res.json({ ok: true });
+});
+
+// ── File shares ───────────────────────────────────────────────────────────────
+
+const FILE_SHARE_MAX_BYTES    = 512 * 1024;
+const FILE_SHARE_MAX_TTL_SECS = 7 * 24 * 3600;
+
+router.get('/:id/file-shares', (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!hasPerm(server, req.user, 'sharefile')) return res.status(403).json({ error: 'Forbidden' });
+  const now = Math.floor(Date.now() / 1000);
+  const shares = db.prepare('SELECT id, label, file_path, language, view_count, created_at, expires_at FROM file_shares WHERE server_id = ? AND expires_at > ? ORDER BY created_at DESC')
+    .all(req.params.id, now);
+  res.json(shares);
+});
+
+router.post('/:id/file-shares', (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!hasPerm(server, req.user, 'sharefile')) return res.status(403).json({ error: 'Forbidden' });
+  const { content, label, file_path, language, ttl_seconds } = req.body;
+  if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content required' });
+  if (Buffer.byteLength(content, 'utf8') > FILE_SHARE_MAX_BYTES) return res.status(400).json({ error: 'File too large (max 512 KB)' });
+  const ttl = Math.min(Math.max(parseInt(ttl_seconds) || FILE_SHARE_MAX_TTL_SECS, 3600), FILE_SHARE_MAX_TTL_SECS);
+  const now = Math.floor(Date.now() / 1000);
+  const activeCount = db.prepare('SELECT COUNT(*) as n FROM file_shares WHERE server_id = ? AND expires_at > ?').get(req.params.id, now)?.n ?? 0;
+  if (activeCount >= 10) return res.status(400).json({ error: 'Limit reached: max 10 active file shares per server. Delete one first.' });
+  const id = crypto.randomBytes(10).toString('hex');
+  db.prepare('INSERT INTO file_shares (id, server_id, label, file_path, content, language, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, req.params.id, label || null, file_path || null, content, language || null, now, now + ttl);
+  res.json({ id, expires_at: now + ttl });
+});
+
+router.delete('/:id/file-shares/:shareId', (req, res) => {
+  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!hasPerm(server, req.user, 'sharefile')) return res.status(403).json({ error: 'Forbidden' });
+  db.prepare('DELETE FROM file_shares WHERE id = ? AND server_id = ?').run(req.params.shareId, req.params.id);
   res.json({ ok: true });
 });
 

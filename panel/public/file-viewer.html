@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>File Share — Nodactyl</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      background: #0d1117;
+      color: #c9d1d9;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100%;
+    }
+    body { display: flex; flex-direction: column; min-height: 100vh; }
+
+    .header {
+      background: #161b22;
+      border-bottom: 1px solid #21262d;
+      padding: 0 24px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .header-logo { font-size: 16px; font-weight: 800; color: #f97316; letter-spacing: -0.5px; text-decoration: none; }
+    .header-sep { color: #30363d; font-size: 18px; line-height: 1; }
+    .header-crumb { font-size: 13px; color: #6e7681; }
+    .header-label { font-size: 13px; font-weight: 600; color: #e6edf3; }
+    .header-lang {
+      font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+      background: rgba(99,102,241,.15); color: #818cf8;
+      border: 1px solid rgba(99,102,241,.25); border-radius: 4px;
+      padding: 2px 7px;
+    }
+    .header-spacer { flex: 1; }
+    .hdr-btn {
+      display: flex; align-items: center; gap: 5px;
+      padding: 5px 12px; border-radius: 6px;
+      border: 1px solid #30363d; background: #21262d;
+      color: #c9d1d9; font-size: 12px; font-weight: 500;
+      cursor: pointer; transition: border-color .15s, background .15s;
+      white-space: nowrap; text-decoration: none;
+    }
+    .hdr-btn:hover { background: #30363d; border-color: #444c56; }
+    .hdr-btn svg { width: 13px; height: 13px; }
+    .hdr-btn.primary { border-color: rgba(249,115,22,.5); color: #fb923c; }
+    .hdr-btn.primary:hover { background: rgba(249,115,22,.1); border-color: #f97316; }
+
+    .meta-bar {
+      background: #161b22; border-bottom: 1px solid #21262d;
+      padding: 0 24px; height: 36px;
+      display: flex; align-items: center; gap: 20px;
+      font-size: 12px; color: #6e7681; flex-shrink: 0;
+    }
+    .meta-item { display: flex; align-items: center; gap: 5px; }
+    .meta-item svg { width: 13px; height: 13px; opacity: .7; }
+    .badge-expires {
+      background: rgba(249,115,22,.12); border: 1px solid rgba(249,115,22,.3);
+      color: #fb923c; border-radius: 4px; padding: 1px 7px;
+      font-size: 11px; font-weight: 600;
+    }
+    .badge-expires.expiring-soon { background: rgba(234,179,8,.12); border-color: rgba(234,179,8,.3); color: #facc15; }
+
+    .code-outer {
+      flex: 1; display: flex; flex-direction: column;
+      background: #0d1117; overflow: auto;
+    }
+    .code-wrap {
+      flex: 1; padding: 16px 0;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
+      font-size: 12.5px; line-height: 1.7;
+    }
+    .code-line {
+      display: flex; min-height: 1.7em;
+      padding: 0 20px 0 0;
+    }
+    .code-line:hover { background: rgba(255,255,255,.025); }
+    .line-num {
+      min-width: 48px; text-align: right; padding-right: 16px; padding-left: 20px;
+      color: #3d444d; user-select: none; flex-shrink: 0;
+      font-size: 11px; padding-top: 1px;
+    }
+    .line-content { flex: 1; min-width: 0; white-space: pre; }
+    .empty { color: #3d444d; font-style: italic; padding: 60px; text-align: center; }
+
+    /* Override highlight.js wrapper background so our bg shows through */
+    pre code.hljs { background: transparent !important; padding: 0 !important; }
+
+    .error-state, .loading-state {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 80px 24px; gap: 12px;
+    }
+    .error-icon { font-size: 40px; }
+    .error-state h2 { font-size: 18px; color: #f87171; }
+    .error-state p { color: #6e7681; font-size: 13px; }
+    .spinner {
+      width: 28px; height: 28px;
+      border: 3px solid #21262d; border-top-color: #f97316;
+      border-radius: 50%; animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <a class="header-logo" href="/">Nodactyl</a>
+  <span class="header-sep">›</span>
+  <span class="header-crumb">File Share</span>
+  <span class="header-sep">›</span>
+  <span class="header-label" id="shareLabel">Loading…</span>
+  <span class="header-lang" id="shareLang" style="display:none"></span>
+  <div class="header-spacer"></div>
+  <button class="hdr-btn primary" id="copyAllBtn" onclick="copyAll(this)" style="display:none">
+    <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+    Copy all
+  </button>
+</div>
+
+<div class="meta-bar" id="metaBar" style="display:none">
+  <span class="meta-item">
+    <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+    <span id="metaCreatedText"></span>
+  </span>
+  <span class="meta-item">
+    <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 6h16M4 10h16M4 14h10"/></svg>
+    <span id="metaLinesText"></span>
+  </span>
+  <span class="meta-item">
+    <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+    <span id="metaViewsText"></span>
+  </span>
+  <span class="meta-item" id="metaExpires"></span>
+</div>
+
+<div class="code-outer" id="codeOuter" style="display:none">
+  <div class="code-wrap" id="codeWrap"></div>
+</div>
+
+<div class="loading-state" id="loadingState"><div class="spinner"></div></div>
+
+<div class="error-state" id="errorState" style="display:none">
+  <span class="error-icon">⚠️</span>
+  <h2>File not found</h2>
+  <p id="errorMsg">This link may have expired or been deleted.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>
+var shareId = location.pathname.split('/file-share/')[1];
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Map Monaco language IDs to highlight.js aliases where they differ
+var HLJS_LANG_MAP = {
+  'shell': 'bash',
+  'csharp': 'cs',
+  'plaintext': null,
+  'ini': 'ini',
+};
+
+function resolveHljsLang(lang) {
+  if (!lang) return null;
+  if (lang in HLJS_LANG_MAP) return HLJS_LANG_MAP[lang];
+  if (hljs.getLanguage(lang)) return lang;
+  return null;
+}
+
+function highlightLine(line, lang) {
+  if (!lang) return esc(line);
+  try {
+    return hljs.highlight(line, { language: lang, ignoreIllegals: true }).value;
+  } catch (e) {
+    return esc(line);
+  }
+}
+
+function renderCode(content, lang) {
+  var wrap = document.getElementById('codeWrap');
+  wrap.innerHTML = '';
+  var lines = content.split('\n');
+  // Strip trailing empty line that's an artifact of how files end with \n
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+
+  if (!lines.length) {
+    wrap.innerHTML = '<div class="empty">No content.</div>';
+    return;
+  }
+
+  var hljsLang = resolveHljsLang(lang);
+  var frag = document.createDocumentFragment();
+
+  // For multi-line token context, highlight the whole content at once
+  // then split the resulting HTML by newlines (tracking open spans)
+  var fullHighlighted = null;
+  if (hljsLang) {
+    try {
+      var result = hljs.highlight(content.endsWith('\n') ? content.slice(0, -1) : content, { language: hljsLang, ignoreIllegals: true });
+      fullHighlighted = splitHighlightedLines(result.value);
+    } catch (e) {
+      fullHighlighted = null;
+    }
+  }
+
+  for (var i = 0; i < lines.length; i++) {
+    var isRedacted = lines[i].trim() === '[REDACTED]';
+    var div = document.createElement('div');
+    div.className = 'code-line';
+
+    var numEl = document.createElement('span');
+    numEl.className = 'line-num';
+    numEl.textContent = i + 1;
+
+    var contentEl = document.createElement('span');
+    contentEl.className = 'line-content';
+    if (isRedacted) {
+      contentEl.style.cssText = 'color:#f87171;filter:blur(4px);user-select:none';
+      contentEl.textContent = '[REDACTED]';
+    } else if (fullHighlighted && fullHighlighted[i] !== undefined) {
+      contentEl.innerHTML = fullHighlighted[i];
+    } else {
+      contentEl.textContent = lines[i];
+    }
+
+    div.appendChild(numEl);
+    div.appendChild(contentEl);
+    frag.appendChild(div);
+  }
+  wrap.appendChild(frag);
+}
+
+// Split highlighted HTML into per-line arrays while keeping open spans alive across lines
+function splitHighlightedLines(html) {
+  var lines = [];
+  var currentLine = '';
+  var openTags = [];
+  var i = 0;
+
+  while (i < html.length) {
+    if (html[i] === '<') {
+      var end = html.indexOf('>', i);
+      if (end === -1) { currentLine += html.slice(i); break; }
+      var tag = html.slice(i, end + 1);
+      if (tag.startsWith('</')) {
+        currentLine += tag;
+        openTags.pop();
+      } else if (!tag.endsWith('/>')) {
+        currentLine += tag;
+        openTags.push(tag);
+      } else {
+        currentLine += tag;
+      }
+      i = end + 1;
+    } else if (html[i] === '\n') {
+      // Close all open spans, push line, reopen
+      var closers = openTags.map(function() { return '</span>'; }).join('');
+      lines.push(currentLine + closers);
+      currentLine = openTags.join('');
+      i++;
+    } else {
+      currentLine += html[i++];
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+  return lines;
+}
+
+function copyAll(btn) {
+  var lines = Array.from(document.querySelectorAll('.line-content')).map(function(el) { return el.innerText; }).join('\n');
+  navigator.clipboard.writeText(lines).then(function() {
+    var prev = btn.innerHTML;
+    btn.textContent = 'Copied!';
+    setTimeout(function() { btn.innerHTML = prev; }, 1500);
+  }).catch(function() {});
+}
+
+function fmtDate(ts) {
+  return new Date(ts * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function fmtCountdown(ts) {
+  var diff = ts - Math.floor(Date.now() / 1000);
+  if (diff <= 0) return 'Expired';
+  var d = Math.floor(diff / 86400), h = Math.floor((diff % 86400) / 3600), m = Math.floor((diff % 3600) / 60);
+  if (d) return 'Expires in ' + d + 'd ' + h + 'h';
+  if (h) return 'Expires in ' + h + 'h ' + m + 'm';
+  return 'Expires in ' + m + 'm';
+}
+
+(async function() {
+  var panelName = 'Nodactyl';
+  try {
+    var ps = await fetch('/api/settings/public').then(function(r) { return r.json(); });
+    if (ps.panel_name) { panelName = ps.panel_name; document.querySelector('.header-logo').textContent = panelName; }
+  } catch(e) {}
+
+  try {
+    var res = await fetch('/api/file-shares/' + shareId);
+    if (!res.ok) throw new Error((await res.json()).error || 'Not found');
+    var share = await res.json();
+
+    var fname = share.file_path ? share.file_path.split('/').filter(Boolean).pop() : null;
+    var label = share.label || fname || 'Untitled file';
+    document.title = label + ' — ' + panelName;
+    document.getElementById('shareLabel').textContent = label;
+
+    if (share.language && share.language !== 'plaintext') {
+      var langEl = document.getElementById('shareLang');
+      langEl.textContent = share.language;
+      langEl.style.display = '';
+    }
+
+    document.getElementById('metaBar').style.display = '';
+    document.getElementById('metaCreatedText').textContent = fmtDate(share.created_at);
+
+    var lines = share.content.split('\n');
+    var lineCount = lines[lines.length - 1] === '' ? lines.length - 1 : lines.length;
+    document.getElementById('metaLinesText').textContent = lineCount.toLocaleString() + (lineCount === 1 ? ' line' : ' lines');
+    document.getElementById('metaViewsText').textContent = share.view_count.toLocaleString() + (share.view_count === 1 ? ' view' : ' views');
+
+    var diff = share.expires_at - Math.floor(Date.now() / 1000);
+    var expClass = diff < 86400 ? 'badge-expires expiring-soon' : 'badge-expires';
+    document.getElementById('metaExpires').innerHTML = '<span class="' + expClass + '">' + fmtCountdown(share.expires_at) + '</span>';
+
+    renderCode(share.content, share.language);
+
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('codeOuter').style.display = 'flex';
+    document.getElementById('copyAllBtn').style.display = '';
+  } catch(e) {
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('errorState').style.display = 'flex';
+    document.getElementById('errorMsg').textContent = e.message || 'This link may have expired or been deleted.';
+    document.getElementById('shareLabel').textContent = 'Not found';
+  }
+})();
+</script>
+</body>
+</html>

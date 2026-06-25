@@ -101,6 +101,7 @@ async function main() {
   app.get('/admin/settings', (req, res) => res.sendFile(pub('admin/settings.html')));
   app.get('/admin/audit',          (req, res) => res.sendFile(pub('admin/audit.html')));
   app.get('/logs/:shareId', (req, res) => res.sendFile(pub('log-viewer.html')));
+  app.get('/file-share/:shareId', (req, res) => res.sendFile(pub('file-viewer.html')));
 
   // ── Favicon ───────────────────────────────────────────────────────────────────
   function getFaviconSvg() {
@@ -156,6 +157,37 @@ async function main() {
     const share = db.prepare('SELECT id, label, content, view_count, created_at, expires_at FROM log_shares WHERE id = ? AND expires_at > ?').get(req.params.shareId, now);
     if (!share) return res.status(404).json({ error: 'Log share not found or expired' });
     db.prepare('UPDATE log_shares SET view_count = view_count + 1 WHERE id = ?').run(req.params.shareId);
+    res.json({ ...share, view_count: share.view_count + 1 });
+  });
+
+  // Redact lines in a file share (requires auth + sharefile permission on that server)
+  app.patch('/api/file-shares/:shareId', requireAuth, (req, res) => {
+    const { db } = require('./db');
+    const share = db.prepare('SELECT * FROM file_shares WHERE id = ?').get(req.params.shareId);
+    if (!share) return res.status(404).json({ error: 'Not found' });
+    const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(share.server_id);
+    if (!server) return res.status(404).json({ error: 'Not found' });
+    const user = req.user;
+    let allowed = user.role === 'admin' || server.owner_id === user.id;
+    if (!allowed) {
+      const member = db.prepare('SELECT permissions FROM server_members WHERE server_id = ? AND user_id = ?').get(server.id, user.id);
+      try { allowed = JSON.parse(member?.permissions || '[]').includes('sharefile'); } catch {}
+    }
+    if (!allowed) return res.status(403).json({ error: 'Forbidden' });
+    const { content } = req.body;
+    if (typeof content !== 'string') return res.status(400).json({ error: 'content required' });
+    if (Buffer.byteLength(content) > 512 * 1024) return res.status(400).json({ error: 'Content too large' });
+    db.prepare('UPDATE file_shares SET content = ? WHERE id = ?').run(content, req.params.shareId);
+    res.json({ ok: true });
+  });
+
+  // Public file share read (no auth)
+  app.get('/api/file-shares/:shareId', (req, res) => {
+    const { db } = require('./db');
+    const now = Math.floor(Date.now() / 1000);
+    const share = db.prepare('SELECT id, label, file_path, content, language, view_count, created_at, expires_at FROM file_shares WHERE id = ? AND expires_at > ?').get(req.params.shareId, now);
+    if (!share) return res.status(404).json({ error: 'File share not found or expired' });
+    db.prepare('UPDATE file_shares SET view_count = view_count + 1 WHERE id = ?').run(req.params.shareId);
     res.json({ ...share, view_count: share.view_count + 1 });
   });
 

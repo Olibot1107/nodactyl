@@ -37,19 +37,6 @@ services:
       panel:
         condition: service_healthy
     restart: unless-stopped
-
-  daemon2:
-    build: ./daemon
-    volumes:
-      - ./daemon/config2.json:/app/config.json:ro
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /srv/nodactyl2:/srv/nodactyl2
-    networks:
-      - nodactyl
-    depends_on:
-      panel:
-        condition: service_healthy
-    restart: unless-stopped
-
+    
 volumes:
   panel_data:
