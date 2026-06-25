@@ -33,7 +33,6 @@ router.get('/', (req, res) => {
     messageId: getSetting('discord_stats_message_id'),
     statsEnabled: getSetting('discord_stats_enabled') === '1',
     interval: parseInt(getSetting('discord_stats_interval')) || 60,
-    rolesGuildId: getSetting('discord_roles_guild_id') || getSetting('discord_stats_guild_id'),
   });
 });
 
