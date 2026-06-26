@@ -118,10 +118,15 @@ function buildContent() {
             <label class="form-label">Description <span class="text-muted">(optional)</span></label>
             <textarea class="form-input" id="fieldDesc" rows="2" placeholder="What is this server for?">${esc(server.description || '')}</textarea>
           </div>
-          <div class="form-group mb-0">
+          <div class="form-group mb-3">
             <label class="form-label">Startup Command <span class="text-muted">(optional)</span></label>
             <input class="form-input font-mono" id="fieldStartup" value="${esc(server.startup_command || '')}" placeholder="e.g. node server.js">
             <div class="form-hint mt-2">${UI.info} Runs as <code style="font-size:11px;background:var(--bg3);padding:1px 4px;border-radius:3px">/bin/sh -c &lt;command&gt;</code> inside the container. Leave blank to use the image default.</div>
+          </div>
+          <div class="form-group mb-0">
+            <label class="form-label">Pre-Start Script <span class="text-muted">(optional)</span></label>
+            <textarea class="form-input font-mono" id="fieldPreStart" rows="3" placeholder="e.g. apk add --no-cache curl wget\nnpm install">${esc(server.pre_start_script || '')}</textarea>
+            <div class="form-hint mt-2">${UI.info} Shell commands that run every time the container starts, before the startup command. Use this to install packages that would otherwise be lost on restart (e.g. <code style="font-size:11px;background:var(--bg3);padding:1px 4px;border-radius:3px">apk add --no-cache curl</code>).</div>
           </div>
         </div>
 
@@ -427,13 +432,15 @@ async function saveSettings() {
     ].filter(Boolean),
   };
 
-  const body = { name, description, startup_command, env_vars: getEnvVars(), secret_vars: getSecretVars(), discord_webhook: discord_webhook || null, discord_config };
+  const pre_start_script = document.getElementById('fieldPreStart').value;
+  const body = { name, description, startup_command, pre_start_script, env_vars: getEnvVars(), secret_vars: getSecretVars(), discord_webhook: discord_webhook || null, discord_config };
 
   try {
     const updated = await API.patch(`/servers/${serverId}/settings`, body);
     server.name = name;
     server.description = description;
     server.startup_command = startup_command;
+    server.pre_start_script = pre_start_script;
     server.discord_webhook = discord_webhook || null;
     server.discord_config = discord_config;
     server.secret_vars = updated.secret_vars || [];

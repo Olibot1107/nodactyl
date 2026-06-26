@@ -56,6 +56,13 @@ async function main() {
   app.use(helmet({ contentSecurityPolicy: false })); // CSP disabled — panel uses inline scripts; enable & configure once ready
   app.use(express.json({ limit: '99mb' }));
   app.use(cookieParser());
+  app.get('/robots.txt', (req, res) => {
+    const { db } = require('./db');
+    const value = db.prepare("SELECT value FROM settings WHERE key = 'robots_txt'").get()?.value ?? 'User-agent: *\nDisallow: /';
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(value);
+  });
+
   app.use(express.static(path.join(__dirname, '..', 'public')));
 
   app.use('/api/auth', authRoutes);
@@ -227,6 +234,15 @@ async function main() {
         nodeId = node.id;
 
         db.prepare(`UPDATE nodes SET status = 'online', last_seen = strftime('%s','now') WHERE id = ?`).run(nodeId);
+        // Reset any servers that the panel thinks are running — the daemon will re-report
+        // which ones are actually running after auth, so anything not re-reported is truly stopped/crashed.
+        const staleRunning = db.prepare(`SELECT id, owner_id FROM servers WHERE node_id = ? AND status = 'running'`).all(nodeId);
+        if (staleRunning.length) {
+          db.prepare(`UPDATE servers SET status = 'stopped', started_at = NULL, terminal_mode = 0 WHERE node_id = ? AND status = 'running'`).run(nodeId);
+          for (const s of staleRunning) {
+            io.to(`user:${s.owner_id}`).to('admins').emit('server-status', { serverId: s.id, status: 'stopped' });
+          }
+        }
         nodeManager.register(nodeId, node, ws);
         io.emit('node-status', { nodeId, status: 'online' });
 

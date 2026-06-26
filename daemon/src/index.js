@@ -150,6 +150,43 @@ function envWithPythonPath(serverId, envVars) {
 }
 
 
+// ── Sync container states after (re)connect ───────────────────────────────────
+// The panel resets all "running" servers to "stopped" on daemon auth. This function
+// re-reports the ones that are actually still running so the panel reflects reality.
+async function syncContainerStates() {
+  try {
+    const list = await new Promise((resolve, reject) =>
+      docker.docker.listContainers({
+        all: true,
+        filters: JSON.stringify({ label: [`nodactyl.managed=true`, `nodactyl.node-id=${ownNodeId}`] }),
+      }, (err, c) => err ? reject(err) : resolve(c || []))
+    );
+
+    const normalExits = new Set([0, 130, 137, 143]);
+
+    for (const c of list) {
+      const serverId = c.Labels?.['nodactyl.server-id'];
+      if (!serverId) continue;
+
+      let status;
+      if (c.State === 'running') {
+        status = 'running';
+        activeContainers.set(serverId, c.Id);
+      } else {
+        const exitMatch = c.Status?.match(/Exited \((\d+)\)/);
+        const exitCode = exitMatch ? Number(exitMatch[1]) : null;
+        status = exitCode !== null && !normalExits.has(exitCode) ? 'error' : 'stopped';
+      }
+
+      send({ type: 'server-status', serverId, status, containerId: c.Id });
+    }
+
+    console.log(`[daemon] Synced ${list.length} container state(s) to panel`);
+  } catch (err) {
+    console.error('[daemon] Container state sync failed:', err.message);
+  }
+}
+
 // ── Message handlers ──────────────────────────────────────────────────────────
 async function handleMessage(msg) {
   switch (msg.type) {
@@ -157,6 +194,7 @@ async function handleMessage(msg) {
       if (msg.success) {
         ownNodeId = msg.nodeId;
         console.log(`[daemon] Authenticated as node "${msg.name}" (${ownNodeId})`);
+        syncContainerStates();
       } else { console.error('[daemon] Auth failed:', msg.error); process.exit(1); }
       break;
     }
@@ -250,7 +288,7 @@ async function handleMessage(msg) {
     }
 
     case 'server-action': {
-      const { requestId, serverId, containerId, action, startupCommand, serverConfig } = msg;
+      const { requestId, serverId, containerId, action, startupCommand, preStartScript, serverConfig } = msg;
       try {
         let activeContainerId = containerId;
 
@@ -266,6 +304,10 @@ async function handleMessage(msg) {
           try { await docker.containerAction(activeContainerId, 'stop'); } catch {}
           try { await docker.containerAction(activeContainerId, 'remove'); } catch {}
 
+          const pre = (preStartScript || '').trim();
+          const cmd = (startupCommand || '').trim();
+          const effectiveCmd = pre && cmd ? `${pre} && exec ${cmd}` : pre || cmd;
+
           const newContainer = await docker.createContainer({
             serverId,
             nodeId: ownNodeId,
@@ -275,7 +317,7 @@ async function handleMessage(msg) {
             memoryLimit: serverConfig.memoryLimit || 512,
             cpuLimit: serverConfig.cpuLimit || 1.0,
             binds,
-            startupCommand: startupCommand || '',
+            startupCommand: effectiveCmd,
           });
           activeContainerId = newContainer.id;
           activeContainers.set(serverId, activeContainerId);

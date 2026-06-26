@@ -73,6 +73,11 @@
         <div class="form-hint">Runs once inside the container at first deploy, before the server starts. Use this to download files, install dependencies, etc.</div>
       </div>
       <div class="form-group">
+        <label class="form-label">Pre-Start Script <span class="text-muted">(optional)</span></label>
+        <textarea class="form-input font-mono" id="p_prestart" rows="3" placeholder="apk add --no-cache curl wget"></textarea>
+        <div class="form-hint">Runs every time the server starts, before the startup command. Use this to install packages or run setup steps that don't persist across restarts.</div>
+      </div>
+      <div class="form-group">
         <label class="form-label">Startup Command</label>
         <input type="text" class="form-input font-mono" id="p_startup" placeholder="java -jar server.jar --nogui">
         <div class="form-hint">Runs inside <code>/home/container</code>. Leave blank to use the image's default CMD.</div>
@@ -167,6 +172,7 @@ function populateRankDropdown(selectedId = '') {
 function clearModal() {
   ['p_name','p_image','p_desc','p_startup'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('p_install').value = '';
+  document.getElementById('p_prestart').value = '';
   document.getElementById('p_memory').value = 512;
   document.getElementById('p_cpu').value = 1;
   document.getElementById('p_disk').value = 0;
@@ -200,6 +206,7 @@ function openEdit(id) {
   (p.env_vars || []).forEach(ev => addEnv(ev.key, ev.value));
   (p.images || []).forEach(img => addImage(img.label, img.image));
   document.getElementById('p_install').value = p.install_script || '';
+  document.getElementById('p_prestart').value = p.pre_start_script || '';
   document.getElementById('p_startup').value = p.startup_command || '';
   populateRankDropdown(p.required_rank_id || '');
   document.getElementById('modalTitle').textContent = 'Edit Preset';
@@ -269,6 +276,7 @@ async function savePreset() {
     env_vars: getEnvVars(),
     images: getImages(),
     install_script: document.getElementById('p_install').value.trim(),
+    pre_start_script: document.getElementById('p_prestart').value.trim(),
     startup_command: document.getElementById('p_startup').value.trim(),
     required_rank_id: document.getElementById('p_rank').value || null,
   };

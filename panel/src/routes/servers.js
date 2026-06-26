@@ -264,8 +264,9 @@ router.post('/from-preset', async (req, res) => {
   const env_vars = JSON.parse(preset.env_vars);
 
   const installScript = preset.install_script || '';
-  db.prepare(`INSERT INTO servers (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
-    .run(id, name, preset.description, finalImage, finalNodeId, req.user.id, JSON.stringify(port_mappings), preset.env_vars, memoryLimit, preset.cpu_limit, diskLimit, preset.startup_command || '', installScript);
+  const preStartScript = preset.pre_start_script || '';
+  db.prepare(`INSERT INTO servers (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, pre_start_script, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
+    .run(id, name, preset.description, finalImage, finalNodeId, req.user.id, JSON.stringify(port_mappings), preset.env_vars, memoryLimit, preset.cpu_limit, diskLimit, preset.startup_command || '', installScript, preStartScript);
 
   nodeManager.send(finalNodeId, {
     type: 'install-server',
@@ -320,9 +321,10 @@ router.post('/from-template', async (req, res) => {
   const env_vars = JSON.parse(template.env_vars || '[]');
   const files = JSON.parse(template.files || '[]');
   const installScript = template.install_script || '';
+  const preStartScript = template.pre_start_script || '';
 
-  db.prepare(`INSERT INTO servers (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
-    .run(id, name, template.description, template.image, finalNodeId, req.user.id, JSON.stringify(port_mappings), template.env_vars, memoryLimit, template.cpu_limit, diskLimit, template.startup_command || '', installScript);
+  db.prepare(`INSERT INTO servers (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, pre_start_script, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
+    .run(id, name, template.description, template.image, finalNodeId, req.user.id, JSON.stringify(port_mappings), template.env_vars, memoryLimit, template.cpu_limit, diskLimit, template.startup_command || '', installScript, preStartScript);
 
   nodeManager.send(finalNodeId, {
     type: 'install-server',
@@ -417,6 +419,7 @@ router.post('/:id/action', async (req, res) => {
   if (action === 'start') {
     const terminalMode = req.body.terminalMode === true;
     msg.startupCommand = terminalMode ? 'sh' : (server.startup_command || '');
+    msg.preStartScript = server.pre_start_script || '';
     db.prepare('UPDATE servers SET terminal_mode = ? WHERE id = ?').run(terminalMode ? 1 : 0, server.id);
     const envVars = JSON.parse(server.env_vars);
     const secretVars = JSON.parse(server.secret_vars || '[]');
@@ -726,12 +729,13 @@ router.patch('/:id/settings', async (req, res) => {
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'settings')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr2 = suspendedBlock(server, req.user); if (suspErr2) return res.status(suspErr2.status).json({ error: suspErr2.error });
-  const { name, description, startup_command, disk_limit, memory_limit, cpu_limit, discord_webhook, discord_config, env_vars, secret_vars } = req.body;
+  const { name, description, startup_command, pre_start_script, disk_limit, memory_limit, cpu_limit, discord_webhook, discord_config, env_vars, secret_vars } = req.body;
   const updates = [];
   const values = [];
   if (name !== undefined) { updates.push('name = ?'); values.push(name.trim() || server.name); }
   if (description !== undefined) { updates.push('description = ?'); values.push(description); }
   if (startup_command !== undefined) { updates.push('startup_command = ?'); values.push(startup_command); }
+  if (pre_start_script !== undefined) { updates.push('pre_start_script = ?'); values.push(String(pre_start_script || '')); }
   if (disk_limit !== undefined && req.user.role === 'admin') { updates.push('disk_limit = ?'); values.push(Math.max(0, parseInt(disk_limit) || 0)); }
   if (memory_limit !== undefined && req.user.role === 'admin') { updates.push('memory_limit = ?'); values.push(Math.max(64, parseInt(memory_limit) || 512)); }
   if (cpu_limit !== undefined && req.user.role === 'admin') { updates.push('cpu_limit = ?'); values.push(Math.max(0.1, parseFloat(cpu_limit) || 1)); }

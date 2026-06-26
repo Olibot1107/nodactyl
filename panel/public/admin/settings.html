@@ -102,6 +102,22 @@ async function init() {
           </div>
         </div>
 
+        <div class="card" style="max-width:520px;margin-bottom:16px">
+          <div class="card-title" style="margin-bottom:6px">robots.txt</div>
+          <div class="form-hint mb-3">Controls which pages search engines are allowed to crawl. Click a preset to fill the editor.</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+            <button class="btn btn-ghost btn-sm" onclick="applyRobotsTemplate('block-all')">Block all</button>
+            <button class="btn btn-ghost btn-sm" onclick="applyRobotsTemplate('allow-all')">Allow all</button>
+            <button class="btn btn-ghost btn-sm" onclick="applyRobotsTemplate('google-only')">Google only</button>
+            <button class="btn btn-ghost btn-sm" onclick="applyRobotsTemplate('google-bing')">Google + Bing</button>
+          </div>
+          <textarea class="form-input font-mono" id="robots_txt" rows="6" style="resize:vertical" placeholder="User-agent: *&#10;Disallow: /"></textarea>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <button class="btn btn-primary" id="saveRobotsBtn" onclick="saveRobots()">Save robots.txt</button>
+            <a href="/robots.txt" target="_blank" class="btn btn-ghost" style="font-size:12px">Preview</a>
+          </div>
+        </div>
+
         <div class="card" style="max-width:520px">
           <div class="card-title mb-3">Quick links</div>
           <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
@@ -124,6 +140,7 @@ async function loadSettings() {
     const s = await API.get('/settings');
     if (s.panel_name) document.getElementById('panel_name').value = s.panel_name;
     if (s.panel_logo) document.getElementById('panel_logo').value = s.panel_logo;
+    document.getElementById('robots_txt').value = s.robots_txt ?? 'User-agent: *\nDisallow: /';
     updatePreview();
   } catch (e) { showErr(e.message); }
 }
@@ -225,6 +242,33 @@ async function saveSettings() {
     showErr(e.message);
   } finally {
     btn.innerHTML = 'Save Changes';
+    btn.disabled = false;
+  }
+}
+
+const ROBOTS_TEMPLATES = {
+  'block-all':   'User-agent: *\nDisallow: /',
+  'allow-all':   'User-agent: *\nDisallow:',
+  'google-only': 'User-agent: Googlebot\nDisallow:\n\nUser-agent: *\nDisallow: /',
+  'google-bing': 'User-agent: Googlebot\nDisallow:\n\nUser-agent: Bingbot\nDisallow:\n\nUser-agent: *\nDisallow: /',
+};
+
+function applyRobotsTemplate(name) {
+  const tpl = ROBOTS_TEMPLATES[name];
+  if (tpl) document.getElementById('robots_txt').value = tpl;
+}
+
+async function saveRobots() {
+  const btn = document.getElementById('saveRobotsBtn');
+  btn.innerHTML = '<span class="spinner"></span> Saving...';
+  btn.disabled = true;
+  try {
+    await API.patch('/settings', { robots_txt: document.getElementById('robots_txt').value });
+    showOk('robots.txt saved.');
+  } catch (e) {
+    showErr(e.message);
+  } finally {
+    btn.innerHTML = 'Save robots.txt';
     btn.disabled = false;
   }
 }

@@ -75,6 +75,11 @@
         <div class="form-hint">Runs once inside the container at first deploy, before the server starts.</div>
       </div>
       <div class="form-group">
+        <label class="form-label">Pre-Start Script <span class="text-muted">(optional)</span></label>
+        <textarea class="form-input font-mono" id="t_prestart" rows="3" placeholder="apk add --no-cache curl wget"></textarea>
+        <div class="form-hint">Runs every time the server starts, before the startup command. Use this to install packages or run setup steps that don't persist across restarts.</div>
+      </div>
+      <div class="form-group">
         <label class="form-label">Startup Command</label>
         <input type="text" class="form-input font-mono" id="t_startup" placeholder="node server.js">
         <div class="form-hint">Runs inside <code>/home/container</code>. Leave blank to use the image's default CMD.</div>
@@ -182,6 +187,7 @@ function populateRankDropdown(selectedId = '') {
 function clearModal() {
   ['t_name','t_image','t_desc','t_startup'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('t_install').value = '';
+  document.getElementById('t_prestart').value = '';
   document.getElementById('t_memory').value = 512;
   document.getElementById('t_cpu').value = 1;
   document.getElementById('t_disk').value = 0;
@@ -214,6 +220,7 @@ function openEdit(id) {
   document.getElementById('t_disk').value = t.disk_limit || 0;
   (t.env_vars || []).forEach(ev => addEnv(ev.key, ev.value));
   document.getElementById('t_install').value = t.install_script || '';
+  document.getElementById('t_prestart').value = t.pre_start_script || '';
   document.getElementById('t_startup').value = t.startup_command || '';
   populateRankDropdown(t.required_rank_id || '');
   (t.files || []).forEach(f => addFile(f.path, f.content));
@@ -295,6 +302,7 @@ async function saveTemplate() {
     disk_limit: parseInt(document.getElementById('t_disk').value) || 0,
     env_vars: getEnvVars(),
     install_script: document.getElementById('t_install').value.trim(),
+    pre_start_script: document.getElementById('t_prestart').value.trim(),
     startup_command: document.getElementById('t_startup').value.trim(),
     required_rank_id: document.getElementById('t_rank').value || null,
     files: getFiles(),
