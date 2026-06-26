@@ -7,6 +7,9 @@ const { db } = require('../db');
 const { JWT_SECRET, requireAuth } = require('../middleware/auth');
 const nodeManager = require('../nodeManager');
 const { audit } = require('../audit');
+const log = require('../log');
+
+function ip(req) { return req.ip || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || '?'; }
 
 const router = express.Router();
 
@@ -42,6 +45,7 @@ function userWithRank(user) {
     avatar: user.avatar || null,
     rank: rank || null,
     totp_enabled: user.totp_enabled === 1,
+    has_password: !!user.password && user.password !== '$oauth$',
   };
 }
 
@@ -63,7 +67,7 @@ router.post('/register', registerLimiter, (req, res) => {
   const id = uuidv4();
   const defaultRank = db.prepare('SELECT id FROM ranks WHERE sort_order = 0 LIMIT 1').get();
   db.prepare('INSERT INTO users (id, username, email, password, role, rank_id) VALUES (?, ?, ?, ?, ?, ?)').run(id, username, email, hashed, 'user', defaultRank?.id || null);
-
+  log.ok('auth', `New user registered: "${username}" <${email}> from ${ip(req)}`);
   res.status(201).json({ ok: true });
 });
 
@@ -73,9 +77,11 @@ router.post('/login', loginLimiter, (req, res) => {
 
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || !bcrypt.compareSync(password, user.password)) {
+    log.warn('auth', `Failed login for "${username}" from ${ip(req)}`);
     return res.status(401).json({ error: 'Invalid credentials' });
   }
   if (user.suspended) {
+    log.warn('auth', `Login blocked — suspended user "${username}" from ${ip(req)}`);
     return res.status(403).json({ error: 'Your account has been suspended. Contact an administrator.' });
   }
 
@@ -93,6 +99,7 @@ router.post('/login', loginLimiter, (req, res) => {
 
   res.cookie('token', token, cookieOpts());
   if (user.role !== 'admin') audit(user.id, null, 'auth.login', {}, req);
+  log.ok('auth', `"${user.username}" logged in (${user.role}) from ${ip(req)}`);
   res.json({ token, user: userWithRank(user) });
 });
 
@@ -135,8 +142,11 @@ router.patch('/me', requireAuth, (req, res) => {
   }
 
   if (new_password !== undefined) {
-    if (!current_password) return res.status(400).json({ error: 'Current password is required' });
-    if (!bcrypt.compareSync(current_password, user.password)) return res.status(400).json({ error: 'Current password is incorrect' });
+    const isOauthOnly = !user.password || user.password === '$oauth$';
+    if (!isOauthOnly) {
+      if (!current_password) return res.status(400).json({ error: 'Current password is required' });
+      if (!bcrypt.compareSync(current_password, user.password)) return res.status(400).json({ error: 'Current password is incorrect' });
+    }
     if (String(new_password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
     updates.push('password = ?'); values.push(bcrypt.hashSync(new_password, 10));
     passwordChanged = true;
@@ -174,12 +184,15 @@ router.get('/me', requireAuth, (req, res) => {
 
 router.delete('/me', requireAuth, async (req, res) => {
   const { password } = req.body;
-  if (!password) return res.status(400).json({ error: 'Password is required to delete your account' });
-
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(404).json({ error: 'Not found' });
-  if (!bcrypt.compareSync(password, user.password)) return res.status(400).json({ error: 'Incorrect password' });
   if (user.role === 'admin') return res.status(400).json({ error: 'Admin accounts cannot be self-deleted. Ask another admin to remove your account.' });
+
+  const isOauthOnly = !user.password || user.password === '$oauth$';
+  if (!isOauthOnly) {
+    if (!password) return res.status(400).json({ error: 'Password is required to delete your account' });
+    if (!bcrypt.compareSync(password, user.password)) return res.status(400).json({ error: 'Incorrect password' });
+  }
 
   const servers = db.prepare('SELECT * FROM servers WHERE owner_id = ?').all(req.user.id);
   await Promise.all(servers.map(s => {

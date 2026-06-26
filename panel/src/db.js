@@ -180,6 +180,9 @@ async function init() {
   try { _db.exec(`ALTER TABLE presets ADD COLUMN pre_start_script TEXT DEFAULT ''`); } catch {}
   try { _db.exec(`ALTER TABLE templates ADD COLUMN pre_start_script TEXT DEFAULT ''`); } catch {}
   try { _db.exec(`CREATE TABLE IF NOT EXISTS file_shares (id TEXT PRIMARY KEY, server_id TEXT NOT NULL, label TEXT, file_path TEXT, content TEXT NOT NULL, language TEXT, view_count INTEGER NOT NULL DEFAULT 0, created_at INTEGER DEFAULT (strftime('%s','now')), expires_at INTEGER NOT NULL)`); } catch {}
+  try { _db.exec(`CREATE TABLE IF NOT EXISTS api_keys (id TEXT PRIMARY KEY, key TEXT UNIQUE NOT NULL, name TEXT NOT NULL, user_id TEXT NOT NULL, last_used_at INTEGER DEFAULT NULL, created_at INTEGER DEFAULT (strftime('%s','now')))`); } catch {}
+  try { _db.exec(`ALTER TABLE audit_logs ADD COLUMN api_key_id TEXT DEFAULT NULL`); } catch {}
+  try { _db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_api_key ON audit_logs(api_key_id)`); } catch {}
 
   // Seed default ranks
   const rankCount = prepare('SELECT COUNT(*) as count FROM ranks').get();
@@ -202,6 +205,9 @@ async function init() {
     panel_name: 'Nodactyl',
     panel_logo: 'N',
     robots_txt: 'User-agent: *\nDisallow: /',
+    api_rate_limit_enabled: '1',
+    api_rate_limit_per_min: '60',
+    api_rate_limit_per_hour: '1000',
   };
   for (const [key, value] of Object.entries(defaultSettings)) {
     const existing = prepare('SELECT key FROM settings WHERE key = ?').get(key);

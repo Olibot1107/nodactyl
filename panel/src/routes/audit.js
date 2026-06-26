@@ -23,12 +23,14 @@ router.get('/', (req, res) => {
   const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
   const logs = db.prepare(`
-    SELECT al.id, al.user_id, al.server_id, al.action, al.metadata, al.ip, al.created_at,
+    SELECT al.id, al.user_id, al.server_id, al.action, al.metadata, al.ip, al.created_at, al.api_key_id,
            u.username, u.avatar,
-           s.name as server_name
+           s.name as server_name,
+           ak.name as api_key_name
     FROM audit_logs al
     LEFT JOIN users u ON al.user_id = u.id
     LEFT JOIN servers s ON al.server_id = s.id
+    LEFT JOIN api_keys ak ON al.api_key_id = ak.id
     ${whereClause}
     ORDER BY al.created_at DESC
     LIMIT ? OFFSET ?

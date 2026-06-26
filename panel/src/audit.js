@@ -12,12 +12,12 @@ function resolveIp(ipOrReq) {
     || null;
 }
 
-function audit(userId, serverId, action, metadata = {}, ipOrReq = null) {
+function audit(userId, serverId, action, metadata = {}, ipOrReq = null, apiKeyId = null) {
   if (!userId) return;
   const ip = resolveIp(ipOrReq) || null;
   try {
-    db.prepare('INSERT INTO audit_logs (user_id, server_id, action, metadata, ip) VALUES (?, ?, ?, ?, ?)')
-      .run(userId, serverId || null, action, JSON.stringify(metadata), ip);
+    db.prepare('INSERT INTO audit_logs (user_id, server_id, action, metadata, ip, api_key_id) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(userId, serverId || null, action, JSON.stringify(metadata), ip, apiKeyId || null);
   } catch {}
 }
 

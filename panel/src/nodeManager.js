@@ -1,4 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
+const log = require('./log');
 
 async function sendDiscordWebhook(serverId, status) {
   try {
@@ -145,6 +146,8 @@ class NodeManager {
         // Guard: only accept status updates for servers that belong to this node
         const server = db.prepare('SELECT node_id, owner_id, name FROM servers WHERE id = ?').get(msg.serverId);
         if (!server || server.node_id !== nodeId) break;
+
+        log.info('server', `"${server.name}" (${msg.serverId.slice(0, 8)}) → ${msg.status}`);
 
         if (msg.status === 'running') {
           // Update container_id first so subscribe-logs (triggered by the Socket.IO emit below)

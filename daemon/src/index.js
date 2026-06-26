@@ -214,6 +214,9 @@ async function handleMessage(msg) {
       }
 
       try {
+        // Reinstall: wipe any previous saved state so we start fresh from the base image.
+        await docker.removeSavedImage(serverId);
+
         await docker.pullImage(image);
         console.log(`[server:${serverId.slice(0, 8)}] Image pulled`);
 
@@ -256,9 +259,9 @@ async function handleMessage(msg) {
 
           await installContainer.start();
           const { StatusCode: exitCode } = await installContainer.wait();
-          try { await installContainer.remove({ force: true }); } catch {}
 
           if (exitCode !== 0) {
+            try { await installContainer.remove({ force: true }); } catch {}
             send({ type: 'log', serverId, line: `\r\n\x1b[31m[Nodactyl] Install script failed (exit ${exitCode}).\x1b[0m\r\n` });
             console.error(`[server:${serverId.slice(0, 8)}] Install script failed (exit ${exitCode})`);
             respond(requestId, {}, new Error(`Install script failed (exit ${exitCode})`));
@@ -266,12 +269,26 @@ async function handleMessage(msg) {
             break;
           }
 
+          // Commit the install container before removing it so system-level changes
+          // (apt packages, /etc modifications, compiled binaries, etc.) survive into the
+          // real container. The bind-mounted /home/container is NOT included in the commit.
+          send({ type: 'log', serverId, line: '\r\n\x1b[33m[Nodactyl] Saving install state...\x1b[0m\r\n' });
+          try {
+            await docker.saveContainerState(installContainer.id, serverId);
+            console.log(`[server:${serverId.slice(0, 8)}] Install state saved`);
+          } catch (err) {
+            console.warn(`[server:${serverId.slice(0, 8)}] Install state commit failed:`, err.message);
+          }
+          try { await installContainer.remove({ force: true }); } catch {}
+
           send({ type: 'log', serverId, line: '\r\n\x1b[32m[Nodactyl] Install complete. Setting up server container...\x1b[0m\r\n' });
           console.log(`[server:${serverId.slice(0, 8)}] Install script done ✓`);
         }
 
+        // Use the committed install state if available, otherwise fall back to the base image.
+        const installImage = await docker.getSavedImage(serverId) || image;
         const container = await docker.createContainer({
-          serverId, nodeId: ownNodeId, image, portMappings,
+          serverId, nodeId: ownNodeId, image: installImage, portMappings,
           envVars: envWithPythonPath(serverId, envVars),
           memoryLimit, cpuLimit, binds,
           startupCommand: startupCommand || '',
@@ -301,8 +318,33 @@ async function handleMessage(msg) {
             ? [`${nodePath.join(hostDataPath, serverId)}:/home/container`]
             : [];
 
+          // Check before stopping whether this container was ever actually started.
+          // A container with StartCount=0 has no runtime state to save — committing it
+          // would just duplicate the install image for no benefit.
+          let hasRunBefore = false;
+          if (activeContainerId) {
+            try {
+              const info = await docker.docker.getContainer(activeContainerId).inspect();
+              hasRunBefore = (info.State?.StartCount ?? 0) > 0;
+            } catch {}
+          }
+
           try { await docker.containerAction(activeContainerId, 'stop'); } catch {}
+
+          if (hasRunBefore) {
+            try {
+              await docker.saveContainerState(activeContainerId, serverId);
+              console.log(`[server:${serverId.slice(0, 8)}] Container state saved`);
+            } catch (err) {
+              console.warn(`[server:${serverId.slice(0, 8)}] State save failed (will use existing saved image or base image):`, err.message);
+            }
+          }
+
           try { await docker.containerAction(activeContainerId, 'remove'); } catch {}
+
+          const savedImage = await docker.getSavedImage(serverId);
+          if (savedImage) console.log(`[server:${serverId.slice(0, 8)}] Starting from saved state`);
+          const imageToUse = savedImage || serverConfig.image;
 
           const pre = (preStartScript || '').trim();
           const cmd = (startupCommand || '').trim();
@@ -311,7 +353,7 @@ async function handleMessage(msg) {
           const newContainer = await docker.createContainer({
             serverId,
             nodeId: ownNodeId,
-            image: serverConfig.image,
+            image: imageToUse,
             portMappings: serverConfig.portMappings || [],
             envVars: envWithPythonPath(serverId, serverConfig.envVars || []),
             memoryLimit: serverConfig.memoryLimit || 512,
@@ -337,6 +379,10 @@ async function handleMessage(msg) {
       // Container removal is best-effort — it may already be gone
       if (containerId) {
         try { await docker.containerAction(containerId, 'remove'); } catch {}
+      }
+      // Remove the saved state image if it exists
+      if (serverId) {
+        await docker.removeSavedImage(serverId);
       }
       // Always clean up the data dir regardless of whether the container existed
       if (dataPath && serverId) {
@@ -879,67 +925,98 @@ async function handleMessage(msg) {
 
     case 'export-server': {
       const { requestId, serverId: expServerId } = msg;
-      if (!dataPath || !expServerId) {
-        respond(requestId, { data: null, reason: 'no-datapath' });
-        break;
-      }
-      const expDir = serverDataDir(expServerId);
-      if (!fs.existsSync(expDir)) {
-        respond(requestId, { data: null, reason: 'no-data-dir' });
-        break;
-      }
-      try {
-        console.log(`[server:${expServerId.slice(0,8)}] Exporting data dir for migration...`);
-        const result = spawnSync('tar', ['-czf', '-', '-C', expDir, '.'], {
-          maxBuffer: 2 * 1024 * 1024 * 1024,
-          timeout: 300000,
-        });
-        if (result.error) { respond(requestId, {}, result.error); break; }
-        if (result.status !== 0) {
-          respond(requestId, {}, new Error((result.stderr?.toString() || 'tar export failed').trim()));
-          break;
+      let fileData = null;
+      let imageData = null;
+
+      // Export the data directory (/home/container bind mount)
+      if (dataPath && expServerId) {
+        const expDir = serverDataDir(expServerId);
+        if (fs.existsSync(expDir)) {
+          try {
+            console.log(`[server:${expServerId.slice(0,8)}] Exporting data dir...`);
+            const result = spawnSync('tar', ['-czf', '-', '-C', expDir, '.'], {
+              maxBuffer: 2 * 1024 * 1024 * 1024,
+              timeout: 300000,
+            });
+            if (result.error) { respond(requestId, {}, result.error); break; }
+            if (result.status !== 0) {
+              respond(requestId, {}, new Error((result.stderr?.toString() || 'tar export failed').trim()));
+              break;
+            }
+            fileData = result.stdout.toString('base64');
+            console.log(`[server:${expServerId.slice(0,8)}] Data dir exported (${result.stdout.length} bytes compressed)`);
+          } catch (err) {
+            respond(requestId, {}, err);
+            break;
+          }
         }
-        console.log(`[server:${expServerId.slice(0,8)}] Export complete — ${result.stdout.length} bytes (compressed)`);
-        respond(requestId, { data: result.stdout.toString('base64') });
+      }
+
+      // Export the saved Docker image so the full container filesystem is preserved
+      try {
+        imageData = await docker.exportSavedImage(expServerId);
+        if (imageData) console.log(`[server:${expServerId.slice(0,8)}] Saved container image exported`);
       } catch (err) {
-        respond(requestId, {}, err);
+        console.warn(`[server:${expServerId.slice(0,8)}] Image export failed (continuing without it):`, err.message);
+      }
+
+      if (!fileData && !imageData) {
+        respond(requestId, { data: null, reason: 'no-datapath' });
+      } else {
+        respond(requestId, { data: fileData, imageData });
       }
       break;
     }
 
     case 'import-server': {
-      const { requestId, serverId: impServerId, data } = msg;
-      if (!dataPath || !impServerId) {
-        respond(requestId, {}, new Error('No data path configured on this node'));
-        break;
-      }
-      if (!data) {
-        respond(requestId, {});
-        break;
-      }
-      const impDir = serverDataDir(impServerId);
-      fs.mkdirSync(impDir, { recursive: true });
-      try {
-        console.log(`[server:${impServerId.slice(0,8)}] Importing data dir from migration...`);
-        const buf = Buffer.from(data, 'base64');
-        const result = spawnSync('tar', ['-xzf', '-', '-C', impDir], {
-          input: buf,
-          maxBuffer: 2 * 1024 * 1024 * 1024,
-          timeout: 300000,
-        });
-        if (result.error) { respond(requestId, {}, result.error); break; }
-        if (result.status !== 0) {
-          respond(requestId, {}, new Error((result.stderr?.toString() || 'tar import failed').trim()));
+      const { requestId, serverId: impServerId, data, imageData } = msg;
+
+      // Import the data directory (/home/container bind mount)
+      if (data && dataPath && impServerId) {
+        const impDir = serverDataDir(impServerId);
+        fs.mkdirSync(impDir, { recursive: true });
+        try {
+          console.log(`[server:${impServerId.slice(0,8)}] Importing data dir...`);
+          const buf = Buffer.from(data, 'base64');
+          const result = spawnSync('tar', ['-xzf', '-', '-C', impDir], {
+            input: buf,
+            maxBuffer: 2 * 1024 * 1024 * 1024,
+            timeout: 300000,
+          });
+          if (result.error) { respond(requestId, {}, result.error); break; }
+          if (result.status !== 0) {
+            respond(requestId, {}, new Error((result.stderr?.toString() || 'tar import failed').trim()));
+            break;
+          }
+          console.log(`[server:${impServerId.slice(0,8)}] Data dir imported`);
+        } catch (err) {
+          respond(requestId, {}, err);
           break;
         }
-        console.log(`[server:${impServerId.slice(0,8)}] Import complete`);
-        respond(requestId, {});
-      } catch (err) {
-        respond(requestId, {}, err);
       }
+
+      // Import the saved Docker image so the full container filesystem is available on the new node
+      if (imageData && impServerId) {
+        try {
+          await docker.importSavedImage(impServerId, imageData);
+          console.log(`[server:${impServerId.slice(0,8)}] Saved container image imported`);
+        } catch (err) {
+          console.warn(`[server:${impServerId.slice(0,8)}] Image import failed (server will use base image on next start):`, err.message);
+        }
+      }
+
+      respond(requestId, {});
       break;
     }
 
+
+    case 'reset-saved-state': {
+      const { requestId, serverId } = msg;
+      await docker.removeSavedImage(serverId);
+      console.log(`[server:${serverId.slice(0, 8)}] Saved state cleared — next start will use base image`);
+      respond(requestId, {});
+      break;
+    }
 
     case 'ping': {
       respond(msg.requestId, { pong: true });

@@ -1,6 +1,8 @@
 const Docker = require('dockerode');
 const tarStream = require('tar-stream');
 const { posix: posixPath } = require('path');
+const zlib = require('zlib');
+const { Readable } = require('stream');
 
 const docker = new Docker(
   process.platform === 'win32'
@@ -533,4 +535,68 @@ async function renameFile(containerId, oldPath, newPath) {
   if (out.trim()) throw new Error(out.trim());
 }
 
-module.exports = { docker, pullImage, createContainer, getStats, getContainerInfo, streamLogs, execCommand, containerAction, listFiles, readFile, readFileBinary, writeFile, createDirectory, deleteFile, renameFile };
+function savedImageName(serverId) {
+  // Use full UUID to guarantee uniqueness across all servers on the same Docker host.
+  return `nodactyl-saved-${serverId}`;
+}
+
+async function exportSavedImage(serverId) {
+  const name = `${savedImageName(serverId)}:latest`;
+  try { await docker.getImage(name).inspect(); } catch { return null; }
+  const imageStream = await new Promise((resolve, reject) =>
+    docker.getImage(name).get((err, s) => err ? reject(err) : resolve(s))
+  );
+  return new Promise((resolve, reject) => {
+    const gz = zlib.createGzip({ level: 1 });
+    const chunks = [];
+    imageStream.pipe(gz);
+    gz.on('data', c => chunks.push(c));
+    gz.on('end', () => resolve(Buffer.concat(chunks).toString('base64')));
+    gz.on('error', reject);
+    imageStream.on('error', reject);
+  });
+}
+
+async function importSavedImage(serverId, base64data) {
+  // Stream decompression directly into docker.loadImage — avoids holding both the
+  // compressed and decompressed buffers in memory at the same time.
+  const gunzip = zlib.createGunzip();
+  Readable.from(Buffer.from(base64data, 'base64')).pipe(gunzip);
+  await new Promise((resolve, reject) => {
+    docker.loadImage(gunzip, {}, (err, stream) => {
+      if (err) return reject(err);
+      stream.resume();
+      stream.on('end', resolve);
+      stream.on('error', reject);
+    });
+  });
+}
+
+async function saveContainerState(containerId, serverId) {
+  const name = savedImageName(serverId);
+  try { await docker.getImage(`${name}:latest`).remove({ force: true, noprune: false }); } catch {}
+  await new Promise((resolve, reject) => {
+    docker.getContainer(containerId).commit(
+      { repo: name, tag: 'latest' },
+      (err, data) => err ? reject(err) : resolve(data)
+    );
+  });
+}
+
+async function getSavedImage(serverId) {
+  const name = `${savedImageName(serverId)}:latest`;
+  try {
+    await docker.getImage(name).inspect();
+    return name;
+  } catch {
+    return null;
+  }
+}
+
+async function removeSavedImage(serverId) {
+  try {
+    await docker.getImage(`${savedImageName(serverId)}:latest`).remove({ force: true, noprune: false });
+  } catch {}
+}
+
+module.exports = { docker, pullImage, createContainer, getStats, getContainerInfo, streamLogs, execCommand, containerAction, listFiles, readFile, readFileBinary, writeFile, createDirectory, deleteFile, renameFile, saveContainerState, getSavedImage, removeSavedImage, exportSavedImage, importSavedImage };

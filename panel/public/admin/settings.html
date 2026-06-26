@@ -7,6 +7,13 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/css/style.css">
   <style>
+    .toggle-switch { position: relative; width: 38px; height: 22px; flex-shrink: 0; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-track { position: absolute; inset: 0; background: var(--border); border-radius: 99px; cursor: pointer; transition: background .15s; }
+    .toggle-track::after { content: ''; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; }
+    .toggle-switch input:checked + .toggle-track { background: #6366f1; }
+    .toggle-switch.orange input:checked + .toggle-track { background: var(--primary); }
+    .toggle-switch input:checked + .toggle-track::after { transform: translateX(16px); }
     .upload-zone {
       border: 2px dashed var(--border);
       border-radius: 10px;
@@ -118,6 +125,36 @@ async function init() {
           </div>
         </div>
 
+        <div class="card" style="max-width:520px;margin-bottom:16px">
+          <div class="card-title" style="margin-bottom:6px">API Rate Limits</div>
+          <div class="form-hint mb-3">Controls how many requests each API key can make. Changes take effect within 30 seconds without restarting.</div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:var(--text)">Rate Limiting Enabled</div>
+              <div class="form-hint" style="margin:2px 0 0">Disable to allow unlimited requests (not recommended in production)</div>
+            </div>
+            <label class="toggle-switch orange" style="flex-shrink:0">
+              <input type="checkbox" id="api_rate_limit_enabled">
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Requests per Minute <span style="color:var(--text-muted);font-weight:400">(per API key)</span></label>
+            <input type="number" class="form-input" id="api_rate_limit_per_min" min="1" max="10000" placeholder="60">
+            <div class="form-hint">Recommended: 60. A 429 is returned when exceeded.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Requests per Hour <span style="color:var(--text-muted);font-weight:400">(per API key)</span></label>
+            <input type="number" class="form-input" id="api_rate_limit_per_hour" min="1" max="1000000" placeholder="1000">
+            <div class="form-hint">Recommended: 1000.</div>
+          </div>
+
+          <button class="btn btn-primary" id="saveRateLimitsBtn" onclick="saveRateLimits()">Save Rate Limits</button>
+        </div>
+
         <div class="card" style="max-width:520px">
           <div class="card-title mb-3">Quick links</div>
           <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
@@ -141,8 +178,32 @@ async function loadSettings() {
     if (s.panel_name) document.getElementById('panel_name').value = s.panel_name;
     if (s.panel_logo) document.getElementById('panel_logo').value = s.panel_logo;
     document.getElementById('robots_txt').value = s.robots_txt ?? 'User-agent: *\nDisallow: /';
+    document.getElementById('api_rate_limit_enabled').checked = (s.api_rate_limit_enabled ?? '1') !== '0';
+    document.getElementById('api_rate_limit_per_min').value  = s.api_rate_limit_per_min  ?? '60';
+    document.getElementById('api_rate_limit_per_hour').value = s.api_rate_limit_per_hour ?? '1000';
     updatePreview();
   } catch (e) { showErr(e.message); }
+}
+
+async function saveRateLimits() {
+  const btn = document.getElementById('saveRateLimitsBtn');
+  btn.innerHTML = '<span class="spinner"></span> Saving...';
+  btn.disabled = true;
+  try {
+    const perMin  = Math.max(1, parseInt(document.getElementById('api_rate_limit_per_min').value)  || 60);
+    const perHour = Math.max(1, parseInt(document.getElementById('api_rate_limit_per_hour').value) || 1000);
+    await API.patch('/settings', {
+      api_rate_limit_enabled: document.getElementById('api_rate_limit_enabled').checked ? '1' : '0',
+      api_rate_limit_per_min:  String(perMin),
+      api_rate_limit_per_hour: String(perHour),
+    });
+    showOk('Rate limit settings saved.');
+  } catch (e) {
+    showErr(e.message);
+  } finally {
+    btn.innerHTML = 'Save Rate Limits';
+    btn.disabled = false;
+  }
 }
 
 

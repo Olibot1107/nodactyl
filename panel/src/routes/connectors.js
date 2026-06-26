@@ -2,6 +2,8 @@ const express = require('express');
 const https = require('https');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const { v4: uuidv4 } = require('uuid');
 const { db } = require('../db');
 const { JWT_SECRET, requireAuth } = require('../middleware/auth');
 
@@ -92,6 +94,43 @@ function httpsGet(url, authHeader, extraHeaders = {}) {
   });
 }
 
+// Generate a unique username from a display name (sanitise + deduplicate)
+function generateUniqueUsername(base) {
+  let clean = String(base || 'user')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '_')
+    .replace(/_{2,}/g, '_')
+    .replace(/^[^a-z]+/, '')
+    .slice(0, 20) || 'user';
+  if (clean.length < 3) clean = clean.padEnd(3, '0');
+
+  if (!db.prepare('SELECT id FROM users WHERE username = ?').get(clean)) return clean;
+  for (let i = 2; i <= 9999; i++) {
+    const c = `${clean.slice(0, 16)}_${i}`;
+    if (!db.prepare('SELECT id FROM users WHERE username = ?').get(c)) return c;
+  }
+  return `user_${crypto.randomBytes(4).toString('hex')}`;
+}
+
+// Create a new account from OAuth identity. Password is a sentinel value ($oauth$)
+// that can never match a real bcrypt hash, so the account cannot be used for password login
+// until the user explicitly sets a password via account settings.
+function createOAuthUser({ discordId, discordUsername, githubId, githubUsername, email }) {
+  const id = uuidv4();
+  const provider = discordId ? 'discord' : 'github';
+  const displayName = discordUsername || githubUsername || 'user';
+  const username = generateUniqueUsername(displayName);
+  const userEmail = email || `${discordId || githubId}@${provider}.invalid`;
+  const defaultRank = db.prepare('SELECT id FROM ranks WHERE sort_order = 0 LIMIT 1').get();
+  db.prepare(`
+    INSERT INTO users (id, username, email, password, role, rank_id, discord_id, discord_username, github_id, github_username)
+    VALUES (?, ?, ?, '$oauth$', 'user', ?, ?, ?, ?, ?)
+  `).run(id, username, userEmail, defaultRank?.id || null,
+         discordId || null, discordUsername || null,
+         githubId  || null, githubUsername  || null);
+  return db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+}
+
 // Helper: extract JWT userId from request (cookie or Bearer header)
 function getUserIdFromReq(req) {
   const token = req.cookies?.token || req.headers.authorization?.replace('Bearer ', '');
@@ -120,9 +159,13 @@ router.get('/status', requireAuth, (req, res) => {
 
 // ── Discord ───────────────────────────────────────────────────────────────────
 router.get('/discord/authorize', (req, res) => {
-  const action = req.query.action === 'login' ? 'login' : 'link';
+  const rawAction = req.query.action;
+  const action = ['login', 'link', 'register'].includes(rawAction) ? rawAction : 'link';
   const cfg = getDiscordConfig();
-  if (!cfg.enabled || !cfg.clientId || !cfg.redirectUri) return res.redirect('/connectors?error=not_configured');
+  if (!cfg.enabled || !cfg.clientId || !cfg.redirectUri) {
+    const dest = action === 'register' ? '/register' : '/connectors';
+    return res.redirect(dest + '?error=not_configured');
+  }
 
   let userId = null;
   if (action === 'link') {
@@ -131,9 +174,11 @@ router.get('/discord/authorize', (req, res) => {
   }
 
   const state = makeState({ action, userId, provider: 'discord' });
+  // Request email scope for registration so we can pre-fill the account email.
+  const scope = action === 'register' ? 'identify email' : 'identify';
   const params = new URLSearchParams({
     client_id: cfg.clientId, redirect_uri: cfg.redirectUri,
-    response_type: 'code', scope: 'identify', state,
+    response_type: 'code', scope, state,
   });
   res.redirect(`https://discord.com/oauth2/authorize?${params}`);
 });
@@ -166,6 +211,29 @@ router.get('/discord/callback', async (req, res) => {
       if (conflict) return res.redirect('/connectors?error=already_linked_other&provider=discord');
       db.prepare('UPDATE users SET discord_id = ?, discord_username = ? WHERE id = ?').run(discordUser.id, displayName, stateData.userId);
       return res.redirect('/connectors?linked=discord');
+
+    } else if (stateData.action === 'register') {
+      // If this Discord account is already linked to a panel account, just log them in.
+      const existing = db.prepare('SELECT * FROM users WHERE discord_id = ?').get(discordUser.id);
+      if (existing) {
+        if (existing.suspended) return res.redirect('/register?oauth_error=suspended');
+        const token = jwt.sign({ id: existing.id, username: existing.username, role: existing.role }, JWT_SECRET, { expiresIn: '24h' });
+        return res.redirect('/login?oauth_token=' + encodeURIComponent(token));
+      }
+
+      if (process.env.REGISTRATION_OPEN !== 'true') return res.redirect('/register?oauth_error=registration_closed');
+
+      // Use Discord email if provided and not already taken; fall back to a placeholder.
+      const email = discordUser.email || null;
+      if (email && db.prepare('SELECT id FROM users WHERE email = ?').get(email)) {
+        return res.redirect('/register?oauth_error=email_taken');
+      }
+
+      const newUser = createOAuthUser({ discordId: discordUser.id, discordUsername: displayName, email });
+      console.log(`[connectors] New account via Discord: ${newUser.username} (${newUser.id})`);
+      const token = jwt.sign({ id: newUser.id, username: newUser.username, role: newUser.role }, JWT_SECRET, { expiresIn: '24h' });
+      return res.redirect('/login?oauth_token=' + encodeURIComponent(token));
+
     } else {
       const user = db.prepare('SELECT * FROM users WHERE discord_id = ?').get(discordUser.id);
       if (!user) return res.redirect('/login?oauth_error=no_account&provider=discord');
@@ -175,7 +243,7 @@ router.get('/discord/callback', async (req, res) => {
     }
   } catch (err) {
     console.error('[connectors] Discord OAuth error:', err.message);
-    const dest = stateData.action === 'login' ? '/login' : '/connectors';
+    const dest = stateData.action === 'register' ? '/register' : stateData.action === 'login' ? '/login' : '/connectors';
     return res.redirect(dest + '?error=' + encodeURIComponent(err.message));
   }
 });
@@ -187,9 +255,13 @@ router.delete('/discord', requireAuth, (req, res) => {
 
 // ── GitHub ────────────────────────────────────────────────────────────────────
 router.get('/github/authorize', (req, res) => {
-  const action = req.query.action === 'login' ? 'login' : 'link';
+  const rawAction = req.query.action;
+  const action = ['login', 'link', 'register'].includes(rawAction) ? rawAction : 'link';
   const cfg = getGithubConfig();
-  if (!cfg.enabled || !cfg.clientId || !cfg.redirectUri) return res.redirect('/connectors?error=not_configured');
+  if (!cfg.enabled || !cfg.clientId || !cfg.redirectUri) {
+    const dest = action === 'register' ? '/register' : '/connectors';
+    return res.redirect(dest + '?error=not_configured');
+  }
 
   let userId = null;
   if (action === 'link') {
@@ -198,9 +270,10 @@ router.get('/github/authorize', (req, res) => {
   }
 
   const state = makeState({ action, userId, provider: 'github' });
+  const scope = action === 'register' ? 'read:user user:email' : 'read:user';
   const params = new URLSearchParams({
     client_id: cfg.clientId, redirect_uri: cfg.redirectUri,
-    scope: 'read:user', state,
+    scope, state,
   });
   res.redirect(`https://github.com/login/oauth/authorize?${params}`);
 });
@@ -239,6 +312,27 @@ router.get('/github/callback', async (req, res) => {
       if (conflict) return res.redirect('/connectors?error=already_linked_other&provider=github');
       db.prepare('UPDATE users SET github_id = ?, github_username = ? WHERE id = ?').run(githubId, displayName, stateData.userId);
       return res.redirect('/connectors?linked=github');
+
+    } else if (stateData.action === 'register') {
+      const existing = db.prepare('SELECT * FROM users WHERE github_id = ?').get(githubId);
+      if (existing) {
+        if (existing.suspended) return res.redirect('/register?oauth_error=suspended');
+        const token = jwt.sign({ id: existing.id, username: existing.username, role: existing.role }, JWT_SECRET, { expiresIn: '24h' });
+        return res.redirect('/login?oauth_token=' + encodeURIComponent(token));
+      }
+
+      if (process.env.REGISTRATION_OPEN !== 'true') return res.redirect('/register?oauth_error=registration_closed');
+
+      const email = githubUser.email || null;
+      if (email && db.prepare('SELECT id FROM users WHERE email = ?').get(email)) {
+        return res.redirect('/register?oauth_error=email_taken');
+      }
+
+      const newUser = createOAuthUser({ githubId, githubUsername: displayName, email });
+      console.log(`[connectors] New account via GitHub: ${newUser.username} (${newUser.id})`);
+      const token = jwt.sign({ id: newUser.id, username: newUser.username, role: newUser.role }, JWT_SECRET, { expiresIn: '24h' });
+      return res.redirect('/login?oauth_token=' + encodeURIComponent(token));
+
     } else {
       const user = db.prepare('SELECT * FROM users WHERE github_id = ?').get(githubId);
       if (!user) return res.redirect('/login?oauth_error=no_account&provider=github');
@@ -248,7 +342,7 @@ router.get('/github/callback', async (req, res) => {
     }
   } catch (err) {
     console.error('[connectors] GitHub OAuth error:', err.message);
-    const dest = stateData.action === 'login' ? '/login' : '/connectors';
+    const dest = stateData.action === 'register' ? '/register' : stateData.action === 'login' ? '/login' : '/connectors';
     return res.redirect(dest + '?error=' + encodeURIComponent(err.message));
   }
 });

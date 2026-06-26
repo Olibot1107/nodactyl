@@ -45,17 +45,31 @@ async function main() {
   const auditRoutes = require('./routes/audit');
   const passkeyRoutes = require('./routes/passkey');
   const totpRoutes = require('./routes/totp');
+  const apikeyRoutes = require('./routes/apikeys');
+  const v1Routes = require('./routes/v1');
+  const { startCleanupJobs } = require('./cleanup');
   const app = express();
   const httpServer = http.createServer(app);
   const io = new SocketIO(httpServer);
   const PORT = process.env.PORT || 3000;
 
+  const log = require('./log');
   nodeManager.setIO(io);
+  startCleanupJobs();
 
   app.set('trust proxy', 1);
   app.use(helmet({ contentSecurityPolicy: false })); // CSP disabled — panel uses inline scripts; enable & configure once ready
   app.use(express.json({ limit: '99mb' }));
   app.use(cookieParser());
+
+  // HTTP request logger
+  app.use((req, res, next) => {
+    const fullPath = req.originalUrl.split('?')[0];
+    const start = Date.now();
+    res.on('finish', () => log.http(req.method, fullPath, res.statusCode, Date.now() - start));
+    next();
+  });
+
   app.get('/robots.txt', (req, res) => {
     const { db } = require('./db');
     const value = db.prepare("SELECT value FROM settings WHERE key = 'robots_txt'").get()?.value ?? 'User-agent: *\nDisallow: /';
@@ -77,6 +91,8 @@ async function main() {
   app.use('/api/audit', auditRoutes);
   app.use('/api/passkey', passkeyRoutes);
   app.use('/api/totp', totpRoutes);
+  app.use('/api/apikeys', apikeyRoutes);
+  app.use('/api/v1', v1Routes);
 
   app.get('/api/random-name', requireAuth, (req, res) => {
     const words = getWords();
@@ -99,6 +115,7 @@ async function main() {
   app.get('/server/:id/activity', (req, res) => res.sendFile(pub('server-activity.html')));
   app.get('/account', (req, res) => res.sendFile(pub('account.html')));
   app.get('/connectors', (req, res) => res.sendFile(pub('connectors.html')));
+  app.get('/apikeys', (req, res) => res.sendFile(pub('apikeys.html')));
   app.get('/admin/users', (req, res) => res.sendFile(pub('admin/users.html')));
   app.get('/admin/presets', (req, res) => res.sendFile(pub('admin/presets.html')));
   app.get('/admin/templates',   (req, res) => res.sendFile(pub('admin/templates.html')));
@@ -247,7 +264,8 @@ async function main() {
         io.emit('node-status', { nodeId, status: 'online' });
 
         ws.send(JSON.stringify({ type: 'auth-result', success: true, nodeId: node.id, name: node.name }));
-        console.log(`[daemon] Node "${node.name}" connected`);
+        const staleMsg = staleRunning.length ? ` — reset ${staleRunning.length} stale running server(s)` : '';
+        log.ok('daemon', `Node "${node.name}" connected${staleMsg}`);
         return;
       }
       // Authenticated messages handled by nodeManager via ws.on('message')
@@ -255,7 +273,10 @@ async function main() {
 
     ws.on('close', () => {
       clearTimeout(authTimer);
-      if (nodeId) console.log(`[daemon] Node ${nodeId} disconnected`);
+      if (nodeId) {
+        const nodeName = db.prepare('SELECT name FROM nodes WHERE id = ?').get(nodeId)?.name || nodeId;
+        log.warn('daemon', `Node "${nodeName}" disconnected`);
+      }
     });
   });
 

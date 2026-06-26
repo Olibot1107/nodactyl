@@ -5,6 +5,7 @@ const { db } = require('../db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const nodeManager = require('../nodeManager');
 const { audit } = require('../audit');
+const log = require('../log');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -131,12 +132,12 @@ function checkAccountLimits(userId, addMemoryMb, addDiskMb) {
 
 router.get('/', (req, res) => {
   const servers = req.user.role === 'admin'
-    ? db.prepare('SELECT s.*, u.username as owner_name, n.name as node_name, n.ip_address as node_ip_address FROM servers s JOIN users u ON s.owner_id = u.id JOIN nodes n ON s.node_id = n.id ORDER BY s.created_at DESC').all()
+    ? db.prepare("SELECT s.*, u.username as owner_name, n.name as node_name, n.ip_address as node_ip_address FROM servers s JOIN users u ON s.owner_id = u.id JOIN nodes n ON s.node_id = n.id WHERE s.status != 'deleting' ORDER BY s.created_at DESC").all()
     : db.prepare(`SELECT s.*, u.username as owner_name, n.name as node_name, n.ip_address as node_ip_address,
     CASE WHEN s.owner_id = ? THEN 0 ELSE 1 END as shared,
     (SELECT sm.permissions FROM server_members sm WHERE sm.server_id = s.id AND sm.user_id = ?) as member_permissions
     FROM servers s JOIN users u ON s.owner_id = u.id JOIN nodes n ON s.node_id = n.id
-    WHERE s.owner_id = ? OR s.id IN (SELECT server_id FROM server_members WHERE user_id = ?)
+    WHERE s.status != 'deleting' AND (s.owner_id = ? OR s.id IN (SELECT server_id FROM server_members WHERE user_id = ?))
     ORDER BY s.created_at DESC`).all(req.user.id, req.user.id, req.user.id, req.user.id);
 
   res.json(servers.map(s => ({
@@ -162,7 +163,7 @@ router.get('/transfers/incoming', (req, res) => {
 });
 
 router.get('/:id', (req, res) => {
-  const server = db.prepare('SELECT s.*, u.username as owner_name, n.name as node_name, n.ip_address as node_ip_address FROM servers s JOIN users u ON s.owner_id = u.id JOIN nodes n ON s.node_id = n.id WHERE s.id = ?').get(req.params.id);
+  const server = db.prepare("SELECT s.*, u.username as owner_name, n.name as node_name, n.ip_address as node_ip_address FROM servers s JOIN users u ON s.owner_id = u.id JOIN nodes n ON s.node_id = n.id WHERE s.id = ? AND s.status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
 
@@ -268,6 +269,7 @@ router.post('/from-preset', async (req, res) => {
   db.prepare(`INSERT INTO servers (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, pre_start_script, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
     .run(id, name, preset.description, finalImage, finalNodeId, req.user.id, JSON.stringify(port_mappings), preset.env_vars, memoryLimit, preset.cpu_limit, diskLimit, preset.startup_command || '', installScript, preStartScript);
 
+  log.info('server', `Installing "${name}" (${id.slice(0, 8)}) via preset "${preset.name}" on node ${finalNodeId.slice(0, 8)}`);
   nodeManager.send(finalNodeId, {
     type: 'install-server',
     serverId: id,
@@ -279,10 +281,20 @@ router.post('/from-preset', async (req, res) => {
     startupCommand: preset.startup_command || '',
     installScript,
   }).then(data => {
+    const s = db.prepare('SELECT status FROM servers WHERE id = ?').get(id);
+    if (!s) return;
+    if (s.status === 'deleting') {
+      db.prepare('DELETE FROM servers WHERE id = ?').run(id);
+      nodeManager.send(finalNodeId, { type: 'delete-server', serverId: id, containerId: data.containerId }).catch(() => {});
+      return;
+    }
     db.prepare(`UPDATE servers SET container_id = ?, status = 'stopped' WHERE id = ?`).run(data.containerId, id);
+    log.ok('server', `"${name}" (${id.slice(0, 8)}) installed — container ${data.containerId?.slice(0, 12)}`);
   }).catch(err => {
+    const s = db.prepare('SELECT status FROM servers WHERE id = ?').get(id);
+    if (!s || s.status === 'deleting') { db.prepare('DELETE FROM servers WHERE id = ?').run(id); return; }
     db.prepare(`UPDATE servers SET status = 'error' WHERE id = ?`).run(id);
-    console.error(`Failed to install server ${id}:`, err.message);
+    log.error('server', `"${name}" (${id.slice(0, 8)}) install FAILED: ${err.message}`);
   });
 
   if (req.user.role !== 'admin') audit(req.user.id, id, 'server.create', { name, preset: preset.name, image: finalImage }, req);
@@ -326,6 +338,7 @@ router.post('/from-template', async (req, res) => {
   db.prepare(`INSERT INTO servers (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, pre_start_script, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
     .run(id, name, template.description, template.image, finalNodeId, req.user.id, JSON.stringify(port_mappings), template.env_vars, memoryLimit, template.cpu_limit, diskLimit, template.startup_command || '', installScript, preStartScript);
 
+  log.info('server', `Installing "${name}" (${id.slice(0, 8)}) via template "${template.name}" on node ${finalNodeId.slice(0, 8)}`);
   nodeManager.send(finalNodeId, {
     type: 'install-server',
     serverId: id,
@@ -337,18 +350,28 @@ router.post('/from-template', async (req, res) => {
     startupCommand: template.startup_command || '',
     installScript,
   }).then(async data => {
+    const s = db.prepare('SELECT status FROM servers WHERE id = ?').get(id);
+    if (!s) return;
+    if (s.status === 'deleting') {
+      db.prepare('DELETE FROM servers WHERE id = ?').run(id);
+      nodeManager.send(finalNodeId, { type: 'delete-server', serverId: id, containerId: data.containerId }).catch(() => {});
+      return;
+    }
     db.prepare(`UPDATE servers SET container_id = ?, status = 'stopped' WHERE id = ?`).run(data.containerId, id);
+    log.ok('server', `"${name}" (${id.slice(0, 8)}) installed — container ${data.containerId?.slice(0, 12)}`);
     if (files.length > 0) {
       try {
         await nodeManager.send(finalNodeId, { type: 'write-files', serverId: id, files }, { timeout: 30000 });
-        console.log(`[template] Wrote ${files.length} file(s) to server ${id.slice(0, 8)}`);
+        log.info('server', `Wrote ${files.length} template file(s) to "${name}" (${id.slice(0, 8)})`);
       } catch (err) {
-        console.error(`[template] Failed to write template files to server ${id.slice(0, 8)}:`, err.message);
+        log.error('server', `Failed to write template files to "${name}" (${id.slice(0, 8)}): ${err.message}`);
       }
     }
   }).catch(err => {
+    const s = db.prepare('SELECT status FROM servers WHERE id = ?').get(id);
+    if (!s || s.status === 'deleting') { db.prepare('DELETE FROM servers WHERE id = ?').run(id); return; }
     db.prepare(`UPDATE servers SET status = 'error' WHERE id = ?`).run(id);
-    console.error(`Failed to install server ${id} from template:`, err.message);
+    log.error('server', `"${name}" (${id.slice(0, 8)}) install FAILED: ${err.message}`);
   });
 
   if (req.user.role !== 'admin') audit(req.user.id, id, 'server.create', { name, template: template.name, image: template.image }, req);
@@ -378,6 +401,7 @@ router.post('/', requireAdmin, async (req, res) => {
   db.prepare(`INSERT INTO servers (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
     .run(id, name, description, image, actualNodeId, targetOwner, JSON.stringify(port_mappings), JSON.stringify(env_vars), memory_limit, cpu_limit, disk_limit_val, startup_command);
 
+  log.info('server', `Installing "${name}" (${id.slice(0, 8)}) on node ${actualNodeId.slice(0, 8)} — image: ${image}`);
   nodeManager.send(actualNodeId, {
     type: 'install-server',
     serverId: id,
@@ -388,17 +412,27 @@ router.post('/', requireAdmin, async (req, res) => {
     cpuLimit: cpu_limit,
     startupCommand: req.body.startup_command || '',
   }).then(data => {
+    const s = db.prepare('SELECT status FROM servers WHERE id = ?').get(id);
+    if (!s) return;
+    if (s.status === 'deleting') {
+      db.prepare('DELETE FROM servers WHERE id = ?').run(id);
+      nodeManager.send(actualNodeId, { type: 'delete-server', serverId: id, containerId: data.containerId }).catch(() => {});
+      return;
+    }
     db.prepare(`UPDATE servers SET container_id = ?, status = 'stopped' WHERE id = ?`).run(data.containerId, id);
+    log.ok('server', `"${name}" (${id.slice(0, 8)}) installed — container ${data.containerId?.slice(0, 12)}`);
   }).catch(err => {
+    const s = db.prepare('SELECT status FROM servers WHERE id = ?').get(id);
+    if (!s || s.status === 'deleting') { db.prepare('DELETE FROM servers WHERE id = ?').run(id); return; }
     db.prepare(`UPDATE servers SET status = 'error' WHERE id = ?`).run(id);
-    console.error(`Failed to install server ${id}:`, err.message);
+    log.error('server', `"${name}" (${id.slice(0, 8)}) install FAILED: ${err.message}`);
   });
 
   res.status(202).json({ id, status: 'installing' });
 });
 
 router.post('/:id/action', async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'power')) return res.status(403).json({ error: 'Forbidden' });
   if (!nodeManager.isOnline(server.node_id)) return res.status(503).json({ error: 'Node is offline' });
@@ -436,6 +470,7 @@ router.post('/:id/action', async (req, res) => {
   res.json({ ok: true });
 
   if (req.user.role !== 'admin') audit(req.user.id, server.id, `power.${action}`, { action }, req);
+  log.info('server', `"${server.name}" — ${action} by ${req.user.username || req.user.id}`);
 
   // Background: persist new container ID if daemon recreated the container
   nodeManager.send(server.node_id, msg).then(result => {
@@ -443,12 +478,12 @@ router.post('/:id/action', async (req, res) => {
       db.prepare('UPDATE servers SET container_id = ? WHERE id = ?').run(result.containerId, server.id);
     }
   }).catch(err => {
-    console.error(`[action] ${action} failed for ${server.id}:`, err.message);
+    log.error('server', `${action} failed for "${server.name}" (${server.id.slice(0, 8)}): ${err.message}`);
   });
 });
 
 router.post('/:id/suspend', requireAdmin, async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   db.prepare('UPDATE servers SET suspended = 1 WHERE id = ?').run(req.params.id);
   // Stop the container if running so the user can't keep using it
@@ -466,13 +501,30 @@ router.post('/:id/unsuspend', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// Wipe the committed container image so the next start uses the base image.
+// Useful after changing the server's Docker image, or to recover from a bad system state.
+router.post('/:id/reset-state', async (req, res) => {
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+  if (server.status === 'running') return res.status(400).json({ error: 'Stop the server before resetting its state' });
+  if (!nodeManager.isOnline(server.node_id)) return res.status(503).json({ error: 'Node is offline' });
+  try {
+    await nodeManager.send(server.node_id, { type: 'reset-saved-state', serverId: server.id });
+    if (req.user.role !== 'admin') audit(req.user.id, server.id, 'server.reset_state', {}, req);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── File manager ─────────────────────────────────────────────────────────────
 function fileMsg(server, extra) {
   return { serverId: server.id, containerId: server.container_id, ...extra };
 }
 
 router.get('/:id/files', async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
@@ -486,7 +538,7 @@ router.get('/:id/files', async (req, res) => {
 });
 
 router.get('/:id/files/read', async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
@@ -503,7 +555,7 @@ router.get('/:id/files/read', async (req, res) => {
 });
 
 router.get('/:id/files/read-binary', async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
@@ -520,7 +572,7 @@ router.get('/:id/files/read-binary', async (req, res) => {
 });
 
 router.put('/:id/files/write', async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
@@ -537,7 +589,7 @@ router.put('/:id/files/write', async (req, res) => {
 });
 
 router.post('/:id/files/upload', express.raw({ type: '*/*', limit: '512mb' }), async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
@@ -555,7 +607,7 @@ router.post('/:id/files/upload', express.raw({ type: '*/*', limit: '512mb' }), a
 });
 
 router.post('/:id/files/mkdir', async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
@@ -572,7 +624,7 @@ router.post('/:id/files/mkdir', async (req, res) => {
 });
 
 router.delete('/:id/files', async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
@@ -589,7 +641,7 @@ router.delete('/:id/files', async (req, res) => {
 });
 
 router.post('/:id/files/git', async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
@@ -629,7 +681,7 @@ router.post('/:id/files/git', async (req, res) => {
 });
 
 router.post('/:id/files/git-pull', async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
@@ -667,7 +719,7 @@ router.post('/:id/files/git-pull', async (req, res) => {
 });
 
 router.post('/:id/files/git-reset', async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
@@ -688,7 +740,7 @@ router.post('/:id/files/git-reset', async (req, res) => {
 });
 
 router.post('/:id/files/extract', async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
@@ -708,7 +760,7 @@ router.post('/:id/files/extract', async (req, res) => {
 });
 
 router.post('/:id/files/rename', async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
@@ -725,7 +777,7 @@ router.post('/:id/files/rename', async (req, res) => {
 });
 
 router.patch('/:id/settings', async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'settings')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr2 = suspendedBlock(server, req.user); if (suspErr2) return res.status(suspErr2.status).json({ error: suspErr2.error });
@@ -783,15 +835,19 @@ router.patch('/:id/settings', async (req, res) => {
   db.prepare(`UPDATE servers SET ${updates.join(', ')} WHERE id = ?`).run(...values);
   const changedFields = updates.map(u => u.split(' = ')[0]);
   if (req.user.role !== 'admin') audit(req.user.id, server.id, 'server.settings', { changed: changedFields }, req);
-  const updated = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const updated = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   res.json({ ...updated, port_mappings: JSON.parse(updated.port_mappings), env_vars: JSON.parse(updated.env_vars), secret_vars: JSON.parse(updated.secret_vars || '[]').map(v => ({ key: v.key, value: null })), discord_config: updated.discord_config ? JSON.parse(updated.discord_config) : null });
 });
 
 router.delete('/:id', async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
   const suspErr3 = suspendedBlock(server, req.user); if (suspErr3) return res.status(suspErr3.status).json({ error: suspErr3.error });
+
+  if (req.user.role !== 'admin') audit(req.user.id, server.id, 'server.delete', { name: server.name }, req);
+  log.warn('server', `"${server.name}" (${server.id.slice(0, 8)}) deleted by ${req.user.username || req.user.id}`);
+  db.prepare("UPDATE servers SET status = 'deleting' WHERE id = ?").run(server.id);
 
   if (nodeManager.isOnline(server.node_id) && server.container_id) {
     await nodeManager.send(server.node_id, {
@@ -799,15 +855,16 @@ router.delete('/:id', async (req, res) => {
       serverId: server.id,
       containerId: server.container_id,
     }).catch(() => {});
+    db.prepare("DELETE FROM servers WHERE id = ? AND status = 'deleting'").run(server.id);
   }
+  // If container_id is null (still installing): the install callback will detect 'deleting' and clean up
+  // If node offline with a container: cleanup job retries every 8s
 
-  if (req.user.role !== 'admin') audit(req.user.id, server.id, 'server.delete', { name: server.name }, req);
-  db.prepare('DELETE FROM servers WHERE id = ?').run(server.id);
   res.json({ ok: true });
 });
 
 router.post('/:id/stdin', async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'console')) return res.status(403).json({ error: 'Forbidden' });
   if (!nodeManager.isOnline(server.node_id)) return res.status(503).json({ error: 'Node is offline' });
@@ -826,7 +883,7 @@ router.post('/:id/stdin', async (req, res) => {
 });
 
 router.post('/:id/packages', async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr = suspendedBlock(server, req.user);
@@ -870,7 +927,7 @@ router.post('/:id/packages', async (req, res) => {
 });
 
 router.get('/:id/stats', async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'console')) return res.status(403).json({ error: 'Forbidden' });
   if (!nodeManager.isOnline(server.node_id)) return res.json({ cpu: 0, memory: 0, status: 'node_offline' });
@@ -897,7 +954,7 @@ router.get('/:id/stats', async (req, res) => {
 // ── Server activity log ───────────────────────────────────────────────────────
 
 router.get('/:id/activity', (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
 
@@ -905,10 +962,12 @@ router.get('/:id/activity', (req, res) => {
   const offset = Math.max(parseInt(req.query.offset) || 0, 0);
 
   const logs = db.prepare(`
-    SELECT al.id, al.user_id, al.action, al.metadata, al.ip, al.created_at,
-           u.username, u.avatar
+    SELECT al.id, al.user_id, al.action, al.metadata, al.ip, al.created_at, al.api_key_id,
+           u.username, u.avatar,
+           ak.name as api_key_name
     FROM audit_logs al
     LEFT JOIN users u ON al.user_id = u.id
+    LEFT JOIN api_keys ak ON al.api_key_id = ak.id
     WHERE al.server_id = ?
     ORDER BY al.created_at DESC
     LIMIT ? OFFSET ?
@@ -925,7 +984,7 @@ router.get('/:id/activity', (req, res) => {
 // ── Server members ─────────────────────────────────────────────────────────
 
 router.get('/:id/members', (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
   const members = db.prepare(`SELECT sm.user_id, sm.permissions, sm.created_at, u.username, u.email, u.avatar
@@ -935,7 +994,7 @@ router.get('/:id/members', (req, res) => {
 });
 
 router.post('/:id/members', (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
   const { username, permissions } = req.body;
@@ -952,7 +1011,7 @@ router.post('/:id/members', (req, res) => {
 });
 
 router.patch('/:id/members/:userId', (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
   const validPerms = ['console', 'files', 'settings', 'power', 'sharelog', 'sharefile'];
@@ -964,7 +1023,7 @@ router.patch('/:id/members/:userId', (req, res) => {
 });
 
 router.delete('/:id/members/:userId', (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
   db.prepare('DELETE FROM server_members WHERE server_id = ? AND user_id = ?').run(req.params.id, req.params.userId);
@@ -972,7 +1031,7 @@ router.delete('/:id/members/:userId', (req, res) => {
 });
 
 router.post('/:id/leave', (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   const member = getMember(req.params.id, req.user.id);
   if (!member) return res.status(403).json({ error: 'Not a member of this server' });
@@ -984,7 +1043,7 @@ router.post('/:id/leave', (req, res) => {
 
 // Owner or admin initiates a pending transfer — target user must accept
 router.post('/:id/transfer', (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
   const { username } = req.body;
@@ -1004,7 +1063,7 @@ router.post('/:id/transfer', (req, res) => {
 
 // Owner or admin cancels a pending transfer
 router.delete('/:id/transfer', (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
   db.prepare('UPDATE servers SET transfer_to_user_id = NULL WHERE id = ?').run(req.params.id);
@@ -1013,7 +1072,7 @@ router.delete('/:id/transfer', (req, res) => {
 
 // Target user accepts the transfer
 router.post('/:id/transfer/accept', (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (server.transfer_to_user_id !== String(req.user.id)) return res.status(403).json({ error: 'No pending transfer for you on this server' });
   const me = db.prepare('SELECT rank_id FROM users WHERE id = ?').get(req.user.id);
@@ -1030,7 +1089,7 @@ router.post('/:id/transfer/accept', (req, res) => {
 
 // Target user declines the transfer
 router.post('/:id/transfer/decline', (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (server.transfer_to_user_id !== String(req.user.id) && req.user.role !== 'admin') return res.status(403).json({ error: 'No pending transfer for you on this server' });
   db.prepare('UPDATE servers SET transfer_to_user_id = NULL WHERE id = ?').run(req.params.id);
@@ -1047,7 +1106,7 @@ function canManageLogShares(server, user) {
 }
 
 router.get('/:id/log-shares', (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canManageLogShares(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
   const now = Math.floor(Date.now() / 1000);
@@ -1057,7 +1116,7 @@ router.get('/:id/log-shares', (req, res) => {
 });
 
 router.post('/:id/log-shares', (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canManageLogShares(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
   const { content, label, ttl_seconds } = req.body;
@@ -1074,7 +1133,7 @@ router.post('/:id/log-shares', (req, res) => {
 });
 
 router.delete('/:id/log-shares/:shareId', (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canManageLogShares(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
   db.prepare('DELETE FROM log_shares WHERE id = ? AND server_id = ?').run(req.params.shareId, req.params.id);
@@ -1087,7 +1146,7 @@ const FILE_SHARE_MAX_BYTES    = 512 * 1024;
 const FILE_SHARE_MAX_TTL_SECS = 7 * 24 * 3600;
 
 router.get('/:id/file-shares', (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'sharefile')) return res.status(403).json({ error: 'Forbidden' });
   const now = Math.floor(Date.now() / 1000);
@@ -1097,7 +1156,7 @@ router.get('/:id/file-shares', (req, res) => {
 });
 
 router.post('/:id/file-shares', (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'sharefile')) return res.status(403).json({ error: 'Forbidden' });
   const { content, label, file_path, language, ttl_seconds } = req.body;
@@ -1114,7 +1173,7 @@ router.post('/:id/file-shares', (req, res) => {
 });
 
 router.delete('/:id/file-shares/:shareId', (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'sharefile')) return res.status(403).json({ error: 'Forbidden' });
   db.prepare('DELETE FROM file_shares WHERE id = ? AND server_id = ?').run(req.params.shareId, req.params.id);
@@ -1124,7 +1183,7 @@ router.delete('/:id/file-shares/:shareId', (req, res) => {
 // ── Node migration (admin only) ───────────────────────────────────────────────
 
 router.post('/:id/migrate', requireAdmin, async (req, res) => {
-  const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
 
   const { node_id: targetNodeId } = req.body;
@@ -1143,23 +1202,26 @@ router.post('/:id/migrate', requireAdmin, async (req, res) => {
   if (capacityErr) return res.status(400).json({ error: capacityErr });
 
   try {
-    // 1. Export data dir from old node (null data = no dataPath configured, skip file transfer)
+    // 1. Export data dir + saved container image from old node
     const exportResult = await nodeManager.send(server.node_id, {
       type: 'export-server', serverId: server.id,
-    }, { timeout: 300000 });
-    const exportedData = exportResult?.data || null;
+    }, { timeout: 600000 });
+    const exportedData      = exportResult?.data      || null;
+    const exportedImageData = exportResult?.imageData || null;
 
-    // 2. Remove old container + data dir from old node (always call so data dir is cleaned up
-    //    even when container_id is null; daemon handles missing containers gracefully)
+    // 2. Remove old container + data dir + saved image from old node
     await nodeManager.send(server.node_id, {
       type: 'delete-server', serverId: server.id, containerId: server.container_id || null,
     }, { timeout: 30000 }).catch(() => {});
 
-    // 3. Import data dir into new node
-    if (exportedData) {
+    // 3. Import data dir + saved container image into new node
+    if (exportedData || exportedImageData) {
       await nodeManager.send(targetNodeId, {
-        type: 'import-server', serverId: server.id, data: exportedData,
-      }, { timeout: 300000 });
+        type: 'import-server',
+        serverId: server.id,
+        data: exportedData,
+        imageData: exportedImageData,
+      }, { timeout: 600000 });
     }
 
     // 4. Assign fresh port on target node and update DB
@@ -1167,7 +1229,7 @@ router.post('/:id/migrate', requireAdmin, async (req, res) => {
     db.prepare('UPDATE servers SET node_id = ?, port_mappings = ?, container_id = NULL, status = ? WHERE id = ?')
       .run(targetNodeId, JSON.stringify(port_mappings), 'stopped', server.id);
 
-    res.json({ ok: true, port_mappings, node_name: targetNode.name, files_transferred: !!exportedData });
+    res.json({ ok: true, port_mappings, node_name: targetNode.name, files_transferred: !!exportedData, image_transferred: !!exportedImageData });
   } catch (err) {
     res.status(500).json({ error: `Migration failed: ${err.message}` });
   }
