@@ -36,6 +36,21 @@
     .audit-ip   { color: var(--text-muted); font-size: 11px; white-space: nowrap; font-family: monospace; }
     .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
     .filter-bar select, .filter-bar input { height: 32px; font-size: 13px; }
+    .filter-bar input { max-width: 100%; }
+    @media (max-width: 720px) {
+      .audit-header { display: none; }
+      .audit-row {
+        grid-template-columns: 1fr auto;
+        grid-template-rows: auto auto auto;
+        row-gap: 4px;
+        column-gap: 8px;
+      }
+      .audit-row > div:nth-child(1) { grid-column: 1; grid-row: 1; }
+      .audit-row > div:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+      .audit-row > div:nth-child(3) { grid-column: 2; grid-row: 1; }
+      .audit-row > div:nth-child(4) { grid-column: 1 / -1; grid-row: 3; }
+      .audit-row > div:nth-child(5) { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -203,7 +218,7 @@ function render() {
   }
 
   wrap.innerHTML = `
-    <div style="padding:10px 16px 6px;display:grid;grid-template-columns:140px 160px 130px 1fr auto;gap:12px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">
+    <div class="audit-header" style="padding:10px 16px 6px;display:grid;grid-template-columns:140px 160px 130px 1fr auto;gap:12px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">
       <div>Time</div><div>User</div><div>Action</div><div>Details</div><div>IP</div>
     </div>
     <div class="audit-list">

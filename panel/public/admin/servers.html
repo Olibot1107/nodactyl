@@ -86,7 +86,7 @@ async function init() {
           <div class="page-sub">Every server across all users</div>
         </div>
         <div class="flex gap-2 flex-center">
-          <input type="text" class="form-input" id="searchInput" placeholder="Search by name or owner..." style="width:220px" oninput="renderTable()">
+          <input type="text" class="form-input" id="searchInput" placeholder="Search by name or owner..." style="width:220px;max-width:100%" oninput="renderTable()">
           <button class="btn btn-ghost btn-sm" onclick="loadServers()">Refresh</button>
         </div>
       </div>

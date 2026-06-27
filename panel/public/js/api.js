@@ -125,7 +125,13 @@ function renderSidebar(activePage) {
     : esc(ps.panel_logo || 'N');
 
   return `
-    <aside class="sidebar">
+    <button class="mobile-menu-btn" id="mobileMenuBtn" onclick="toggleMobileMenu()" aria-label="Open navigation">
+      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeMobileMenu()"></div>
+    <aside class="sidebar" id="appSidebar">
       <div class="sidebar-logo">
         <div class="logo-icon" style="overflow:hidden">${logoHtml}</div>
         <span class="logo-text">${esc(ps.panel_name || 'Nodactyl')}</span>
@@ -148,6 +154,21 @@ function renderSidebar(activePage) {
         </div>
       </div>
     </aside>`;
+}
+
+function toggleMobileMenu() {
+  const sidebar = document.getElementById('appSidebar');
+  const overlay = document.getElementById('sidebarOverlay');
+  if (!sidebar) return;
+  const open = sidebar.classList.toggle('open');
+  overlay?.classList.toggle('open', open);
+  document.body.style.overflow = open ? 'hidden' : '';
+}
+
+function closeMobileMenu() {
+  document.getElementById('appSidebar')?.classList.remove('open');
+  document.getElementById('sidebarOverlay')?.classList.remove('open');
+  document.body.style.overflow = '';
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -246,6 +267,8 @@ function renderServerNav(serverId, active) {
       icon: `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>` },
     { key: 'files',   label: 'Files',   href: `/server/${serverId}/files`,
       icon: `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>` },
+    { key: 'mods',    label: 'Mods',    href: `/server/${serverId}/mods`,
+      icon: `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="8.5" x2="22" y2="8.5"/><line x1="2" y1="15.5" x2="22" y2="15.5"/></svg>` },
     { key: 'packages', label: 'Packages', href: `/server/${serverId}/packages`,
       icon: `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M21 10V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l2-1.14"/><path d="M16.5 9.4l-9-5.19M12 12l-9-5.19M12 12v9"/><circle cx="18.5" cy="15.5" r="2.5"/><path d="M20.27 17.27L22 19"/></svg>` },
     { key: 'settings',label: 'Settings',href: `/server/${serverId}/settings`,

@@ -28,6 +28,30 @@
     .perm-pill:hover .perm-pill-btn { border-color: var(--primary); color: var(--primary); }
     .perm-pill input:checked ~ .perm-pill-btn,
     .perm-pill:hover input:checked + .perm-pill-btn { color: #fff; }
+
+    /* Responsive two-column layout */
+    .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+
+    /* Env / secret var rows */
+    .env-row { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+
+    @media (max-width: 720px) {
+      .settings-grid { grid-template-columns: 1fr; }
+
+      /* Env rows: hide "=" and let inputs stack side-by-side */
+      .env-row { flex-wrap: wrap; }
+      .env-row .env-eq { display: none; }
+      .env-row .env-key { flex: 1 1 calc(45% - 8px); min-width: 80px; }
+      .env-row .env-val { flex: 1 1 calc(55% - 8px); min-width: 80px; }
+
+      /* Member rows: wrap onto two lines */
+      .member-row { flex-wrap: wrap !important; row-gap: 8px !important; }
+      .member-perms { width: 100% !important; }
+      .member-actions { width: 100% !important; justify-content: flex-end; }
+
+      /* Fluid inputs inside the members card */
+      .fluid-input { width: 100% !important; }
+    }
   </style>
 </head>
 <body>
@@ -104,7 +128,7 @@ function renderTopbar() {
 function buildContent() {
   const isAdmin = getUser()?.role === 'admin';
   return `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
+    <div class="settings-grid">
 
       <!-- Left column -->
       <div>
@@ -166,8 +190,8 @@ function buildContent() {
           <div id="membersList"><div class="text-muted" style="font-size:13px">Loading...</div></div>
           <div class="mt-4" style="border-top:1px solid var(--border);padding-top:16px">
             <div class="form-label mb-2">Add member</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
-              <input class="form-input" id="addMemberUser" placeholder="username" style="width:160px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;row-gap:8px">
+              <input class="form-input fluid-input" id="addMemberUser" placeholder="username" style="width:160px">
               <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
                 <label class="perm-pill"><input type="checkbox" id="permConsole" checked><span class="perm-pill-btn">Console</span></label>
                 <label class="perm-pill"><input type="checkbox" id="permFiles"><span class="perm-pill-btn">Files</span></label>
@@ -222,7 +246,7 @@ function buildContent() {
               <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="cancelTransfer()">Cancel</button>
             </div>` : `
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <input class="form-input" id="transferUsername" placeholder="New owner username" style="width:200px">
+              <input class="form-input fluid-input" id="transferUsername" placeholder="New owner username" style="width:200px">
               <button class="btn btn-warning btn-sm" onclick="transferOwnership()">Transfer</button>
             </div>
             <div class="form-hint mt-2">${UI.info} The new owner will receive a request and must accept before ownership changes.</div>`}
@@ -274,11 +298,11 @@ let envCount = 0;
 function addEnvRow(key = '', value = '') {
   const id = ++envCount;
   const div = document.createElement('div');
-  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:6px';
+  div.className = 'env-row';
   div.innerHTML = `
-    <input type="text" class="form-input" id="ek_${id}" placeholder="KEY" value="${esc(key)}" style="flex:1;font-family:monospace">
-    <span class="text-muted">=</span>
-    <input type="text" class="form-input" id="ev_${id}" placeholder="value" value="${esc(value)}" style="flex:2">
+    <input type="text" class="form-input env-key" id="ek_${id}" placeholder="KEY" value="${esc(key)}" style="flex:1;font-family:monospace">
+    <span class="text-muted env-eq">=</span>
+    <input type="text" class="form-input env-val" id="ev_${id}" placeholder="value" value="${esc(value)}" style="flex:2">
     <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px" type="button">✕</button>`;
   document.getElementById('envList').appendChild(div);
 }
@@ -299,12 +323,12 @@ let secretCount = 0;
 function addSecretRow(key = '', existing = false) {
   const id = ++secretCount;
   const div = document.createElement('div');
-  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:6px';
+  div.className = 'env-row';
   div.dataset.secretId = id;
   div.innerHTML = `
-    <input type="text" class="form-input" id="sk_${id}" placeholder="SECRET_KEY" value="${esc(key)}" ${existing ? 'readonly style="flex:1;font-family:monospace;opacity:.7"' : 'style="flex:1;font-family:monospace"'}>
-    <span class="text-muted">=</span>
-    <input type="password" class="form-input" id="sv_${id}" placeholder="${existing ? 'leave blank to keep' : 'value'}" style="flex:2">
+    <input type="text" class="form-input env-key" id="sk_${id}" placeholder="SECRET_KEY" value="${esc(key)}" ${existing ? 'readonly style="flex:1;font-family:monospace;opacity:.7"' : 'style="flex:1;font-family:monospace"'}>
+    <span class="text-muted env-eq">=</span>
+    <input type="password" class="form-input env-val" id="sv_${id}" placeholder="${existing ? 'leave blank to keep' : 'value'}" style="flex:2">
     <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px" type="button">✕</button>`;
   document.getElementById('secretList').appendChild(div);
 }
@@ -354,18 +378,18 @@ async function loadMembers() {
     el.innerHTML = members.map(m => `
       <div class="member-row" data-uid="${m.user_id}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
         ${memberAvatarHtml(m)}
-        <div style="min-width:110px">
-          <div style="font-size:13px;font-weight:500;line-height:1.2">${esc(m.username)}</div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${esc(m.email)}</div>
+        <div style="min-width:0;flex-shrink:0;max-width:140px">
+          <div style="font-size:13px;font-weight:500;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.username)}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.email)}</div>
         </div>
-        <div style="flex:1;display:flex;gap:4px;flex-wrap:wrap">
+        <div class="member-perms" style="flex:1;display:flex;gap:4px;flex-wrap:wrap">
           ${ALL_PERMS.map(p => `
             <label class="perm-pill">
               <input type="checkbox" class="mperm-${m.user_id}" data-perm="${p}" ${m.permissions.includes(p) ? 'checked' : ''}>
               <span class="perm-pill-btn">${PERM_LABELS[p]}</span>
             </label>`).join('')}
         </div>
-        <div style="display:flex;gap:6px;flex-shrink:0">
+        <div class="member-actions" style="display:flex;gap:6px;flex-shrink:0">
           <button class="btn btn-primary btn-sm" style="font-size:11px" onclick="saveMemberPerms('${m.user_id}')">Save</button>
           <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--danger)" onclick="removeMember('${m.user_id}')">Remove</button>
         </div>

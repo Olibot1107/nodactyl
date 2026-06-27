@@ -19,6 +19,58 @@
     .file-row.selected { background:rgba(99,102,241,.12); color:var(--text); border-color:rgba(99,102,241,.25); }
     .file-row.selected:hover { background:rgba(99,102,241,.18); }
     .selection-bar { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:5px 10px; border-top:1px solid var(--border); background:rgba(99,102,241,.08); flex-shrink:0; font-size:12px; }
+
+    /* ── Mobile file manager ─────────────────────────────── */
+    .mobile-back-btn { display: none; }
+
+    @media (max-width: 720px) {
+      .mobile-back-btn { display: inline-flex !important; }
+
+      /* Replace stacked grid with slide-panel navigation */
+      .main-flex .file-shell {
+        position: relative;
+        display: block;
+        overflow: hidden;
+        height: 100%;
+      }
+      .file-sidebar {
+        position: absolute;
+        inset: 0;
+        max-height: none !important;
+        border-bottom: none !important;
+        background: var(--bg2);
+        transition: transform .25s cubic-bezier(.25,.46,.45,.94), opacity .2s;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+      }
+      .editor-pane {
+        position: absolute;
+        inset: 0;
+        min-height: 0 !important;
+        transform: translateX(100%);
+        transition: transform .25s cubic-bezier(.25,.46,.45,.94);
+        z-index: 1;
+      }
+      .file-shell.mobile-editor-open .file-sidebar {
+        transform: translateX(-25%);
+        opacity: 0;
+        pointer-events: none;
+      }
+      .file-shell.mobile-editor-open .editor-pane {
+        transform: translateX(0);
+      }
+
+      /* File toolbar: horizontal scroll instead of wrapping */
+      .file-toolbar { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding: 5px 8px; }
+      .file-toolbar::-webkit-scrollbar { display: none; }
+
+      /* Editor toolbar: tighter on mobile */
+      .editor-toolbar { flex-wrap: nowrap; padding: 8px 10px; min-height: 44px; gap: 8px; }
+
+      /* Hide Close btn — the mobile back button replaces it */
+      #closeBtn { display: none !important; }
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
   <style>
@@ -466,6 +518,7 @@ async function openImageViewer(filePath) {
     document.getElementById('imageViewer').classList.add('open');
     openFile = filePath;
     modified = false;
+    mobileOpenEditor();
     setStatusState('Ready');
   } catch (e) {
     setStatusState('Error: ' + e.message);
@@ -497,6 +550,7 @@ function openBinaryViewer(filePath, fname) {
   document.getElementById('statusLang').textContent = 'binary';
   setStatusState('Ready');
   updateStatusBar();
+  mobileOpenEditor();
 }
 
 // ── Breadcrumb: shows ~ for HOME, relative segments below ─────────────────────
@@ -593,7 +647,7 @@ function buildShell() {
         </div>
       </div>
       ${renderServerNav(serverId, 'files')}
-      <div class="file-shell">
+      <div class="file-shell" id="fileShell">
 
         <aside class="file-sidebar">
           <div class="file-sidebar-head">
@@ -634,11 +688,14 @@ function buildShell() {
 
         <main class="editor-pane">
           <div class="editor-toolbar">
-            <div class="editor-file-meta">
-              <div class="editor-filename" id="editorFilename">No file open</div>
-              <div class="editor-subline" id="editorSubline">Select a file from the explorer</div>
+            <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1">
+              <button class="btn btn-ghost btn-sm mobile-back-btn" onclick="mobileBackToFiles()" style="flex-shrink:0;white-space:nowrap">← Files</button>
+              <div class="editor-file-meta" style="min-width:0">
+                <div class="editor-filename" id="editorFilename">No file open</div>
+                <div class="editor-subline" id="editorSubline">Select a file from the explorer</div>
+              </div>
             </div>
-            <div class="flex-center gap-2">
+            <div class="flex-center gap-2" style="flex-shrink:0">
               <button class="btn btn-ghost btn-sm" id="downloadBtn" onclick="downloadOpenFile()" disabled title="Download">${UI.download}</button>
               <button class="btn btn-ghost btn-sm" id="shareFileBtn" onclick="openFileShareModal(openFile)" disabled title="Share file" style="display:none">${UI.share} Share</button>
               <button class="btn btn-ghost btn-sm" id="closeBtn" onclick="closeFile()" disabled>${UI.close} Close</button>
@@ -868,6 +925,7 @@ async function openFileForEdit(filePath) {
     monacoEditor.setScrollPosition({ scrollTop: 0 });
     // Force Monaco to recalculate its size now the div is visible
     requestAnimationFrame(() => { monacoEditor.layout(); monacoEditor.focus(); });
+    mobileOpenEditor();
 
     document.getElementById('saveBtn').disabled = true;
     document.getElementById('closeBtn').disabled = false;
@@ -905,6 +963,7 @@ async function saveFile() {
 
 function closeFile() {
   if (modified && !confirm('You have unsaved changes. Discard them?')) return;
+  mobileBackToFiles();
   openFile = null;
   modified = false;
   updateDirtyIndicator();
@@ -1569,6 +1628,18 @@ function updateDirtyIndicator() {
       if (el.dataset.filePath === openFile) el.classList.add('dirty');
     });
   }
+}
+
+// ── Mobile panel navigation ───────────────────────────────────────────────────
+function isMobile() { return window.innerWidth <= 720; }
+
+function mobileOpenEditor() {
+  if (!isMobile()) return;
+  document.getElementById('fileShell')?.classList.add('mobile-editor-open');
+}
+
+function mobileBackToFiles() {
+  document.getElementById('fileShell')?.classList.remove('mobile-editor-open');
 }
 
 // ── Multi-select ──────────────────────────────────────────────────────────────

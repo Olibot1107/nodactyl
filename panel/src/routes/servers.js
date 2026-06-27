@@ -804,6 +804,65 @@ router.post('/:id/files/rename', async (req, res) => {
   } catch (err) { sendFileError(res, err); }
 });
 
+// ── Modrinth mod/plugin install ───────────────────────────────────────────────
+function downloadFromCDN(url, redirectsLeft = 3) {
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+    const MAX = 500 * 1024 * 1024;
+    https.get(url, { timeout: 120000 }, resp => {
+      if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location && redirectsLeft > 0) {
+        resp.resume();
+        return downloadFromCDN(resp.headers.location, redirectsLeft - 1).then(resolve).catch(reject);
+      }
+      if (resp.statusCode !== 200) {
+        resp.resume();
+        return reject(new Error(`CDN returned HTTP ${resp.statusCode}`));
+      }
+      const chunks = [];
+      let size = 0;
+      resp.on('data', chunk => {
+        size += chunk.length;
+        if (size > MAX) { resp.destroy(); return reject(new Error('File too large (max 500 MB)')); }
+        chunks.push(chunk);
+      });
+      resp.on('end',   () => resolve(Buffer.concat(chunks)));
+      resp.on('error', reject);
+    }).on('error', reject).on('timeout', () => reject(new Error('Download timed out')));
+  });
+}
+
+router.post('/:id/mods/install', async (req, res) => {
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
+  const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
+  const accessError = fileAccessError(server);
+  if (accessError) return res.status(accessError.status).json({ error: accessError.error });
+
+  const { url, filename, installPath } = req.body;
+
+  if (!url || !url.startsWith('https://cdn.modrinth.com/')) {
+    return res.status(400).json({ error: 'Only Modrinth CDN URLs are allowed' });
+  }
+  const safeFilename = String(filename || '').replace(/[/\\]/g, '').replace(/\.{2,}/g, '.');
+  if (!safeFilename || safeFilename.length > 200) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+  if (!installPath || typeof installPath !== 'string' || !installPath.startsWith('/') || installPath.includes('..')) {
+    return res.status(400).json({ error: 'Invalid install path' });
+  }
+
+  try {
+    const buf = await downloadFromCDN(url);
+    const content = buf.toString('base64');
+    const filePath = installPath.replace(/\/+$/, '') + '/' + safeFilename;
+    await nodeManager.send(server.node_id,
+      fileMsg(server, { type: 'write-file', path: filePath, content, encoding: 'base64' }));
+    audit(req.user.id, server.id, 'file.upload', { path: filePath, via: 'modrinth' }, req);
+    res.json({ ok: true, path: filePath });
+  } catch (err) { sendFileError(res, err); }
+});
+
 router.patch('/:id/settings', async (req, res) => {
   const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });

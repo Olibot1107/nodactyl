@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nodactyl — Mods</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .mod-filter-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .mod-pills { display: flex; gap: 5px; flex-wrap: wrap; }
+    .mod-pill {
+      padding: 4px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border2);
+      background: var(--bg2);
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all .15s;
+      white-space: nowrap;
+    }
+    .mod-pill:hover { border-color: var(--primary); color: var(--primary); }
+    .mod-pill.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+    .mod-tabs {
+      display: flex;
+      gap: 2px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .mod-tab {
+      padding: 8px 16px;
+      border: none;
+      background: none;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: all .15s;
+    }
+    .mod-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .mod-tab:hover:not(.active) { color: var(--text); }
+
+    .mod-grid { display: flex; flex-direction: column; gap: 6px; }
+    .mod-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 14px 16px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      transition: border-color .15s, background .15s;
+    }
+    .mod-card:hover { border-color: var(--border2); background: var(--bg3); }
+
+    .mod-icon {
+      width: 52px; height: 52px;
+      border-radius: 8px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: var(--bg3);
+    }
+    .mod-icon-ph {
+      width: 52px; height: 52px;
+      border-radius: 8px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-dim);
+      letter-spacing: -1px;
+    }
+
+    .mod-body { flex: 1; min-width: 0; }
+    .mod-name {
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mod-desc {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      margin-top: 3px;
+      line-height: 1.45;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .mod-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    .mod-author { font-size: 11.5px; color: var(--text-dim); }
+    .mod-dl { font-size: 11.5px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; }
+    .mod-cats { display: flex; gap: 4px; flex-wrap: wrap; }
+    .mod-cat {
+      font-size: 10.5px;
+      padding: 1px 7px;
+      border-radius: 10px;
+      background: var(--bg3);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+    .mod-action { flex-shrink: 0; align-self: center; }
+
+    .installed-section { margin-bottom: 20px; }
+    .installed-dir-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      font-family: monospace;
+    }
+    .installed-file {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 4px;
+    }
+    .installed-file-name {
+      font-size: 13px;
+      font-weight: 500;
+      font-family: monospace;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .installed-file-size { font-size: 11.5px; color: var(--text-dim); flex-shrink: 0; }
+
+    .version-list {
+      max-height: 240px;
+      overflow-y: auto;
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      background: var(--bg3);
+    }
+    .version-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background .1s;
+    }
+    .version-item:last-child { border-bottom: none; }
+    .version-item:hover { background: var(--bg2); }
+    .version-item.selected { background: var(--bg2); outline: 1px solid var(--primary); outline-offset: -1px; border-radius: 8px; }
+    .version-name { font-size: 13px; font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .version-gv { font-size: 11px; color: var(--text-muted); flex-shrink: 0; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .vbadge {
+      font-size: 10px; font-weight: 700;
+      padding: 1px 6px; border-radius: 4px; flex-shrink: 0;
+    }
+    .vbadge-release { background: rgba(34,197,94,.15); color: #4ade80; }
+    .vbadge-beta    { background: rgba(251,191,36,.15); color: #fbbf24; }
+    .vbadge-alpha   { background: rgba(239,68,68,.15);  color: #f87171; }
+
+    .file-preview {
+      background: var(--bg3);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .file-preview-name { font-size: 12.5px; font-family: monospace; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-preview-size { font-size: 11.5px; color: var(--text-dim); flex-shrink: 0; }
+
+    @media (max-width: 720px) {
+      .mod-icon, .mod-icon-ph { width: 40px; height: 40px; font-size: 14px; }
+      .mod-card { gap: 10px; }
+    }
+    @media (max-width: 480px) {
+      .mod-action { width: 100%; }
+      .mod-action .btn { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+<div class="layout" id="app"></div>
+
+<div class="modal-overlay" id="installOverlay" onclick="if(event.target===this)closeInstall()">
+  <div class="modal" style="max-width:540px;width:100%">
+    <div class="modal-header">
+      <div class="modal-title" id="installTitle">Install</div>
+      <button class="btn btn-ghost btn-sm" onclick="closeInstall()">&#x2715;</button>
+    </div>
+    <div class="modal-body" id="installBody" style="padding:20px"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeInstall()">Cancel</button>
+      <button class="btn btn-primary" id="installBtn" onclick="confirmInstall()" disabled>Install</button>
+    </div>
+  </div>
+</div>
+
+<div id="toastContainer" style="position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:320px"></div>
+
+<script src="/js/api.js"></script>
+<script>
+requireAuth();
+
+const MODRINTH = 'https://api.modrinth.com/v2';
+
+const MC_VERSIONS = [
+  '1.21.4','1.21.3','1.21.1','1.21',
+  '1.20.6','1.20.4','1.20.2','1.20.1','1.20',
+  '1.19.4','1.19.2','1.18.2','1.17.1','1.16.5',
+  '1.15.2','1.14.4','1.13.2','1.12.2','1.8.9','1.7.10'
+];
+
+const TYPES = {
+  mod:         { label:'Mod',          loaders:['fabric','forge','neoforge','quilt'],                                   defaultPath:'/mods' },
+  plugin:      { label:'Plugin',       loaders:['paper','purpur','spigot','folia','velocity','bungeecord','waterfall'], defaultPath:'/plugins' },
+  resourcepack:{ label:'Resource Pack',loaders:[],                                                                      defaultPath:'/resourcepacks' },
+  shader:      { label:'Shader',       loaders:[],                                                                      defaultPath:'/shaderpacks' },
+  datapack:    { label:'Data Pack',    loaders:[],                                                                      defaultPath:'/world/datapacks' },
+};
+
+const LOADER_LABELS = {
+  fabric:'Fabric', forge:'Forge', neoforge:'NeoForge', quilt:'Quilt',
+  paper:'Paper', purpur:'Purpur', spigot:'Spigot', folia:'Folia',
+  velocity:'Velocity', bungeecord:'BungeeCord', waterfall:'Waterfall'
+};
+
+let serverId = '', server = null;
+let activeType = 'mod';
+let activeLoader = 'fabric';
+let gameVersion = '1.21.4';
+let searchQuery = '';
+let searchTimer = null;
+let results = [], offset = 0, total = 0;
+let activeTab = 'browse';
+
+let installProject = null;
+let installVersions = [];
+let installSelectedVersion = null;
+
+async function init() {
+  serverId = location.pathname.match(/^\/server\/([^/]+)/)?.[1] || '';
+  await loadPanelSettings();
+  server = await API.get(`/servers/${serverId}`);
+  renderLayout();
+  doSearch(true);
+}
+
+function renderLayout() {
+  document.getElementById('app').innerHTML = `
+    ${renderSidebar('servers')}
+    <div class="main">
+      <div class="topbar">
+        <div>
+          <div class="page-title">${esc(server.name)}</div>
+          <div class="page-sub">${badgeHtml(server.status)}</div>
+        </div>
+      </div>
+      ${renderServerNav(serverId, 'mods')}
+      <div class="content">
+
+        <div class="mod-filter-row">
+          <div class="mod-pills" id="typePills">
+            ${Object.entries(TYPES).map(([k,v]) =>
+              `<button class="mod-pill${activeType===k?' active':''}" onclick="setType('${k}')">${v.label}</button>`
+            ).join('')}
+          </div>
+          <div class="mod-pills" id="loaderPills">${renderLoaderPillsHtml()}</div>
+          <select class="form-input" id="versionSelect" style="height:32px;font-size:12px;width:auto" onchange="setVersion(this.value)">
+            <option value="">All versions</option>
+            ${MC_VERSIONS.map(v => `<option value="${v}"${v===gameVersion?' selected':''}>${v}</option>`).join('')}
+          </select>
+        </div>
+
+        <div style="position:relative;margin-bottom:14px">
+          <input class="form-input" id="searchInput" type="search" placeholder="Search Modrinth..." value="${esc(searchQuery)}"
+            oninput="onSearch(this.value)" style="padding-right:36px">
+          <span style="position:absolute;right:11px;top:50%;transform:translateY(-50%);color:var(--text-dim);pointer-events:none">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </span>
+        </div>
+
+        <div class="mod-tabs">
+          <button class="mod-tab active" id="tabBrowse" onclick="setTab('browse')">Browse Modrinth</button>
+          <button class="mod-tab" id="tabInstalled" onclick="setTab('installed')">Installed</button>
+        </div>
+
+        <div id="browseView">
+          <div class="mod-grid" id="modsGrid"></div>
+          <div id="loadMoreWrap" style="text-align:center;margin-top:16px"></div>
+        </div>
+        <div id="installedView" style="display:none"></div>
+
+      </div>
+    </div>`;
+}
+
+function renderLoaderPillsHtml() {
+  const loaders = TYPES[activeType]?.loaders || [];
+  if (!loaders.length) return '';
+  if (!loaders.includes(activeLoader)) activeLoader = loaders[0];
+  return loaders.map(l =>
+    `<button class="mod-pill${activeLoader===l?' active':''}" onclick="setLoader('${l}')">${LOADER_LABELS[l]||l}</button>`
+  ).join('');
+}
+
+function setType(t) {
+  activeType = t;
+  const loaders = TYPES[t]?.loaders || [];
+  if (!loaders.includes(activeLoader)) activeLoader = loaders[0] || '';
+  document.querySelectorAll('#typePills .mod-pill').forEach((el,i) => {
+    el.classList.toggle('active', Object.keys(TYPES)[i] === t);
+  });
+  document.getElementById('loaderPills').innerHTML = renderLoaderPillsHtml();
+  doSearch(true);
+}
+
+function setLoader(l) {
+  activeLoader = l;
+  document.querySelectorAll('#loaderPills .mod-pill').forEach(el => {
+    el.classList.toggle('active', el.textContent.trim() === (LOADER_LABELS[l]||l));
+  });
+  doSearch(true);
+}
+
+function setVersion(v) {
+  gameVersion = v;
+  doSearch(true);
+}
+
+function onSearch(q) {
+  searchQuery = q;
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => doSearch(true), 350);
+}
+
+function setTab(tab) {
+  activeTab = tab;
+  document.getElementById('tabBrowse').classList.toggle('active', tab === 'browse');
+  document.getElementById('tabInstalled').classList.toggle('active', tab === 'installed');
+  document.getElementById('browseView').style.display  = tab === 'browse' ? '' : 'none';
+  document.getElementById('installedView').style.display = tab === 'installed' ? '' : 'none';
+  if (tab === 'installed') loadInstalled();
+}
+
+// ── Browse ──────────────────────────────────────────────────────────────────
+
+async function doSearch(reset = false) {
+  if (reset) { offset = 0; results = []; }
+
+  const facets = [[`project_type:${activeType}`]];
+  if (activeLoader) facets.push([`categories:${activeLoader}`]);
+  if (gameVersion)  facets.push([`versions:${gameVersion}`]);
+
+  const params = new URLSearchParams({
+    query: searchQuery,
+    limit: 20,
+    offset,
+    facets: JSON.stringify(facets),
+    index: searchQuery ? 'relevance' : 'downloads',
+  });
+
+  const grid = document.getElementById('modsGrid');
+  if (reset) grid.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-dim)"><span class="spinner"></span></div>`;
+
+  try {
+    const data = await fetch(`${MODRINTH}/search?${params}`, {
+      headers: { 'User-Agent': 'Nodactyl/1.0' }
+    }).then(r => r.json());
+
+    total = data.total_hits;
+    if (reset) results = data.hits;
+    else results = [...results, ...data.hits];
+
+    renderResults();
+  } catch (e) {
+    grid.innerHTML = `<div class="alert alert-error show">Failed to reach Modrinth: ${esc(e.message)}</div>`;
+  }
+}
+
+async function loadMore() {
+  offset += 20;
+  await doSearch(false);
+}
+
+function fmtDl(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000)     return Math.round(n / 1_000) + 'K';
+  return n;
+}
+
+function renderResults() {
+  const grid = document.getElementById('modsGrid');
+  if (!results.length) {
+    grid.innerHTML = `<div class="empty-state"><p>No results. Try different filters or a different search.</p></div>`;
+    document.getElementById('loadMoreWrap').innerHTML = '';
+    return;
+  }
+
+  grid.innerHTML = `<div class="mod-grid">${results.map((h, i) => renderCard(h, i)).join('')}</div>`;
+
+  const lm = document.getElementById('loadMoreWrap');
+  if (results.length < total) {
+    lm.innerHTML = `<button class="btn btn-ghost btn-sm" onclick="loadMore()">Load more (${total - results.length} remaining)</button>`;
+  } else {
+    lm.innerHTML = total > 0
+      ? `<span style="font-size:12px;color:var(--text-muted)">${total} result${total === 1 ? '' : 's'}</span>`
+      : '';
+  }
+}
+
+function renderCard(h, i) {
+  const icon = h.icon_url
+    ? `<img class="mod-icon" src="${esc(h.icon_url)}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" alt="">
+       <div class="mod-icon-ph" style="display:none">${esc(h.title.slice(0,2).toUpperCase())}</div>`
+    : `<div class="mod-icon-ph">${esc(h.title.slice(0,2).toUpperCase())}</div>`;
+
+  const cats = (h.categories || []).slice(0, 3).map(c =>
+    `<span class="mod-cat">${esc(c)}</span>`
+  ).join('');
+
+  const loaderArg = activeLoader ? `,loader:${JSON.stringify(activeLoader)}` : '';
+  const data = `{id:${JSON.stringify(h.project_id)},title:${JSON.stringify(h.title)},icon:${JSON.stringify(h.icon_url||null)},type:${JSON.stringify(activeType)}${loaderArg}}`;
+
+  return `
+    <div class="mod-card">
+      ${icon}
+      <div class="mod-body">
+        <div class="mod-name">${esc(h.title)}</div>
+        <div class="mod-desc">${esc(h.description)}</div>
+        <div class="mod-meta">
+          <span class="mod-author">by ${esc(h.author)}</span>
+          <span class="mod-dl">
+            <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            ${fmtDl(h.downloads)}
+          </span>
+          <div class="mod-cats">${cats}</div>
+        </div>
+      </div>
+      <div class="mod-action">
+        <button class="btn btn-primary btn-sm" onclick='openInstall(${data})'>Install</button>
+      </div>
+    </div>`;
+}
+
+// ── Installed tab ────────────────────────────────────────────────────────────
+
+async function findDatapackDirs() {
+  const found = [];
+  try {
+    // List root to find all top-level directories
+    const root = await API.get(`/servers/${serverId}/files?path=${encodeURIComponent('/')}`);
+    const topDirs = (root.files || []).filter(f => f.type === 'dir').map(f => f.name);
+
+    // For each top-level dir, check if it has a datapacks subfolder
+    await Promise.all(topDirs.map(async dirName => {
+      try {
+        const sub = await API.get(`/servers/${serverId}/files?path=${encodeURIComponent('/' + dirName)}`);
+        const hasDp = (sub.files || []).some(f => f.type === 'dir' && f.name === 'datapacks');
+        if (hasDp) found.push('/' + dirName + '/datapacks');
+      } catch {}
+    }));
+  } catch {}
+  return found;
+}
+
+async function loadInstalled() {
+  const el = document.getElementById('installedView');
+  el.innerHTML = `<div style="text-align:center;padding:40px"><span class="spinner"></span></div>`;
+
+  const staticDirs = ['/mods', '/plugins', '/resourcepacks', '/shaderpacks'];
+  const sections = [];
+
+  // Scan static dirs + discover datapack folders dynamically
+  const [staticResults, datapackDirs] = await Promise.all([
+    Promise.all(staticDirs.map(async dir => {
+      try {
+        const data = await API.get(`/servers/${serverId}/files?path=${encodeURIComponent(dir)}`);
+        const files = (data.files || []).filter(f => f.type !== 'dir').sort((a, b) => a.name.localeCompare(b.name));
+        if (files.length) sections.push({ dir, files, label: null });
+      } catch {}
+    })),
+    findDatapackDirs(),
+  ]);
+
+  // Scan each discovered datapack dir
+  await Promise.all(datapackDirs.map(async dir => {
+    try {
+      const data = await API.get(`/servers/${serverId}/files?path=${encodeURIComponent(dir)}`);
+      const files = (data.files || []).filter(f => f.type !== 'dir').sort((a, b) => a.name.localeCompare(b.name));
+      if (files.length) sections.push({ dir, files, label: 'datapack' });
+    } catch {}
+  }));
+
+  if (!sections.length) {
+    el.innerHTML = `
+      <div class="empty-state"><p>No files found. Install something from Browse, or your server might not be running yet.</p></div>
+      <div style="text-align:center;margin-top:12px">
+        <button class="btn btn-ghost btn-sm" onclick="loadInstalled()">Refresh</button>
+      </div>`;
+    return;
+  }
+
+  sections.sort((a, b) => a.dir.localeCompare(b.dir));
+
+  sections.sort((a, b) => a.dir.localeCompare(b.dir));
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+      <button class="btn btn-ghost btn-sm" onclick="loadInstalled()">
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="margin-right:5px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+        Refresh
+      </button>
+    </div>
+    ${sections.map(s => `
+      <div class="installed-section">
+        <div class="installed-dir-label">
+          ${esc(s.dir)}
+          ${s.label === 'datapack' ? '<span class="mod-cat" style="font-size:10px;vertical-align:middle;margin-left:6px">datapack</span>' : ''}
+        </div>
+        ${s.files.map(f => `
+          <div class="installed-file" id="ifile-${esc(s.dir.replace(/\//g,'-'))}-${esc(f.name.replace(/[^a-z0-9]/gi,'_'))}">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24" style="flex-shrink:0;color:var(--text-dim)">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+            </svg>
+            <div class="installed-file-name" title="${esc(s.dir + '/' + f.name)}">${esc(f.name)}</div>
+            ${f.size ? `<div class="installed-file-size">${fmtSize(f.size)}</div>` : ''}
+            <button class="btn btn-ghost btn-sm uninstall-btn"
+              data-dir="${esc(s.dir)}" data-name="${esc(f.name)}">Uninstall</button>
+          </div>
+        `).join('')}
+      </div>
+    `).join('')}`;
+
+  // Attach event listeners after render to avoid inline onclick escaping issues
+  document.querySelectorAll('.uninstall-btn').forEach(btn => {
+    btn.addEventListener('click', () => removeFile(btn));
+  });
+}
+
+function fmtSize(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+  return (b / 1048576).toFixed(1) + ' MB';
+}
+
+async function removeFile(btn) {
+  const dir  = btn.dataset.dir;
+  const name = btn.dataset.name;
+
+  // Two-step confirm: first click → "Confirm?" state, second click → delete
+  if (!btn.dataset.confirming) {
+    btn.dataset.confirming = '1';
+    btn.textContent = 'Confirm?';
+    btn.classList.add('btn-danger');
+    btn.classList.remove('btn-ghost');
+    const reset = () => {
+      btn.dataset.confirming = '';
+      btn.textContent = 'Uninstall';
+      btn.classList.remove('btn-danger');
+      btn.classList.add('btn-ghost');
+    };
+    btn._resetTimer = setTimeout(reset, 3000);
+    return;
+  }
+
+  clearTimeout(btn._resetTimer);
+  btn.disabled = true;
+  btn.textContent = 'Removing…';
+
+  try {
+    await API.delete(`/servers/${serverId}/files?path=${encodeURIComponent(dir + '/' + name)}`);
+    toast(`${name} removed`, 'success');
+    // Animate row out
+    const row = btn.closest('.installed-file');
+    if (row) {
+      row.style.transition = 'opacity .2s,transform .2s';
+      row.style.opacity = '0';
+      row.style.transform = 'translateX(10px)';
+      setTimeout(() => { row.remove(); checkEmptySections(); }, 200);
+    }
+  } catch (e) {
+    toast(e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Uninstall';
+    btn.dataset.confirming = '';
+    btn.classList.remove('btn-danger');
+    btn.classList.add('btn-ghost');
+  }
+}
+
+function checkEmptySections() {
+  document.querySelectorAll('.installed-section').forEach(sec => {
+    if (!sec.querySelector('.installed-file')) sec.remove();
+  });
+  const el = document.getElementById('installedView');
+  if (el && !el.querySelector('.installed-section')) {
+    el.innerHTML = `<div class="empty-state"><p>No files remaining.</p></div>`;
+  }
+}
+
+// ── Install modal ────────────────────────────────────────────────────────────
+
+async function openInstall(info) {
+  installProject = info;
+  installSelectedVersion = null;
+  installVersions = [];
+
+  const defaultPath = TYPES[info.type]?.defaultPath || '/mods';
+
+  document.getElementById('installTitle').textContent = `Install ${info.title}`;
+  document.getElementById('installBtn').disabled = true;
+  document.getElementById('installBtn').textContent = 'Install';
+  document.getElementById('installOverlay').classList.add('open');
+
+  const modIconHtml = info.icon
+    ? `<img src="${esc(info.icon)}" style="width:48px;height:48px;border-radius:8px;object-fit:cover;flex-shrink:0" alt="">`
+    : `<div style="width:48px;height:48px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:var(--text-dim);flex-shrink:0">${esc(info.title.slice(0,2).toUpperCase())}</div>`;
+
+  document.getElementById('installBody').innerHTML = `
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+      ${modIconHtml}
+      <div style="min-width:0">
+        <div style="font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(info.title)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:3px">via Modrinth</div>
+      </div>
+    </div>
+    <div style="text-align:center;padding:24px;color:var(--text-muted)">
+      <span class="spinner"></span> Loading versions&hellip;
+    </div>`;
+
+  try {
+    const params = new URLSearchParams();
+    if (info.loader) params.set('loaders', JSON.stringify([info.loader]));
+    if (gameVersion) params.set('game_versions', JSON.stringify([gameVersion]));
+
+    let versions = await fetch(`${MODRINTH}/project/${info.id}/version?${params}`, {
+      headers: { 'User-Agent': 'Nodactyl/1.0' }
+    }).then(r => r.json());
+
+    if (!Array.isArray(versions)) versions = [];
+
+    // If no results with current filters, try without version filter
+    if (!versions.length && gameVersion) {
+      const p2 = new URLSearchParams();
+      if (info.loader) p2.set('loaders', JSON.stringify([info.loader]));
+      versions = await fetch(`${MODRINTH}/project/${info.id}/version?${p2}`, {
+        headers: { 'User-Agent': 'Nodactyl/1.0' }
+      }).then(r => r.json());
+      if (!Array.isArray(versions)) versions = [];
+    }
+
+    installVersions = versions;
+
+    if (!installVersions.length) {
+      document.getElementById('installBody').innerHTML += `
+        <div class="alert alert-error show" style="margin-top:0">No versions found for these filters.</div>`;
+      return;
+    }
+
+    renderInstallBody(modIconHtml, defaultPath);
+  } catch (e) {
+    document.getElementById('installBody').innerHTML = `
+      <div class="alert alert-error show">Failed to load versions: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderInstallBody(modIconHtml, defaultPath) {
+  const info = installProject;
+
+  document.getElementById('installBody').innerHTML = `
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+      ${modIconHtml}
+      <div style="min-width:0">
+        <div style="font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(info.title)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:3px">${installVersions.length} version${installVersions.length === 1 ? '' : 's'} available</div>
+      </div>
+    </div>
+
+    <div style="margin-bottom:16px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:8px">Select version</div>
+      <div class="version-list" id="versionList">
+        ${installVersions.slice(0, 50).map(v => {
+          const gvs = (v.game_versions || []).slice(-4).join(', ');
+          const typeCls = v.version_type === 'release' ? 'vbadge-release' : v.version_type === 'beta' ? 'vbadge-beta' : 'vbadge-alpha';
+          return `
+            <div class="version-item" id="vi-${esc(v.id)}" onclick="selectVersion('${esc(v.id)}')">
+              <div class="version-name">${esc(v.name || v.version_number)}</div>
+              <span class="vbadge ${typeCls}">${esc(v.version_type)}</span>
+              <div class="version-gv">${esc(gvs)}</div>
+            </div>`;
+        }).join('')}
+      </div>
+    </div>
+
+    <div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px">Install path</div>
+      <input class="form-input font-mono" id="installPathInput" value="${esc(defaultPath)}" style="font-size:13px">
+      <div style="font-size:11.5px;color:var(--text-dim);margin-top:5px">Relative to server root. e.g. /mods, /plugins</div>
+    </div>
+
+    <div id="filePreview"></div>`;
+
+  // Auto-select first release, or first in list
+  const firstRelease = installVersions.find(v => v.version_type === 'release') || installVersions[0];
+  if (firstRelease) selectVersion(firstRelease.id);
+}
+
+function selectVersion(id) {
+  installSelectedVersion = installVersions.find(v => v.id === id);
+  document.querySelectorAll('.version-item').forEach(el => el.classList.remove('selected'));
+  document.getElementById('vi-' + id)?.classList.add('selected');
+
+  const primary = installSelectedVersion?.files?.find(f => f.primary) || installSelectedVersion?.files?.[0];
+  const preview = document.getElementById('filePreview');
+  if (primary && preview) {
+    preview.innerHTML = `
+      <div class="file-preview">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24" style="flex-shrink:0;color:var(--text-muted)">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
+        <span class="file-preview-name">${esc(primary.filename)}</span>
+        ${primary.size ? `<span class="file-preview-size">${fmtSize(primary.size)}</span>` : ''}
+      </div>`;
+  }
+
+  document.getElementById('installBtn').disabled = false;
+
+  // Scroll selected into view
+  document.getElementById('vi-' + id)?.scrollIntoView({ block: 'nearest' });
+}
+
+function closeInstall() {
+  document.getElementById('installOverlay').classList.remove('open');
+  installProject = null;
+  installVersions = [];
+  installSelectedVersion = null;
+}
+
+async function confirmInstall() {
+  if (!installSelectedVersion) return;
+
+  const primary = installSelectedVersion.files?.find(f => f.primary) || installSelectedVersion.files?.[0];
+  if (!primary?.url) { toast('No downloadable file found', 'error'); return; }
+
+  const installPath = document.getElementById('installPathInput').value.trim();
+  if (!installPath) { toast('Install path is required', 'error'); return; }
+
+  const btn = document.getElementById('installBtn');
+  btn.disabled = true;
+  btn.textContent = 'Installing…';
+
+  try {
+    await API.post(`/servers/${serverId}/mods/install`, {
+      url: primary.url,
+      filename: primary.filename,
+      installPath
+    });
+    toast(`${installProject.title} installed!`, 'success');
+    closeInstall();
+  } catch (e) {
+    toast(e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Install';
+  }
+}
+
+// ── Toast ────────────────────────────────────────────────────────────────────
+
+function toast(msg, type = 'info') {
+  const c = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.style.cssText = `
+    padding:10px 16px;border-radius:8px;font-size:13px;font-weight:500;
+    box-shadow:0 4px 16px rgba(0,0,0,.35);pointer-events:auto;
+    animation:slideUpMobile .18s ease;
+    ${type === 'error'   ? 'background:#ef4444;color:#fff' :
+      type === 'success' ? 'background:#22c55e;color:#fff' :
+      'background:var(--bg2);color:var(--text);border:1px solid var(--border2)'}`;
+  el.textContent = msg;
+  c.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+init();
+</script>
+</body>
+</html>
