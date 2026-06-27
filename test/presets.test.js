@@ -106,6 +106,68 @@ describe('presets.test.js', () => {
     eq(get.body.memory_limit, 512);
   });
 
+  it('POST /api/presets — enable_mods and enable_packages default to 1', async () => {
+    const r = await adm.post('/api/presets', {
+      name: 'Default Flags Preset',
+      image: 'alpine:latest',
+      memory_limit: 256,
+      cpu_limit: 0.5,
+    });
+    status(r, 201);
+    eq(r.body.enable_mods, 1, 'enable_mods defaults to 1');
+    eq(r.body.enable_packages, 1, 'enable_packages defaults to 1');
+    await adm.del(`/api/presets/${r.body.id}`);
+  });
+
+  it('POST /api/presets — enable_mods=0 and enable_packages=0 persist', async () => {
+    const r = await adm.post('/api/presets', {
+      name: 'No Mods Preset',
+      image: 'alpine:latest',
+      memory_limit: 256,
+      cpu_limit: 0.5,
+      enable_mods: 0,
+      enable_packages: 0,
+    });
+    status(r, 201);
+    eq(r.body.enable_mods, 0, 'enable_mods saved as 0');
+    eq(r.body.enable_packages, 0, 'enable_packages saved as 0');
+    const get = await adm.get(`/api/presets/${r.body.id}`);
+    status(get, 200);
+    eq(get.body.enable_mods, 0, 'enable_mods persisted');
+    eq(get.body.enable_packages, 0, 'enable_packages persisted');
+    await adm.del(`/api/presets/${r.body.id}`);
+  });
+
+  it('PUT /api/presets/:id — can toggle enable_mods and enable_packages', async () => {
+    // Disable both
+    const off = await adm.put(`/api/presets/${presetId}`, {
+      name: 'Test Nginx Updated',
+      image: 'nginx:latest',
+      memory_limit: 512,
+      cpu_limit: 1,
+      enable_mods: 0,
+      enable_packages: 0,
+    });
+    status(off, 200);
+    const getOff = await adm.get(`/api/presets/${presetId}`);
+    eq(getOff.body.enable_mods, 0, 'enable_mods set to 0');
+    eq(getOff.body.enable_packages, 0, 'enable_packages set to 0');
+
+    // Re-enable both
+    const on = await adm.put(`/api/presets/${presetId}`, {
+      name: 'Test Nginx Updated',
+      image: 'nginx:latest',
+      memory_limit: 512,
+      cpu_limit: 1,
+      enable_mods: 1,
+      enable_packages: 1,
+    });
+    status(on, 200);
+    const getOn = await adm.get(`/api/presets/${presetId}`);
+    eq(getOn.body.enable_mods, 1, 'enable_mods re-enabled');
+    eq(getOn.body.enable_packages, 1, 'enable_packages re-enabled');
+  });
+
   it('PUT /api/presets/:id — non-admin → 403', async () => {
     const r = await userClient.put(`/api/presets/${presetId}`, {
       name: 'Hacked',

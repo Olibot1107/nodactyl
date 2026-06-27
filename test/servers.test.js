@@ -65,6 +65,37 @@ describe('servers.test.js', () => {
     status(r, 400);
   });
 
+  it('GET /api/servers/:id — enable_mods and enable_packages default to 1', async () => {
+    const r = await userClient.get(`/api/servers/${serverId}`);
+    status(r, 200);
+    eq(r.body.enable_mods, 1, 'enable_mods defaults to 1');
+    eq(r.body.enable_packages, 1, 'enable_packages defaults to 1');
+  });
+
+  it('PATCH /api/servers/:id/settings — can disable mods and packages pages', async () => {
+    const r = await userClient.patch(`/api/servers/${serverId}/settings`, {
+      name: 'test-server-a',
+      enable_mods: 0,
+      enable_packages: 0,
+    });
+    status(r, 200);
+    const get = await userClient.get(`/api/servers/${serverId}`);
+    eq(get.body.enable_mods, 0, 'enable_mods persisted as 0');
+    eq(get.body.enable_packages, 0, 'enable_packages persisted as 0');
+  });
+
+  it('PATCH /api/servers/:id/settings — can re-enable mods and packages pages', async () => {
+    const r = await userClient.patch(`/api/servers/${serverId}/settings`, {
+      name: 'test-server-a',
+      enable_mods: 1,
+      enable_packages: 1,
+    });
+    status(r, 200);
+    const get = await userClient.get(`/api/servers/${serverId}`);
+    eq(get.body.enable_mods, 1, 'enable_mods back to 1');
+    eq(get.body.enable_packages, 1, 'enable_packages back to 1');
+  });
+
   it('GET /api/servers/:id/stats — node is online → 200', async () => {
     const r = await userClient.get(`/api/servers/${serverId}/stats`);
     status(r, 200);
