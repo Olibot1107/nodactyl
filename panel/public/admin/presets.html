@@ -68,6 +68,12 @@
         <button class="btn btn-ghost btn-sm mt-2" onclick="addEnv()" type="button">+ Add Variable</button>
       </div>
       <div class="form-group">
+        <label class="form-label">Setup Variables <span class="text-muted">(optional)</span></label>
+        <div class="form-hint" style="margin-bottom:8px">Ask users to configure these env vars when deploying. Use <code>{env.KEY}</code> in scripts to reference them.</div>
+        <div id="setupVarList"></div>
+        <button class="btn btn-ghost btn-sm mt-2" onclick="addSetupVar()" type="button">+ Add Setup Variable</button>
+      </div>
+      <div class="form-group">
         <label class="form-label">Install Script <span class="text-muted">(optional)</span></label>
         <textarea class="form-input font-mono" id="p_install" rows="4" placeholder="apt-get update && apt-get install -y curl&#10;curl -o server.jar https://..."></textarea>
         <div class="form-hint">Runs once inside the container at first deploy, before the server starts. Use this to download files, install dependencies, etc.</div>
@@ -98,6 +104,7 @@ let ranks = [];
 let editId = null;
 let envCount = 0;
 let imgCount = 0;
+let svCount = 0;
 
 async function init() {
   await loadPanelSettings();
@@ -109,7 +116,11 @@ async function init() {
           <div class="page-title">Presets</div>
           <div class="page-sub">Server templates users can deploy from</div>
         </div>
-        <button class="btn btn-primary" onclick="openCreate()">New Preset</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('importFile').click()">Import JSON</button>
+          <input type="file" id="importFile" accept=".json" style="display:none" onchange="importPresets(this)">
+          <button class="btn btn-primary" onclick="openCreate()">New Preset</button>
+        </div>
       </div>
       <div class="content">
         <div class="alert alert-error" id="pageError"></div>
@@ -156,6 +167,7 @@ function renderPresets() {
       </div>
       <div class="preset-card-footer">
         <button class="btn btn-ghost btn-sm" onclick="openEdit('${p.id}')">Edit</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportPreset('${p.id}')">Export</button>
         <button class="btn btn-danger btn-sm" onclick="deletePreset('${p.id}', '${esc(p.name)}')">Delete</button>
       </div>
     </div>`).join('')}</div>`;
@@ -178,10 +190,12 @@ function clearModal() {
   document.getElementById('p_disk').value = 0;
   document.getElementById('envList').innerHTML = '';
   document.getElementById('imageList').innerHTML = '';
+  document.getElementById('setupVarList').innerHTML = '';
   document.getElementById('modalError').classList.remove('show');
   populateRankDropdown('');
   envCount = 0;
   imgCount = 0;
+  svCount = 0;
 }
 
 function openCreate() {
@@ -205,6 +219,7 @@ function openEdit(id) {
   document.getElementById('p_disk').value = p.disk_limit || 0;
   (p.env_vars || []).forEach(ev => addEnv(ev.key, ev.value));
   (p.images || []).forEach(img => addImage(img.label, img.image));
+  (p.setup_vars || []).forEach(sv => addSetupVar(sv.key, sv.label, sv.description));
   document.getElementById('p_install').value = p.install_script || '';
   document.getElementById('p_prestart').value = p.pre_start_script || '';
   document.getElementById('p_startup').value = p.startup_command || '';
@@ -261,6 +276,32 @@ function getImages() {
   return imgs;
 }
 
+function addSetupVar(key='', label='', description='') {
+  const id = ++svCount;
+  const div = document.createElement('div');
+  div.style.cssText = 'border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-top:8px;display:flex;flex-direction:column;gap:6px';
+  div.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="text" class="form-input" id="sv_key_${id}" placeholder="ENV_VAR_KEY" value="${esc(key)}" style="flex:1;font-family:monospace">
+      <input type="text" class="form-input" id="sv_label_${id}" placeholder="Label shown to user" value="${esc(label)}" style="flex:2">
+      <button onclick="this.closest('div[style]').remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">✕</button>
+    </div>
+    <input type="text" class="form-input" id="sv_desc_${id}" placeholder="Description / hint (optional)" value="${esc(description)}" style="font-size:12px">`;
+  document.getElementById('setupVarList').appendChild(div);
+}
+
+function getSetupVars() {
+  const vars = [];
+  document.querySelectorAll('[id^="sv_key_"]').forEach(el => {
+    const id = el.id.slice(7);
+    const key = el.value.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+    const label = document.getElementById(`sv_label_${id}`)?.value.trim();
+    const description = document.getElementById(`sv_desc_${id}`)?.value.trim() || '';
+    if (key && label) vars.push({ key, label, description });
+  });
+  return vars;
+}
+
 async function savePreset() {
   const errEl = document.getElementById('modalError');
   errEl.classList.remove('show');
@@ -274,6 +315,7 @@ async function savePreset() {
     disk_limit: parseInt(document.getElementById('p_disk').value) || 0,
     port_mappings: [],
     env_vars: getEnvVars(),
+    setup_vars: getSetupVars(),
     images: getImages(),
     install_script: document.getElementById('p_install').value.trim(),
     pre_start_script: document.getElementById('p_prestart').value.trim(),
@@ -310,6 +352,27 @@ async function deletePreset(id, name) {
   if (!confirm(`Delete preset "${name}"? Users will no longer be able to deploy it.`)) return;
   try { await API.delete(`/presets/${id}`); showOk('Preset deleted.'); await loadPresets(); }
   catch (e) { showErr(e.message); }
+}
+
+function exportPreset(id) {
+  window.location.href = '/api/presets/' + id + '/export';
+}
+
+async function importPresets(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    const list = data.presets || (Array.isArray(data) ? data : null);
+    if (!list) { showErr('Invalid JSON: expected a "presets" array.'); return; }
+    const r = await API.post('/presets/import', { presets: list });
+    showOk(`Imported ${r.imported} preset(s).${r.errors?.length ? ' ' + r.errors[0] : ''}`);
+    await loadPresets();
+  } catch (e) {
+    showErr(e.message);
+  }
 }
 
 function showErr(msg) {

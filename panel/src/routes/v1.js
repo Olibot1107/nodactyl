@@ -509,9 +509,9 @@ router.get('/presets/:id', (req, res) => {
   res.json({ ...preset, env_vars: JSON.parse(preset.env_vars || '[]'), images: JSON.parse(preset.images || '[]') });
 });
 
-// POST /api/v1/servers/from-preset  { name, preset_id, node_id?, image? }
+// POST /api/v1/servers/from-preset  { name, preset_id, node_id?, image?, setup_var_values? }
 router.post('/servers/from-preset', async (req, res) => {
-  const { name, preset_id, node_id, image: chosenImage } = req.body;
+  const { name, preset_id, node_id, image: chosenImage, setup_var_values } = req.body;
   if (!name || !preset_id) return res.status(400).json({ error: 'name and preset_id are required' });
 
   const preset = db.prepare('SELECT * FROM presets WHERE id = ?').get(preset_id);
@@ -541,18 +541,31 @@ router.post('/servers/from-preset', async (req, res) => {
   const installScript  = preset.install_script   || '';
   const preStartScript = preset.pre_start_script || '';
 
+  // Merge user-supplied setup var values into the preset's env vars
+  let finalEnvVars = JSON.parse(preset.env_vars || '[]');
+  const setupVars  = JSON.parse(preset.setup_vars || '[]');
+  if (setup_var_values && typeof setup_var_values === 'object' && setupVars.length > 0) {
+    const allowedKeys = new Set(setupVars.map(sv => sv.key));
+    for (const [k, v] of Object.entries(setup_var_values)) {
+      if (!allowedKeys.has(k)) continue;
+      const idx = finalEnvVars.findIndex(e => e.key === k);
+      if (idx >= 0) finalEnvVars[idx] = { key: k, value: String(v) };
+      else finalEnvVars.push({ key: k, value: String(v) });
+    }
+  }
+
   db.prepare(`INSERT INTO servers
     (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, pre_start_script, status)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
     .run(id, name.trim(), preset.description || '', finalImage, finalNodeId, req.user.id,
-      JSON.stringify(port_mappings), preset.env_vars, memoryLimit, preset.cpu_limit,
+      JSON.stringify(port_mappings), JSON.stringify(finalEnvVars), memoryLimit, preset.cpu_limit,
       diskLimit, preset.startup_command || '', installScript, preStartScript);
 
   audit(req.user.id, id, 'server.create', { preset: preset.name, name: name.trim() }, req, req.apiKeyId);
 
   nodeManager.send(finalNodeId, {
     type: 'install-server', serverId: id, image: finalImage,
-    portMappings: port_mappings, envVars: JSON.parse(preset.env_vars || '[]'),
+    portMappings: port_mappings, envVars: finalEnvVars,
     memoryLimit, cpuLimit: preset.cpu_limit,
     startupCommand: preset.startup_command || '', installScript,
   }).then(data => {

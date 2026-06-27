@@ -43,9 +43,28 @@ async function sendDiscordWebhook(serverId, status) {
 class NodeManager {
   constructor() {
     this.connections = new Map();   // nodeId → { ws, nodeData }
-    this.pending = new Map();       // requestId → { resolve, reject, timer }
+    this.pending = new Map();       // requestId → { resolve, reject, timer, nodeId }
     this.logListeners = new Map();  // serverId → Set<socket.io socket>
+    this.lastHeartbeat = new Map(); // nodeId → Date.now() timestamp
     this.io = null;
+
+    // Terminate connections that haven't sent a heartbeat in 45s (daemon sends every 15s).
+    // This catches zombie TCP connections that never close cleanly (e.g. network partition).
+    setInterval(() => this._checkStaleConnections(), 30000).unref();
+  }
+
+  _checkStaleConnections() {
+    const now = Date.now();
+    for (const [nodeId, ts] of this.lastHeartbeat) {
+      if (now - ts > 45000) {
+        const conn = this.connections.get(nodeId);
+        if (conn) {
+          log.warn('daemon', `Node ${nodeId.slice(0, 8)} heartbeat timeout — terminating stale connection`);
+          try { conn.ws.terminate(); } catch {}
+          // The 'close' event on ws triggers unregister
+        }
+      }
+    }
   }
 
   setIO(io) {
@@ -54,7 +73,11 @@ class NodeManager {
 
   register(nodeId, nodeData, ws) {
     this.connections.set(nodeId, { ws, nodeData });
-    ws.on('close', () => this.unregister(nodeId));
+    this.lastHeartbeat.set(nodeId, Date.now());
+    ws.on('close', () => {
+      this.lastHeartbeat.delete(nodeId);
+      this.unregister(nodeId);
+    });
     ws.on('message', (raw) => this._handleMessage(nodeId, raw));
   }
 
@@ -63,6 +86,16 @@ class NodeManager {
     const { db } = require('./db');
     db.prepare(`UPDATE nodes SET status = 'offline' WHERE id = ?`).run(nodeId);
     if (this.io) this.io.emit('node-status', { nodeId, status: 'offline' });
+
+    // Immediately reject all in-flight commands for this node rather than making
+    // callers wait the full 60s timeout.
+    for (const [requestId, pending] of this.pending) {
+      if (pending.nodeId === nodeId) {
+        clearTimeout(pending.timer);
+        this.pending.delete(requestId);
+        pending.reject(new Error('Node went offline'));
+      }
+    }
   }
 
   isOnline(nodeId) {
@@ -81,7 +114,7 @@ class NodeManager {
         reject(new Error(`Command timed out after ${timeout / 1000}s`));
       }, timeout);
 
-      this.pending.set(requestId, { resolve, reject, timer });
+      this.pending.set(requestId, { resolve, reject, timer, nodeId });
       conn.ws.send(JSON.stringify({ ...command, requestId }));
     });
   }
@@ -172,7 +205,39 @@ class NodeManager {
         break;
       }
 
+      case 'containers-synced': {
+        // Daemon reported all server IDs that have containers. Any server on this node
+        // that has a stale container_id (container was deleted outside the panel) gets
+        // its container_id cleared so the next start creates a fresh container.
+        const knownIds = new Set(Array.isArray(msg.serverIds) ? msg.serverIds : []);
+
+        const staleServers = db.prepare(
+          "SELECT id FROM servers WHERE node_id = ? AND status NOT IN ('deleting', 'installing') AND container_id IS NOT NULL"
+        ).all(nodeId);
+        for (const server of staleServers) {
+          if (!knownIds.has(server.id)) {
+            db.prepare('UPDATE servers SET container_id = NULL WHERE id = ?').run(server.id);
+            log.warn('server', `Cleared stale container_id for server ${server.id.slice(0, 8)} — container no longer exists on node`);
+          }
+        }
+
+        // If a server was still marked 'installing' when the daemon reconnected and its
+        // container doesn't exist, the install crashed before completing — mark it as error.
+        const stuckInstalling = db.prepare(
+          "SELECT id, owner_id FROM servers WHERE node_id = ? AND status = 'installing'"
+        ).all(nodeId);
+        for (const server of stuckInstalling) {
+          if (!knownIds.has(server.id)) {
+            db.prepare("UPDATE servers SET status = 'error' WHERE id = ?").run(server.id);
+            if (this.io) this.io.to(`user:${server.owner_id}`).to('admins').emit('server-status', { serverId: server.id, status: 'error' });
+            log.warn('server', `Reset stuck installing server ${server.id.slice(0, 8)} to error — no container found on node after reconnect`);
+          }
+        }
+        break;
+      }
+
       case 'heartbeat': {
+        this.lastHeartbeat.set(nodeId, Date.now());
         db.prepare(`UPDATE nodes SET status = 'online', last_seen = strftime('%s','now') WHERE id = ?`).run(nodeId);
         if (this.io) this.io.emit('node-status', { nodeId, status: 'online' });
         break;

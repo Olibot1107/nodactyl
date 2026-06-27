@@ -221,7 +221,7 @@ function autoPortMappings(nodeId) {
 }
 
 router.post('/from-preset', async (req, res) => {
-  const { name, preset_id, node_id, image: chosenImage } = req.body;
+  const { name, preset_id, node_id, image: chosenImage, setup_var_values } = req.body;
   if (!name || !preset_id) return res.status(400).json({ error: 'name and preset_id are required' });
 
   const preset = db.prepare('SELECT * FROM presets WHERE id = ?').get(preset_id);
@@ -266,8 +266,22 @@ router.post('/from-preset', async (req, res) => {
 
   const installScript = preset.install_script || '';
   const preStartScript = preset.pre_start_script || '';
+
+  // Merge user-supplied setup var values into the preset's env vars
+  let finalEnvVars = JSON.parse(preset.env_vars || '[]');
+  const setupVars = JSON.parse(preset.setup_vars || '[]');
+  if (setup_var_values && typeof setup_var_values === 'object' && setupVars.length > 0) {
+    const allowedKeys = new Set(setupVars.map(sv => sv.key));
+    for (const [k, v] of Object.entries(setup_var_values)) {
+      if (!allowedKeys.has(k)) continue;
+      const idx = finalEnvVars.findIndex(e => e.key === k);
+      if (idx >= 0) finalEnvVars[idx] = { key: k, value: String(v) };
+      else finalEnvVars.push({ key: k, value: String(v) });
+    }
+  }
+
   db.prepare(`INSERT INTO servers (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, pre_start_script, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
-    .run(id, name, preset.description, finalImage, finalNodeId, req.user.id, JSON.stringify(port_mappings), preset.env_vars, memoryLimit, preset.cpu_limit, diskLimit, preset.startup_command || '', installScript, preStartScript);
+    .run(id, name, preset.description, finalImage, finalNodeId, req.user.id, JSON.stringify(port_mappings), JSON.stringify(finalEnvVars), memoryLimit, preset.cpu_limit, diskLimit, preset.startup_command || '', installScript, preStartScript);
 
   log.info('server', `Installing "${name}" (${id.slice(0, 8)}) via preset "${preset.name}" on node ${finalNodeId.slice(0, 8)}`);
   nodeManager.send(finalNodeId, {
@@ -275,7 +289,7 @@ router.post('/from-preset', async (req, res) => {
     serverId: id,
     image: finalImage,
     portMappings: port_mappings,
-    envVars: env_vars,
+    envVars: finalEnvVars,
     memoryLimit: memoryLimit,
     cpuLimit: preset.cpu_limit,
     startupCommand: preset.startup_command || '',
@@ -298,7 +312,7 @@ router.post('/from-preset', async (req, res) => {
   });
 
   if (req.user.role !== 'admin') audit(req.user.id, id, 'server.create', { name, preset: preset.name, image: finalImage }, req);
-  res.status(202).json({ id, status: 'installing' });
+  res.status(202).json({ id, status: 'installing', port_mappings });
 });
 
 router.post('/from-template', async (req, res) => {
@@ -375,7 +389,7 @@ router.post('/from-template', async (req, res) => {
   });
 
   if (req.user.role !== 'admin') audit(req.user.id, id, 'server.create', { name, template: template.name, image: template.image }, req);
-  res.status(202).json({ id, status: 'installing' });
+  res.status(202).json({ id, status: 'installing', port_mappings });
 });
 
 router.post('/', requireAdmin, async (req, res) => {

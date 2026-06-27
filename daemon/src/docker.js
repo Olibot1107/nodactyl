@@ -33,9 +33,15 @@ async function createContainer({ serverId, nodeId = '', image, portMappings = []
   }
 
   const memBytes = memoryLimit * 1024 * 1024;
+  const containerName = `nodactyl-${serverId.slice(0, 8)}`;
+
+  // Remove any stale container holding this name before creating a new one.
+  // This prevents "name already in use" errors when a previous start/install
+  // crashed before removing the old container.
+  try { await docker.getContainer(containerName).remove({ force: true }); } catch {}
 
   return docker.createContainer({
-    name: `nodactyl-${serverId.slice(0, 8)}`,
+    name: containerName,
     Image: image,
     ExposedPorts,
     Env: envVars.map(e => `${e.key}=${e.value}`),
@@ -113,29 +119,36 @@ async function getStats(containerId) {
 async function streamLogs(containerId, onLine, tail = 100) {
   const c = docker.getContainer(containerId);
 
-  // TTY containers emit raw bytes (no Docker multiplex header).
-  // Non-TTY containers use the standard 8-byte frame format.
-  let isTty = false;
+  // All nodactyl containers are created with Tty: true, so this is almost always true.
+  // Fall back to non-TTY (multiplex) decoding only when inspect explicitly says Tty=false.
+  let isTty = true;
   try { isTty = !!(await c.inspect()).Config.Tty; } catch {}
 
   const stream = await c.logs({ follow: true, stdout: true, stderr: true, tail });
 
-  stream.on('data', (chunk) => {
-    if (isTty) {
+  if (isTty) {
+    stream.on('data', (chunk) => {
       const text = chunk.toString('utf8');
       if (text) onLine(text);
-      return;
-    }
-    let offset = 0;
-    while (offset + 8 <= chunk.length) {
-      const size = chunk.readUInt32BE(offset + 4);
-      const end = offset + 8 + size;
-      if (end > chunk.length) break;
-      const text = chunk.slice(offset + 8, end).toString('utf8');
-      if (text) onLine(text);
-      offset = end;
-    }
-  });
+    });
+  } else {
+    // Docker multiplex format: 8-byte header [stream(1) pad(3) size(4)] followed by payload.
+    // Frames can be split across TCP chunks, so we buffer across data events.
+    let buf = Buffer.alloc(0);
+    stream.on('data', (chunk) => {
+      buf = Buffer.concat([buf, chunk]);
+      while (buf.length >= 8) {
+        const size = buf.readUInt32BE(4);
+        if (buf.length < 8 + size) break; // frame not yet complete
+        const text = buf.slice(8, 8 + size).toString('utf8');
+        if (text) onLine(text);
+        buf = buf.slice(8 + size);
+      }
+    });
+  }
+
+  // Prevent unhandled 'error' events from crashing the daemon process.
+  stream.on('error', (err) => console.warn(`[daemon] log stream error (${containerId.slice(0, 12)}):`, err.message));
 
   return stream;
 }
@@ -152,18 +165,19 @@ async function execCommand(containerId, command, onLine, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       stream.destroy();
-      reject(new Error('Command timed out after 30s'));
+      reject(new Error(`Command timed out after ${timeoutMs / 1000}s`));
     }, timeoutMs);
 
+    // exec streams use the same Docker multiplex format — buffer across chunks.
+    let buf = Buffer.alloc(0);
     stream.on('data', chunk => {
-      let offset = 0;
-      while (offset + 8 <= chunk.length) {
-        const size = chunk.readUInt32BE(offset + 4);
-        const end = offset + 8 + size;
-        if (end > chunk.length) break;
-        const text = chunk.slice(offset + 8, end).toString('utf8');
+      buf = Buffer.concat([buf, chunk]);
+      while (buf.length >= 8) {
+        const size = buf.readUInt32BE(4);
+        if (buf.length < 8 + size) break;
+        const text = buf.slice(8, 8 + size).toString('utf8');
         if (text) onLine(text);
-        offset = end;
+        buf = buf.slice(8 + size);
       }
     });
 

@@ -323,6 +323,10 @@ async function main() {
       const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(serverId);
       if (!server) return;
       if (!socketCanConsole(server, socket.user)) return;
+      if (socket.user.role !== 'admin') {
+        const { audit } = require('./audit');
+        audit(socket.user.id, serverId, 'console.command', { command: String(command || '').trim().slice(0, 100) }, socket.handshake.address);
+      }
       nodeManager.emit(server.node_id, { type: 'exec', serverId, containerId: server.container_id, command });
     });
   });

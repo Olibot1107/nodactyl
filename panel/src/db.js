@@ -183,6 +183,7 @@ async function init() {
   try { _db.exec(`CREATE TABLE IF NOT EXISTS api_keys (id TEXT PRIMARY KEY, key TEXT UNIQUE NOT NULL, name TEXT NOT NULL, user_id TEXT NOT NULL, last_used_at INTEGER DEFAULT NULL, created_at INTEGER DEFAULT (strftime('%s','now')))`); } catch {}
   try { _db.exec(`ALTER TABLE audit_logs ADD COLUMN api_key_id TEXT DEFAULT NULL`); } catch {}
   try { _db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_api_key ON audit_logs(api_key_id)`); } catch {}
+  try { _db.exec(`ALTER TABLE presets ADD COLUMN setup_vars TEXT DEFAULT '[]'`); } catch {}
 
   // Seed default ranks
   const rankCount = prepare('SELECT COUNT(*) as count FROM ranks').get();

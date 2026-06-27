@@ -1,6 +1,11 @@
 const { db } = require('../db');
 
 function requireApiKey(req, res, next) {
+  const apiEnabled = db.prepare("SELECT value FROM settings WHERE key = 'api_enabled'").get()?.value;
+  if (apiEnabled === 'false' || apiEnabled === '0') {
+    return res.status(503).json({ error: 'The REST API is currently disabled by an administrator.' });
+  }
+
   const key = req.headers['x-api-key'];
   if (!key) return res.status(401).json({ error: 'Missing X-API-Key header' });
   const row = db.prepare(`

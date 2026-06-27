@@ -133,6 +133,19 @@ function respond(requestId, data = {}, error = null) {
   send({ type: 'response', requestId, success: !error, data, error: error?.message || error });
 }
 
+// Replace {port} and {env.KEY} placeholders in startup commands and scripts
+// so presets can reference the assigned port and env var values without
+// requiring the user to manually edit commands after deployment.
+function applyPlaceholders(str, portMappings, envVars) {
+  if (!str) return str;
+  const port = portMappings?.[0]?.hostPort ?? '';
+  let out = str.replace(/\{port\}/gi, String(port));
+  for (const ev of (envVars || [])) {
+    if (ev.key) out = out.replace(new RegExp(`\\{env\\.${ev.key}\\}`, 'g'), String(ev.value ?? ''));
+  }
+  return out;
+}
+
 // If /home/container/packages exists (populated by pip --target), inject PYTHONPATH so
 // installed packages are importable without any user-side configuration.
 function envWithPythonPath(serverId, envVars) {
@@ -181,6 +194,8 @@ async function syncContainerStates() {
       send({ type: 'server-status', serverId, status, containerId: c.Id });
     }
 
+    const serverIds = list.map(c => c.Labels?.['nodactyl.server-id']).filter(Boolean);
+    send({ type: 'containers-synced', serverIds });
     console.log(`[daemon] Synced ${list.length} container state(s) to panel`);
   } catch (err) {
     console.error('[daemon] Container state sync failed:', err.message);
@@ -225,10 +240,11 @@ async function handleMessage(msg) {
           console.log(`[server:${serverId.slice(0, 8)}] Running install script...`);
           send({ type: 'log', serverId, line: '\r\n\x1b[33m[Nodactyl] Running install script...\x1b[0m\r\n' });
 
+          const effectiveInstallScript = applyPlaceholders(installScript, portMappings, envVars);
           const memBytes = (memoryLimit || 512) * 1024 * 1024;
           const installContainer = await docker.docker.createContainer({
             Image: image,
-            Cmd: ['/bin/sh', '-c', installScript],
+            Cmd: ['/bin/sh', '-c', effectiveInstallScript],
             WorkingDir: '/home/container',
             Env: (envVars || []).map(e => `${e.key}=${e.value}`),
             HostConfig: {
@@ -241,21 +257,20 @@ async function handleMessage(msg) {
 
           // Attach before start so no output is missed
           const attachStream = await installContainer.attach({ stream: true, stdout: true, stderr: true });
+          // Install containers use Tty:false → Docker multiplex format. Buffer across chunks
+          // so frames split across TCP packets are decoded correctly.
+          let installBuf = Buffer.alloc(0);
           attachStream.on('data', chunk => {
-            let offset = 0;
-            while (offset + 8 <= chunk.length) {
-              const size = chunk.readUInt32BE(offset + 4);
-              const end = offset + 8 + size;
-              if (end > chunk.length) break;
-              const text = chunk.slice(offset + 8, end).toString('utf8');
+            installBuf = Buffer.concat([installBuf, chunk]);
+            while (installBuf.length >= 8) {
+              const size = installBuf.readUInt32BE(4);
+              if (installBuf.length < 8 + size) break;
+              const text = installBuf.slice(8, 8 + size).toString('utf8');
               if (text) send({ type: 'log', serverId, line: text });
-              offset = end;
-            }
-            if (offset === 0) {
-              const text = chunk.toString('utf8');
-              if (text) send({ type: 'log', serverId, line: text });
+              installBuf = installBuf.slice(8 + size);
             }
           });
+          attachStream.on('error', err => send({ type: 'log', serverId, line: `[stream error: ${err.message}]\n` }));
 
           await installContainer.start();
           const { StatusCode: exitCode } = await installContainer.wait();
@@ -346,8 +361,10 @@ async function handleMessage(msg) {
           if (savedImage) console.log(`[server:${serverId.slice(0, 8)}] Starting from saved state`);
           const imageToUse = savedImage || serverConfig.image;
 
-          const pre = (preStartScript || '').trim();
-          const cmd = (startupCommand || '').trim();
+          const allEnvVars = serverConfig.envVars || [];
+          const portMappingsForCmd = serverConfig.portMappings || [];
+          const pre = applyPlaceholders((preStartScript || '').trim(), portMappingsForCmd, allEnvVars);
+          const cmd = applyPlaceholders((startupCommand || '').trim(), portMappingsForCmd, allEnvVars);
           const effectiveCmd = pre && cmd ? `${pre} && exec ${cmd}` : pre || cmd;
 
           const newContainer = await docker.createContainer({
@@ -451,6 +468,11 @@ async function handleMessage(msg) {
         stream.on('end', () => {
           const cur = activeLogStreams.get(serverId);
           if (cur?.containerId === containerId) activeLogStreams.delete(serverId);
+        });
+        stream.on('error', (err) => {
+          const cur = activeLogStreams.get(serverId);
+          if (cur?.containerId === containerId) activeLogStreams.delete(serverId);
+          console.warn(`[server:${serverId.slice(0, 8)}] Log stream error:`, err.message);
         });
       } catch (err) {
         send({ type: 'log', serverId, line: `[Error: ${err.message}]\n` });
@@ -556,7 +578,7 @@ async function handleMessage(msg) {
       try {
         const c = docker.docker.getContainer(containerId);
         const stream = await c.attach({ stream: true, stdin: true, stdout: false, stderr: false, hijack: true });
-        stream.write(Buffer.from(data, 'binary'));
+        stream.write(Buffer.from(data, 'utf8'));
         stream.end();
         respond(requestId, {});
       } catch (err) {

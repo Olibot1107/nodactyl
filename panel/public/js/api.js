@@ -92,7 +92,7 @@ function renderSidebar(activePage) {
     { href: '/dashboard',  icon: ICONS.servers,    label: 'My Servers', key: 'dashboard' },
     ...((ps.discord_enabled === '1' || ps.github_enabled === '1') ? [{ href: '/connectors', icon: ICONS.connectors, label: 'Connectors', key: 'connectors' }] : []),
     ...(!isAdmin ? [{ href: '/nodes', icon: ICONS.nodes, label: 'Node Status', key: 'nodes' }] : []),
-    { href: '/apikeys', icon: ICONS.apikey, label: 'API Keys', key: 'apikeys' },
+    ...(ps.api_enabled !== '0' ? [{ href: '/apikeys', icon: ICONS.apikey, label: 'API Keys', key: 'apikeys' }] : []),
   ];
 
   const adminNav = isAdmin ? [

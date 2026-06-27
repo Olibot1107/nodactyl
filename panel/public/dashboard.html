@@ -34,6 +34,7 @@
         <label class="form-label">Node</label>
         <select class="form-select" id="d_node"></select>
       </div>
+      <div id="d_setupVars"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeDeployModal()">Cancel</button>
@@ -490,6 +491,23 @@ function openDeployModal(presetId, presetName) {
     nodeGroup.style.display = 'none';
   }
 
+  // Setup variables (per-deploy prompts defined on the preset)
+  const svWrap = document.getElementById('d_setupVars');
+  const setupVars = preset?.setup_vars || [];
+  if (setupVars.length > 0) {
+    // Find current default value from preset's env_vars for each setup var
+    const envDefaults = {};
+    for (const ev of (preset?.env_vars || [])) envDefaults[ev.key] = ev.value;
+    svWrap.innerHTML = setupVars.map(sv => `
+      <div class="form-group">
+        <label class="form-label">${esc(sv.label)}</label>
+        <input type="text" class="form-input" id="sv_${esc(sv.key)}" placeholder="${esc(sv.description || sv.label)}" value="${esc(envDefaults[sv.key] ?? '')}">
+        ${sv.description ? `<div class="form-hint">${esc(sv.description)}</div>` : ''}
+      </div>`).join('');
+  } else {
+    svWrap.innerHTML = '';
+  }
+
   document.getElementById('deployModal').classList.add('open');
 }
 
@@ -508,10 +526,17 @@ async function deployServer() {
   const image = document.getElementById('d_version').value || undefined;
   if (!name) { errEl.textContent = 'Server name is required.'; errEl.classList.add('show'); return; }
 
+  const preset = presets.find(p => p.id === deployPresetId);
+  const setup_var_values = {};
+  for (const sv of (preset?.setup_vars || [])) {
+    const el = document.getElementById(`sv_${sv.key}`);
+    if (el) setup_var_values[sv.key] = el.value;
+  }
+
   btn.innerHTML = '<span class="spinner"></span> Deploying...';
   btn.disabled = true;
   try {
-    await API.post('/servers/from-preset', { name, preset_id: deployPresetId, node_id, image });
+    await API.post('/servers/from-preset', { name, preset_id: deployPresetId, node_id, image, setup_var_values });
     closeDeployModal();
     await loadData();
   } catch (e) {

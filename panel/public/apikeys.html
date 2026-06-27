@@ -94,6 +94,22 @@ let revokeId = null;
 
 async function init() {
   await loadPanelSettings();
+  const ps = getPanelSettings();
+  if (ps.api_enabled === '0') {
+    document.getElementById('app').innerHTML = `
+      ${renderSidebar('apikeys')}
+      <div class="main">
+        <div class="topbar"><div><div class="page-title">API Keys</div></div></div>
+        <div class="content">
+          <div class="card" style="max-width:480px;text-align:center;padding:40px 24px">
+            <div style="font-size:32px;margin-bottom:12px">🔒</div>
+            <div style="font-size:16px;font-weight:700;margin-bottom:8px">API Access Disabled</div>
+            <div style="font-size:13px;color:var(--text-muted)">The REST API has been disabled by an administrator. API keys cannot be created or used while the API is off.</div>
+          </div>
+        </div>
+      </div>`;
+    return;
+  }
   document.getElementById('app').innerHTML = `
     ${renderSidebar('apikeys')}
     <div class="main">

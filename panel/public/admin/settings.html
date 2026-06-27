@@ -155,6 +155,25 @@ async function init() {
           <button class="btn btn-primary" id="saveRateLimitsBtn" onclick="saveRateLimits()">Save Rate Limits</button>
         </div>
 
+        <div class="card" style="max-width:520px;margin-bottom:16px">
+          <div class="card-title" style="margin-bottom:6px">REST API Access</div>
+          <div class="form-hint mb-3">Controls whether external REST API requests (<code>/api/v1</code>) are accepted. Disabling blocks all API key requests immediately.</div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:var(--text)">API Enabled</div>
+              <div class="form-hint" style="margin:2px 0 0">Turn off to reject all external API key requests</div>
+            </div>
+            <label class="toggle-switch orange" style="flex-shrink:0">
+              <input type="checkbox" id="api_enabled" checked>
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div style="margin-top:16px">
+            <button class="btn btn-primary" id="saveApiBtn" onclick="saveApiSettings()">Save API Settings</button>
+          </div>
+        </div>
+
         <div class="card" style="max-width:520px">
           <div class="card-title mb-3">Quick links</div>
           <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
@@ -178,11 +197,27 @@ async function loadSettings() {
     if (s.panel_name) document.getElementById('panel_name').value = s.panel_name;
     if (s.panel_logo) document.getElementById('panel_logo').value = s.panel_logo;
     document.getElementById('robots_txt').value = s.robots_txt ?? 'User-agent: *\nDisallow: /';
+    document.getElementById('api_enabled').checked = (s.api_enabled ?? '1') !== '0';
     document.getElementById('api_rate_limit_enabled').checked = (s.api_rate_limit_enabled ?? '1') !== '0';
     document.getElementById('api_rate_limit_per_min').value  = s.api_rate_limit_per_min  ?? '60';
     document.getElementById('api_rate_limit_per_hour').value = s.api_rate_limit_per_hour ?? '1000';
     updatePreview();
   } catch (e) { showErr(e.message); }
+}
+
+async function saveApiSettings() {
+  const btn = document.getElementById('saveApiBtn');
+  btn.innerHTML = '<span class="spinner"></span> Saving...';
+  btn.disabled = true;
+  try {
+    await API.patch('/settings', { api_enabled: document.getElementById('api_enabled').checked ? '1' : '0' });
+    showOk('API settings saved.');
+  } catch (e) {
+    showErr(e.message);
+  } finally {
+    btn.innerHTML = 'Save API Settings';
+    btn.disabled = false;
+  }
 }
 
 async function saveRateLimits() {
