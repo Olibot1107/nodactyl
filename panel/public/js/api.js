@@ -261,22 +261,24 @@ function timeAgo(unixSec) {
   return Math.floor(diff / 86400) + 'd ago';
 }
 
-function renderServerNav(serverId, active) {
+function renderServerNav(serverId, active, server) {
+  const enableMods     = server ? (server.enable_mods     ?? 1) : 1;
+  const enablePackages = server ? (server.enable_packages ?? 1) : 1;
   const tabs = [
     { key: 'console', label: 'Console', href: `/server/${serverId}`,
       icon: `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>` },
     { key: 'files',   label: 'Files',   href: `/server/${serverId}/files`,
       icon: `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>` },
-    { key: 'mods',    label: 'Mods',    href: `/server/${serverId}/mods`,
+    { key: 'mods', label: 'Mods', href: `/server/${serverId}/mods`, hidden: !enableMods,
       icon: `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="8.5" x2="22" y2="8.5"/><line x1="2" y1="15.5" x2="22" y2="15.5"/></svg>` },
-    { key: 'packages', label: 'Packages', href: `/server/${serverId}/packages`,
+    { key: 'packages', label: 'Packages', href: `/server/${serverId}/packages`, hidden: !enablePackages,
       icon: `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M21 10V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l2-1.14"/><path d="M16.5 9.4l-9-5.19M12 12l-9-5.19M12 12v9"/><circle cx="18.5" cy="15.5" r="2.5"/><path d="M20.27 17.27L22 19"/></svg>` },
     { key: 'settings',label: 'Settings',href: `/server/${serverId}/settings`,
       icon: `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>` },
     { key: 'activity', label: 'Activity', href: `/server/${serverId}/activity`,
       icon: `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>` },
   ];
-  return `<nav class="server-nav">${tabs.map(t =>
+  return `<nav class="server-nav">${tabs.filter(t => !t.hidden).map(t =>
     `<a class="server-nav-item ${active === t.key ? 'active' : ''}" href="${t.href}">${t.icon} ${t.label}</a>`
   ).join('')}</nav>`;
 }

@@ -3,10 +3,9 @@ const nodeManager = require('./nodeManager');
 const log = require('./log');
 
 function runCleanup() {
-  // Servers marked deleting with a known container — send delete to daemon
-  const stale = db.prepare("SELECT * FROM servers WHERE status = 'deleting' AND container_id IS NOT NULL").all();
+  const stale = db.prepare("SELECT * FROM servers WHERE status = 'deleting'").all();
   for (const server of stale) {
-    if (nodeManager.isOnline(server.node_id)) {
+    if (server.container_id && nodeManager.isOnline(server.node_id)) {
       log.info('cleanup', `Removing orphaned container for "${server.name}" (${server.id.slice(0, 8)})`);
       nodeManager.send(server.node_id, { type: 'delete-server', serverId: server.id, containerId: server.container_id })
         .catch(() => {})
@@ -14,7 +13,8 @@ function runCleanup() {
           db.prepare("DELETE FROM servers WHERE id = ? AND status = 'deleting'").run(server.id);
         });
     } else {
-      log.warn('cleanup', `Node offline — removing "${server.name}" (${server.id.slice(0, 8)}) from DB; container may be orphaned`);
+      // No container, or node is offline — nothing to clean up on the daemon side, just remove from DB
+      if (server.container_id) log.warn('cleanup', `Node offline — removing "${server.name}" (${server.id.slice(0, 8)}) from DB; container may be orphaned`);
       db.prepare("DELETE FROM servers WHERE id = ? AND status = 'deleting'").run(server.id);
     }
   }

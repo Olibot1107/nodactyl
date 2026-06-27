@@ -77,7 +77,7 @@ async function init() {
   try {
     server = await API.get(`/servers/${serverId}`);
     renderTopbar();
-    document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'settings');
+    document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'settings', server);
     if (server.suspended && getUser()?.role !== 'admin') {
       document.getElementById('content').innerHTML = `<div class="empty-state"><div class="empty-icon" style="font-size:28px">⚠</div><p>This server is suspended. Settings are unavailable until an admin unsuspends it.</p></div>`;
       return;
@@ -151,6 +151,27 @@ function buildContent() {
             <label class="form-label">Pre-Start Script <span class="text-muted">(optional)</span></label>
             <textarea class="form-input font-mono" id="fieldPreStart" rows="3" placeholder="e.g. apk add --no-cache curl wget\nnpm install">${esc(server.pre_start_script || '')}</textarea>
             <div class="form-hint mt-2">${UI.info} Shell commands that run every time the container starts, before the startup command. Use this to install packages that would otherwise be lost on restart (e.g. <code style="font-size:11px;background:var(--bg3);padding:1px 4px;border-radius:3px">apk add --no-cache curl</code>).</div>
+          </div>
+        </div>
+
+        <div class="card mb-4">
+          <div class="card-title mb-1">Feature Pages</div>
+          <div class="text-muted mb-4" style="font-size:12.5px">Show or hide the Mods and Packages tabs for this server.</div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+              <input type="checkbox" id="fieldEnableMods" ${server.enable_mods !== 0 ? 'checked' : ''} style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
+              <div>
+                <div style="font-size:13px;font-weight:500">Enable Mods page</div>
+                <div style="font-size:12px;color:var(--text-muted)">Shows the Mods tab — lets users browse and install Modrinth content.</div>
+              </div>
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+              <input type="checkbox" id="fieldEnablePackages" ${server.enable_packages !== 0 ? 'checked' : ''} style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
+              <div>
+                <div style="font-size:13px;font-weight:500">Enable Packages page</div>
+                <div style="font-size:12px;color:var(--text-muted)">Shows the Packages tab — lets users install system packages.</div>
+              </div>
+            </label>
           </div>
         </div>
 
@@ -458,7 +479,9 @@ async function saveSettings() {
   };
 
   const pre_start_script = document.getElementById('fieldPreStart').value;
-  const body = { name, description, startup_command, pre_start_script, env_vars: getEnvVars(), secret_vars: getSecretVars(), discord_webhook: discord_webhook || null, discord_config };
+  const enable_mods = document.getElementById('fieldEnableMods')?.checked ? 1 : 0;
+  const enable_packages = document.getElementById('fieldEnablePackages')?.checked ? 1 : 0;
+  const body = { name, description, startup_command, pre_start_script, enable_mods, enable_packages, env_vars: getEnvVars(), secret_vars: getSecretVars(), discord_webhook: discord_webhook || null, discord_config };
 
   try {
     const updated = await API.patch(`/servers/${serverId}/settings`, body);
@@ -466,8 +489,11 @@ async function saveSettings() {
     server.description = description;
     server.startup_command = startup_command;
     server.pre_start_script = pre_start_script;
+    server.enable_mods = enable_mods;
+    server.enable_packages = enable_packages;
     server.discord_webhook = discord_webhook || null;
     server.discord_config = discord_config;
+    document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'settings', server);
     server.secret_vars = updated.secret_vars || [];
     // Re-render secrets list to reflect saved keys (with blank values)
     document.getElementById('secretList').innerHTML = '';

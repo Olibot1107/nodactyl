@@ -118,7 +118,7 @@ function checkAccountLimits(userId, addMemoryMb, addDiskMb) {
   // Max servers
   const maxServers = data.max_servers ?? 1;
   if (maxServers !== -1) {
-    const count = db.prepare('SELECT COUNT(*) as n FROM servers WHERE owner_id = ?').get(userId)?.n ?? 0;
+    const count = db.prepare("SELECT COUNT(*) as n FROM servers WHERE owner_id = ? AND status != 'deleting'").get(userId)?.n ?? 0;
     if (count >= maxServers) return `Server limit reached (${count}/${maxServers}). Ask an admin to upgrade your rank.`;
   }
 
@@ -292,8 +292,8 @@ router.post('/from-preset', async (req, res) => {
     }
   }
 
-  db.prepare(`INSERT INTO servers (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, pre_start_script, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
-    .run(id, name, preset.description, finalImage, finalNodeId, req.user.id, JSON.stringify(port_mappings), JSON.stringify(finalEnvVars), memoryLimit, preset.cpu_limit, diskLimit, preset.startup_command || '', installScript, preStartScript);
+  db.prepare(`INSERT INTO servers (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, pre_start_script, enable_mods, enable_packages, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
+    .run(id, name, preset.description, finalImage, finalNodeId, req.user.id, JSON.stringify(port_mappings), JSON.stringify(finalEnvVars), memoryLimit, preset.cpu_limit, diskLimit, preset.startup_command || '', installScript, preStartScript, preset.enable_mods ?? 1, preset.enable_packages ?? 1);
 
   log.info('server', `Installing "${name}" (${id.slice(0, 8)}) via preset "${preset.name}" on node ${finalNodeId.slice(0, 8)}`);
   nodeManager.send(finalNodeId, {
@@ -362,8 +362,8 @@ router.post('/from-template', async (req, res) => {
   const installScript = template.install_script || '';
   const preStartScript = template.pre_start_script || '';
 
-  db.prepare(`INSERT INTO servers (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, pre_start_script, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
-    .run(id, name, template.description, template.image, finalNodeId, req.user.id, JSON.stringify(port_mappings), template.env_vars, memoryLimit, template.cpu_limit, diskLimit, template.startup_command || '', installScript, preStartScript);
+  db.prepare(`INSERT INTO servers (id, name, description, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, pre_start_script, enable_mods, enable_packages, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installing')`)
+    .run(id, name, template.description, template.image, finalNodeId, req.user.id, JSON.stringify(port_mappings), template.env_vars, memoryLimit, template.cpu_limit, diskLimit, template.startup_command || '', installScript, preStartScript, template.enable_mods ?? 1, template.enable_packages ?? 1);
 
   log.info('server', `Installing "${name}" (${id.slice(0, 8)}) via template "${template.name}" on node ${finalNodeId.slice(0, 8)}`);
   nodeManager.send(finalNodeId, {
@@ -868,7 +868,7 @@ router.patch('/:id/settings', async (req, res) => {
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!hasPerm(server, req.user, 'settings')) return res.status(403).json({ error: 'Forbidden' });
   const suspErr2 = suspendedBlock(server, req.user); if (suspErr2) return res.status(suspErr2.status).json({ error: suspErr2.error });
-  const { name, description, startup_command, pre_start_script, disk_limit, memory_limit, cpu_limit, discord_webhook, discord_config, env_vars, secret_vars } = req.body;
+  const { name, description, startup_command, pre_start_script, disk_limit, memory_limit, cpu_limit, discord_webhook, discord_config, env_vars, secret_vars, enable_mods, enable_packages } = req.body;
   const updates = [];
   const values = [];
   if (name !== undefined) {
@@ -914,6 +914,8 @@ router.patch('/:id/settings', async (req, res) => {
     updates.push('secret_vars = ?');
     values.push(JSON.stringify(sanitized));
   }
+  if (enable_mods !== undefined) { updates.push('enable_mods = ?'); values.push(enable_mods ? 1 : 0); }
+  if (enable_packages !== undefined) { updates.push('enable_packages = ?'); values.push(enable_packages ? 1 : 0); }
   if (discord_config !== undefined) {
     const cfg = discord_config ? {
       events: (Array.isArray(discord_config.events) ? discord_config.events : ['running', 'stopped', 'error'])
@@ -944,7 +946,10 @@ router.delete('/:id', async (req, res) => {
   db.prepare("UPDATE servers SET status = 'deleting' WHERE id = ?").run(server.id);
   emitServerDeleted(server);
 
-  if (nodeManager.isOnline(server.node_id) && server.container_id) {
+  if (!nodeManager.isOnline(server.node_id) || !server.container_id) {
+    // Node offline or no container yet — just wipe the DB row immediately
+    db.prepare('DELETE FROM servers WHERE id = ?').run(server.id);
+  } else {
     await nodeManager.send(server.node_id, {
       type: 'delete-server',
       serverId: server.id,
@@ -952,8 +957,6 @@ router.delete('/:id', async (req, res) => {
     }).catch(() => {});
     db.prepare("DELETE FROM servers WHERE id = ? AND status = 'deleting'").run(server.id);
   }
-  // If container_id is null (still installing): the install callback will detect 'deleting' and clean up
-  // If node offline with a container: cleanup job retries every 8s
 
   res.json({ ok: true });
 });
@@ -1150,7 +1153,7 @@ router.post('/:id/transfer', (req, res) => {
     const targetRank = target.rank_id ? db.prepare('SELECT max_servers FROM ranks WHERE id = ?').get(target.rank_id) : null;
     const maxServers = targetRank ? targetRank.max_servers : 1;
     if (maxServers !== -1) {
-      const { count } = db.prepare('SELECT COUNT(*) as count FROM servers WHERE owner_id = ?').get(String(target.id));
+      const { count } = db.prepare("SELECT COUNT(*) as count FROM servers WHERE owner_id = ? AND status != 'deleting'").get(String(target.id));
       if (count >= maxServers) return res.status(400).json({ error: `${username} is at their server limit (${maxServers})` });
     }
   }
@@ -1177,7 +1180,7 @@ router.post('/:id/transfer/accept', (req, res) => {
     const myRank = me?.rank_id ? db.prepare('SELECT max_servers FROM ranks WHERE id = ?').get(me.rank_id) : null;
     const maxServers = myRank ? myRank.max_servers : 1;
     if (maxServers !== -1) {
-      const { count } = db.prepare('SELECT COUNT(*) as count FROM servers WHERE owner_id = ?').get(String(req.user.id));
+      const { count } = db.prepare("SELECT COUNT(*) as count FROM servers WHERE owner_id = ? AND status != 'deleting'").get(String(req.user.id));
       if (count >= maxServers) return res.status(400).json({ error: 'You are at your server limit and cannot accept this transfer' });
     }
   }

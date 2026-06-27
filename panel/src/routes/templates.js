@@ -102,16 +102,17 @@ router.get('/:id', (req, res) => {
 
 router.post('/', requireAdmin, (req, res) => {
   const { name, description = '', image, env_vars = [], memory_limit = 512, cpu_limit = 1.0,
-    disk_limit = 0, startup_command = '', install_script = '', pre_start_script = '', required_rank_id, files = [] } = req.body;
+    disk_limit = 0, startup_command = '', install_script = '', pre_start_script = '', required_rank_id, files = [],
+    enable_mods = 1, enable_packages = 1 } = req.body;
   if (!name || !image) return res.status(400).json({ error: 'name and image are required' });
 
   const id = uuidv4();
-  db.prepare(`INSERT INTO templates (id, name, description, image, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, pre_start_script, required_rank_id, files)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+  db.prepare(`INSERT INTO templates (id, name, description, image, env_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, pre_start_script, required_rank_id, files, enable_mods, enable_packages)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(id, name, description, image,
       JSON.stringify(env_vars), memory_limit, cpu_limit, disk_limit,
       startup_command, install_script, pre_start_script, required_rank_id || null,
-      JSON.stringify(files));
+      JSON.stringify(files), enable_mods ? 1 : 0, enable_packages ? 1 : 0);
 
   res.status(201).json(parseTemplate(db.prepare('SELECT * FROM templates WHERE id = ?').get(id)));
 });
@@ -120,7 +121,7 @@ router.patch('/:id', requireAdmin, (req, res) => {
   const t = db.prepare('SELECT * FROM templates WHERE id = ?').get(req.params.id);
   if (!t) return res.status(404).json({ error: 'Not found' });
 
-  const fields = ['name','description','image','memory_limit','cpu_limit','disk_limit','startup_command','install_script','pre_start_script','required_rank_id'];
+  const fields = ['name','description','image','memory_limit','cpu_limit','disk_limit','startup_command','install_script','pre_start_script','required_rank_id','enable_mods','enable_packages'];
   const updates = [], values = [];
   for (const f of fields) {
     if (req.body[f] !== undefined) { updates.push(`${f} = ?`); values.push(req.body[f]); }

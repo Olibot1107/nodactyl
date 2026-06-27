@@ -89,18 +89,19 @@ router.get('/:id', (req, res) => {
 });
 
 router.post('/', requireAdmin, (req, res) => {
-  const { name, description = '', image, images = [], port_mappings = [], env_vars = [], setup_vars = [], memory_limit = 512, cpu_limit = 1.0, disk_limit = 0, startup_command = '', install_script = '', pre_start_script = '', required_rank_id = null } = req.body;
+  const { name, description = '', image, images = [], port_mappings = [], env_vars = [], setup_vars = [], memory_limit = 512, cpu_limit = 1.0, disk_limit = 0, startup_command = '', install_script = '', pre_start_script = '', required_rank_id = null, enable_mods = 1, enable_packages = 1 } = req.body;
   if (!name || !image) return res.status(400).json({ error: 'name and image are required' });
   const safeImages    = Array.isArray(images)     ? images.filter(i => i && typeof i.label === 'string' && typeof i.image === 'string' && i.image) : [];
   const safeSetupVars = Array.isArray(setup_vars) ? setup_vars.filter(sv => sv?.key && sv?.label) : [];
 
   const id = uuidv4();
-  db.prepare('INSERT INTO presets (id, name, description, image, images, port_mappings, env_vars, setup_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, pre_start_script, required_rank_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+  db.prepare('INSERT INTO presets (id, name, description, image, images, port_mappings, env_vars, setup_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, pre_start_script, required_rank_id, enable_mods, enable_packages) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run(id, name, description, image, JSON.stringify(safeImages), JSON.stringify(port_mappings), JSON.stringify(env_vars), JSON.stringify(safeSetupVars),
       Math.max(64, parseInt(memory_limit) || 512),
       Math.max(0.1, parseFloat(cpu_limit) || 1.0),
       Math.max(0, parseInt(disk_limit) || 0),
-      startup_command, install_script, pre_start_script, required_rank_id || null);
+      startup_command, install_script, pre_start_script, required_rank_id || null,
+      enable_mods ? 1 : 0, enable_packages ? 1 : 0);
 
   res.status(201).json(parsePreset(db.prepare('SELECT * FROM presets WHERE id = ?').get(id)));
 });
@@ -109,14 +110,14 @@ router.put('/:id', requireAdmin, (req, res) => {
   const existing = db.prepare('SELECT * FROM presets WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
-  const { name, description, image, images, port_mappings, env_vars, setup_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, pre_start_script, required_rank_id } = req.body;
+  const { name, description, image, images, port_mappings, env_vars, setup_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, pre_start_script, required_rank_id, enable_mods, enable_packages } = req.body;
   const safeImages = images !== undefined
     ? (Array.isArray(images) ? images.filter(i => i && typeof i.label === 'string' && typeof i.image === 'string' && i.image) : [])
     : JSON.parse(existing.images || '[]');
   const safeSetupVars = setup_vars !== undefined
     ? (Array.isArray(setup_vars) ? setup_vars.filter(sv => sv?.key && sv?.label) : [])
     : JSON.parse(existing.setup_vars || '[]');
-  db.prepare('UPDATE presets SET name=?, description=?, image=?, images=?, port_mappings=?, env_vars=?, setup_vars=?, memory_limit=?, cpu_limit=?, disk_limit=?, startup_command=?, install_script=?, pre_start_script=?, required_rank_id=? WHERE id=?')
+  db.prepare('UPDATE presets SET name=?, description=?, image=?, images=?, port_mappings=?, env_vars=?, setup_vars=?, memory_limit=?, cpu_limit=?, disk_limit=?, startup_command=?, install_script=?, pre_start_script=?, required_rank_id=?, enable_mods=?, enable_packages=? WHERE id=?')
     .run(
       name ?? existing.name,
       description ?? existing.description,
@@ -132,6 +133,8 @@ router.put('/:id', requireAdmin, (req, res) => {
       install_script !== undefined ? install_script : (existing.install_script ?? ''),
       pre_start_script !== undefined ? pre_start_script : (existing.pre_start_script ?? ''),
       required_rank_id !== undefined ? (required_rank_id || null) : (existing.required_rank_id || null),
+      enable_mods !== undefined ? (enable_mods ? 1 : 0) : (existing.enable_mods ?? 1),
+      enable_packages !== undefined ? (enable_packages ? 1 : 0) : (existing.enable_packages ?? 1),
       req.params.id
     );
   res.json({ ok: true });

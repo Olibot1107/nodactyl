@@ -256,12 +256,12 @@ router.delete('/servers/:id', async (req, res) => {
       .forEach(m => io.to(`user:${m.user_id}`).emit('server-deleted', { serverId: server.id }));
   }
 
-  if (nodeManager.isOnline(server.node_id) && server.container_id) {
+  if (!nodeManager.isOnline(server.node_id) || !server.container_id) {
+    db.prepare('DELETE FROM servers WHERE id = ?').run(server.id);
+  } else {
     await nodeManager.send(server.node_id, { type: 'delete-server', serverId: server.id, containerId: server.container_id }).catch(() => {});
     db.prepare("DELETE FROM servers WHERE id = ? AND status = 'deleting'").run(server.id);
   }
-  // No container (still installing): install callback detects 'deleting' and cleans up
-  // Node offline with container: cleanup job retries every 8s
 
   res.json({ ok: true });
 });

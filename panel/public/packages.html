@@ -129,7 +129,7 @@ async function init() {
   try {
     server = await API.get(`/servers/${serverId}`);
     renderTopbar();
-    document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'packages');
+    document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'packages', server);
     document.getElementById('content').innerHTML = buildContent();
     attachListeners();
     connectSocket();

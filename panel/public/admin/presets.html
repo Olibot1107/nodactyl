@@ -88,6 +88,26 @@
         <input type="text" class="form-input font-mono" id="p_startup" placeholder="java -jar server.jar --nogui">
         <div class="form-hint">Runs inside <code>/home/container</code>. Leave blank to use the image's default CMD.</div>
       </div>
+      <div class="form-group">
+        <label class="form-label">Feature Pages</label>
+        <div class="form-hint" style="margin-bottom:8px">Control which pages are visible for servers created from this preset.</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <input type="checkbox" id="p_enable_mods" checked style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
+            <div>
+              <div style="font-size:13px;font-weight:500">Enable Mods page</div>
+              <div style="font-size:12px;color:var(--text-muted)">Shows the Mods tab — lets users browse and install Modrinth content.</div>
+            </div>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <input type="checkbox" id="p_enable_packages" checked style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
+            <div>
+              <div style="font-size:13px;font-weight:500">Enable Packages page</div>
+              <div style="font-size:12px;color:var(--text-muted)">Shows the Packages tab — lets users install system packages.</div>
+            </div>
+          </label>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
@@ -188,6 +208,8 @@ function clearModal() {
   document.getElementById('p_memory').value = 512;
   document.getElementById('p_cpu').value = 1;
   document.getElementById('p_disk').value = 0;
+  document.getElementById('p_enable_mods').checked = true;
+  document.getElementById('p_enable_packages').checked = true;
   document.getElementById('envList').innerHTML = '';
   document.getElementById('imageList').innerHTML = '';
   document.getElementById('setupVarList').innerHTML = '';
@@ -223,6 +245,8 @@ function openEdit(id) {
   document.getElementById('p_install').value = p.install_script || '';
   document.getElementById('p_prestart').value = p.pre_start_script || '';
   document.getElementById('p_startup').value = p.startup_command || '';
+  document.getElementById('p_enable_mods').checked = p.enable_mods !== 0;
+  document.getElementById('p_enable_packages').checked = p.enable_packages !== 0;
   populateRankDropdown(p.required_rank_id || '');
   document.getElementById('modalTitle').textContent = 'Edit Preset';
   document.getElementById('saveBtn').textContent = 'Update Preset';
@@ -321,6 +345,8 @@ async function savePreset() {
     pre_start_script: document.getElementById('p_prestart').value.trim(),
     startup_command: document.getElementById('p_startup').value.trim(),
     required_rank_id: document.getElementById('p_rank').value || null,
+    enable_mods: document.getElementById('p_enable_mods').checked ? 1 : 0,
+    enable_packages: document.getElementById('p_enable_packages').checked ? 1 : 0,
   };
   if (!body.name || !body.image) {
     errEl.textContent = 'Name and image are required.';

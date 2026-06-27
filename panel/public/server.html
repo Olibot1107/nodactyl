@@ -65,7 +65,7 @@ async function init() {
   try {
     server = await API.get(`/servers/${serverId}`);
     if (server.status === 'running' && server.terminal_mode) isTerminalMode = true;
-    document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'console');
+    document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'console', server);
     render();
     setupConsoleScrollDetect();
     connectSocket();

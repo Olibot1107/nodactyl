@@ -107,7 +107,7 @@ async function init() {
   try {
     server = await API.get(`/servers/${serverId}`);
     renderTopbar();
-    document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'activity');
+    document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'activity', server);
     await loadLogs(true);
   } catch (e) {
     document.getElementById('content').innerHTML = `<div class="empty-state"><p>${esc(e.message)}</p></div>`;

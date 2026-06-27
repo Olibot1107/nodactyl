@@ -185,6 +185,12 @@ async function init() {
   try { _db.exec(`ALTER TABLE audit_logs ADD COLUMN api_key_id TEXT DEFAULT NULL`); } catch {}
   try { _db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_api_key ON audit_logs(api_key_id)`); } catch {}
   try { _db.exec(`ALTER TABLE presets ADD COLUMN setup_vars TEXT DEFAULT '[]'`); } catch {}
+  try { _db.exec(`ALTER TABLE presets ADD COLUMN enable_mods INTEGER DEFAULT 1`); } catch {}
+  try { _db.exec(`ALTER TABLE presets ADD COLUMN enable_packages INTEGER DEFAULT 1`); } catch {}
+  try { _db.exec(`ALTER TABLE templates ADD COLUMN enable_mods INTEGER DEFAULT 1`); } catch {}
+  try { _db.exec(`ALTER TABLE templates ADD COLUMN enable_packages INTEGER DEFAULT 1`); } catch {}
+  try { _db.exec(`ALTER TABLE servers ADD COLUMN enable_mods INTEGER DEFAULT 1`); } catch {}
+  try { _db.exec(`ALTER TABLE servers ADD COLUMN enable_packages INTEGER DEFAULT 1`); } catch {}
 
   // Seed default ranks
   const rankCount = prepare('SELECT COUNT(*) as count FROM ranks').get();
