@@ -215,6 +215,7 @@ function buildContent() {
           ${(isAdmin || server.owner_id === getUser()?.id) ? `
           <div class="form-group mb-4" style="border-top:1px solid var(--border);padding-top:16px;margin-top:4px">
             <label class="form-label mb-2">Transfer Ownership</label>
+            ${isAdmin ? `<div class="form-hint mb-2" style="color:var(--text-muted)">Current owner: <b>${esc(server.owner_name || '—')}</b></div>` : ''}
             ${server.transfer_to_user_id ? `
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.25);border-radius:8px">
               <span style="font-size:13px;flex:1">Pending — waiting for <b>${esc(server.transfer_to_username || '...')}</b> to accept.</span>

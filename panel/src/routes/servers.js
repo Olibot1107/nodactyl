@@ -1084,14 +1084,16 @@ router.post('/:id/transfer', (req, res) => {
   if (req.user.role !== 'admin' && server.owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
   const { username } = req.body;
   if (!username) return res.status(400).json({ error: 'Username required' });
-  const target = db.prepare('SELECT id, rank_id FROM users WHERE username = ?').get(username);
+  const target = db.prepare('SELECT id, role, rank_id FROM users WHERE username = ?').get(username);
   if (!target) return res.status(404).json({ error: 'User not found' });
   if (target.id === server.owner_id) return res.status(400).json({ error: 'User already owns this server' });
-  const targetRank = target.rank_id ? db.prepare('SELECT max_servers FROM ranks WHERE id = ?').get(target.rank_id) : null;
-  const maxServers = targetRank ? targetRank.max_servers : 1;
-  if (maxServers !== -1) {
-    const { count } = db.prepare('SELECT COUNT(*) as count FROM servers WHERE owner_id = ?').get(String(target.id));
-    if (count >= maxServers) return res.status(400).json({ error: `${username} is at their server limit (${maxServers})` });
+  if (target.role !== 'admin') {
+    const targetRank = target.rank_id ? db.prepare('SELECT max_servers FROM ranks WHERE id = ?').get(target.rank_id) : null;
+    const maxServers = targetRank ? targetRank.max_servers : 1;
+    if (maxServers !== -1) {
+      const { count } = db.prepare('SELECT COUNT(*) as count FROM servers WHERE owner_id = ?').get(String(target.id));
+      if (count >= maxServers) return res.status(400).json({ error: `${username} is at their server limit (${maxServers})` });
+    }
   }
   db.prepare('UPDATE servers SET transfer_to_user_id = ? WHERE id = ?').run(String(target.id), req.params.id);
   res.json({ ok: true });
@@ -1111,15 +1113,20 @@ router.post('/:id/transfer/accept', (req, res) => {
   const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (server.transfer_to_user_id !== String(req.user.id)) return res.status(403).json({ error: 'No pending transfer for you on this server' });
-  const me = db.prepare('SELECT rank_id FROM users WHERE id = ?').get(req.user.id);
-  const myRank = me?.rank_id ? db.prepare('SELECT max_servers FROM ranks WHERE id = ?').get(me.rank_id) : null;
-  const maxServers = myRank ? myRank.max_servers : 1;
-  if (maxServers !== -1) {
-    const { count } = db.prepare('SELECT COUNT(*) as count FROM servers WHERE owner_id = ?').get(String(req.user.id));
-    if (count >= maxServers) return res.status(400).json({ error: 'You are at your server limit and cannot accept this transfer' });
+  if (req.user.role !== 'admin') {
+    const me = db.prepare('SELECT rank_id FROM users WHERE id = ?').get(req.user.id);
+    const myRank = me?.rank_id ? db.prepare('SELECT max_servers FROM ranks WHERE id = ?').get(me.rank_id) : null;
+    const maxServers = myRank ? myRank.max_servers : 1;
+    if (maxServers !== -1) {
+      const { count } = db.prepare('SELECT COUNT(*) as count FROM servers WHERE owner_id = ?').get(String(req.user.id));
+      if (count >= maxServers) return res.status(400).json({ error: 'You are at your server limit and cannot accept this transfer' });
+    }
   }
+  const oldOwnerId = server.owner_id;
   db.prepare('UPDATE servers SET owner_id = ?, transfer_to_user_id = NULL WHERE id = ?').run(req.user.id, req.params.id);
   db.prepare('DELETE FROM server_members WHERE server_id = ? AND user_id = ?').run(req.params.id, req.user.id);
+  const io = nodeManager.io;
+  if (io) io.to(`user:${oldOwnerId}`).emit('server-deleted', { serverId: req.params.id });
   res.json({ ok: true });
 });
 
