@@ -6,7 +6,7 @@ const router = express.Router();
 router.use(requireAuth, requireAdmin);
 
 router.get('/', (req, res) => {
-  const limit  = Math.min(parseInt(req.query.limit)  || 50, 200);
+  const limit  = Math.max(1, Math.min(parseInt(req.query.limit) || 50, 200));
   const offset = Math.max(parseInt(req.query.offset) || 0,  0);
   const userId   = req.query.user_id   || null;
   const serverId = req.query.server_id || null;

@@ -327,7 +327,7 @@ async function main() {
         const { audit } = require('./audit');
         audit(socket.user.id, serverId, 'console.command', { command: String(command || '').trim().slice(0, 100) }, socket.handshake.address);
       }
-      nodeManager.emit(server.node_id, { type: 'exec', serverId, containerId: server.container_id, command });
+      nodeManager.emit(server.node_id, { type: 'send-stdin', serverId, containerId: server.container_id, data: String(command) + '\n' });
     });
   });
 

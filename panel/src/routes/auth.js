@@ -56,7 +56,7 @@ router.post('/register', registerLimiter, (req, res) => {
 
   const { username, email, password } = req.body;
   if (!username || !email || !password) return res.status(400).json({ error: 'All fields are required' });
-  if (username.length < 3) return res.status(400).json({ error: 'Username must be at least 3 characters' });
+  if (username.length < 3 || username.length > 32) return res.status(400).json({ error: 'Username must be 3–32 characters' });
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Invalid email address' });
 
@@ -128,7 +128,7 @@ router.patch('/me', requireAuth, (req, res) => {
   let passwordChanged = false;
   if (username !== undefined) {
     const trimmed = String(username).trim();
-    if (trimmed.length < 3) return res.status(400).json({ error: 'Username must be at least 3 characters' });
+    if (trimmed.length < 3 || trimmed.length > 32) return res.status(400).json({ error: 'Username must be 3–32 characters' });
     const dupe = db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(trimmed, user.id);
     if (dupe) return res.status(400).json({ error: 'Username already taken' });
     updates.push('username = ?'); values.push(trimmed);
@@ -195,6 +195,16 @@ router.delete('/me', requireAuth, async (req, res) => {
   }
 
   const servers = db.prepare('SELECT * FROM servers WHERE owner_id = ?').all(req.user.id);
+
+  const io = nodeManager.io;
+  if (io) {
+    for (const s of servers) {
+      io.to(`user:${s.owner_id}`).to('admins').emit('server-deleted', { serverId: s.id });
+      db.prepare('SELECT user_id FROM server_members WHERE server_id = ?').all(s.id)
+        .forEach(m => io.to(`user:${m.user_id}`).emit('server-deleted', { serverId: s.id }));
+    }
+  }
+
   await Promise.all(servers.map(s => {
     if (nodeManager.isOnline(s.node_id) && s.container_id) {
       return nodeManager.send(s.node_id, {
@@ -203,6 +213,7 @@ router.delete('/me', requireAuth, async (req, res) => {
     }
   }));
 
+  db.prepare('DELETE FROM server_members WHERE user_id = ?').run(req.user.id);
   db.prepare('DELETE FROM servers WHERE owner_id = ?').run(req.user.id);
   db.prepare('DELETE FROM users WHERE id = ?').run(req.user.id);
 

@@ -42,11 +42,19 @@ router.post('/', requireAdmin, (req, res) => {
   const { name, description, memory = 4096, cpu = 4, disk_limit = 0, port_range_start = 10000, port_range_end = 30000, ip_address = '' } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
+  const rangeStart = Math.max(1024, Math.min(65534, parseInt(port_range_start) || 10000));
+  const rangeEnd   = Math.max(1025, Math.min(65535, parseInt(port_range_end)   || 30000));
+  if (rangeStart >= rangeEnd) return res.status(400).json({ error: 'port_range_start must be less than port_range_end' });
+
   const id = uuidv4();
   const token = crypto.randomBytes(32).toString('hex');
 
   db.prepare(`INSERT INTO nodes (id, name, description, token, memory, cpu, disk_limit, port_range_start, port_range_end, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, name, description || '', token, memory, cpu, Math.max(0, parseInt(disk_limit) || 0), parseInt(port_range_start) || 10000, parseInt(port_range_end) || 30000, ip_address || '');
+    .run(id, name, description || '', token,
+      Math.max(64, parseInt(memory) || 4096),
+      Math.max(0.1, parseFloat(cpu) || 4),
+      Math.max(0, parseInt(disk_limit) || 0),
+      rangeStart, rangeEnd, ip_address || '');
 
   const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(id);
   res.status(201).json(node);
@@ -60,14 +68,22 @@ router.patch('/:id', requireAdmin, (req, res) => {
   const values = [];
   if (name !== undefined) { updates.push('name = ?'); values.push(name.trim() || node.name); }
   if (description !== undefined) { updates.push('description = ?'); values.push(description); }
-  if (memory !== undefined) { updates.push('memory = ?'); values.push(Math.max(0, parseInt(memory) || 0)); }
-  if (cpu !== undefined) { updates.push('cpu = ?'); values.push(Math.max(0, parseInt(cpu) || 0)); }
+  if (memory !== undefined) { updates.push('memory = ?'); values.push(Math.max(64, parseInt(memory) || 64)); }
+  if (cpu !== undefined) { updates.push('cpu = ?'); values.push(Math.max(0.1, parseFloat(cpu) || 0.1)); }
   if (disk_limit !== undefined) { updates.push('disk_limit = ?'); values.push(Math.max(0, parseInt(disk_limit) || 0)); }
-  if (port_range_start !== undefined) { updates.push('port_range_start = ?'); values.push(Math.max(1024, parseInt(port_range_start) || 10000)); }
-  if (port_range_end !== undefined) { updates.push('port_range_end = ?'); values.push(Math.min(65535, parseInt(port_range_end) || 30000)); }
+  if (port_range_start !== undefined) { updates.push('port_range_start = ?'); values.push(Math.max(1024, Math.min(65534, parseInt(port_range_start) || 10000))); }
+  if (port_range_end !== undefined) { updates.push('port_range_end = ?'); values.push(Math.max(1025, Math.min(65535, parseInt(port_range_end) || 30000))); }
   if (ip_address !== undefined) { updates.push('ip_address = ?'); values.push(ip_address || ''); }
   if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
   const rangeChanged = port_range_start !== undefined || port_range_end !== undefined;
+
+  // Cross-validate port range using the would-be new values (falling back to current node values)
+  if (rangeChanged) {
+    const newStart = port_range_start !== undefined ? Math.max(1024, Math.min(65534, parseInt(port_range_start) || 10000)) : node.port_range_start;
+    const newEnd   = port_range_end   !== undefined ? Math.max(1025, Math.min(65535, parseInt(port_range_end)   || 30000)) : node.port_range_end;
+    if (newStart >= newEnd) return res.status(400).json({ error: 'port_range_start must be less than port_range_end' });
+  }
+
   values.push(req.params.id);
   db.prepare(`UPDATE nodes SET ${updates.join(', ')} WHERE id = ?`).run(...values);
 

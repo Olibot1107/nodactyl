@@ -19,8 +19,9 @@ router.post('/', requireAdmin, (req, res) => {
   if (existing) return res.status(400).json({ error: 'A rank with that name already exists' });
 
   const id = uuidv4();
+  const parsedMax = parseInt(max_servers);
   db.prepare('INSERT INTO ranks (id, name, color, max_servers, memory_limit, disk_limit, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(id, name, color, Math.max(-1, parseInt(max_servers) || 1), Math.max(0, parseInt(memory_limit) || 0), Math.max(0, parseInt(disk_limit) || 0), sort_order);
+    .run(id, name, color, Math.max(-1, Number.isFinite(parsedMax) ? parsedMax : 1), Math.max(0, parseInt(memory_limit) || 0), Math.max(0, parseInt(disk_limit) || 0), sort_order);
   res.status(201).json(db.prepare('SELECT * FROM ranks WHERE id = ?').get(id));
 });
 
@@ -39,7 +40,7 @@ router.put('/:id', requireAdmin, (req, res) => {
     .run(
       name ?? existing.name,
       color ?? existing.color,
-      max_servers !== undefined ? Math.max(-1, parseInt(max_servers) || 1) : existing.max_servers,
+      max_servers !== undefined ? Math.max(-1, Number.isFinite(parseInt(max_servers)) ? parseInt(max_servers) : 1) : existing.max_servers,
       memory_limit !== undefined ? Math.max(0, parseInt(memory_limit) || 0) : existing.memory_limit,
       disk_limit !== undefined ? Math.max(0, parseInt(disk_limit) || 0) : existing.disk_limit,
       sort_order ?? existing.sort_order,

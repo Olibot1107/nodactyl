@@ -31,6 +31,17 @@ function suspendedBlock(server, user) {
   return null;
 }
 
+// Broadcast a server-deleted event to everyone who has access (owner + members + admins).
+// Called as soon as status is set to 'deleting', before the async daemon call, so the
+// browser removes the card immediately rather than waiting for container cleanup to finish.
+function emitServerDeleted(server) {
+  const io = nodeManager.io;
+  if (!io) return;
+  io.to(`user:${server.owner_id}`).to('admins').emit('server-deleted', { serverId: server.id });
+  const members = db.prepare('SELECT user_id FROM server_members WHERE server_id = ?').all(server.id);
+  members.forEach(m => io.to(`user:${m.user_id}`).emit('server-deleted', { serverId: server.id }));
+}
+
 function fileAccessError(server) {
   if (!nodeManager.isOnline(server.node_id)) return { status: 503, error: 'Node is offline. Start the daemon on this node to access files.' };
   return null;
@@ -262,6 +273,7 @@ router.post('/from-preset', async (req, res) => {
 
   const id = uuidv4();
   const port_mappings = autoPortMappings(finalNodeId);
+  if (port_mappings.length === 0) return res.status(503).json({ error: 'No free ports available on this node. Ask an admin to expand the port range.' });
   const env_vars = JSON.parse(preset.env_vars);
 
   const installScript = preset.install_script || '';
@@ -344,6 +356,7 @@ router.post('/from-template', async (req, res) => {
 
   const id = uuidv4();
   const port_mappings = autoPortMappings(finalNodeId);
+  if (port_mappings.length === 0) return res.status(503).json({ error: 'No free ports available on this node. Ask an admin to expand the port range.' });
   const env_vars = JSON.parse(template.env_vars || '[]');
   const files = JSON.parse(template.files || '[]');
   const installScript = template.install_script || '';
@@ -409,6 +422,7 @@ router.post('/', requireAdmin, async (req, res) => {
   if (!actualNodeId) return res.status(503).json({ error: 'All nodes are full or offline.' });
 
   const port_mappings = autoPortMappings(actualNodeId);
+  if (port_mappings.length === 0) return res.status(503).json({ error: 'No free ports available on this node. Ask an admin to expand the port range.' });
 
   const id = uuidv4();
   const startup_command = req.body.startup_command || '';
@@ -798,13 +812,17 @@ router.patch('/:id/settings', async (req, res) => {
   const { name, description, startup_command, pre_start_script, disk_limit, memory_limit, cpu_limit, discord_webhook, discord_config, env_vars, secret_vars } = req.body;
   const updates = [];
   const values = [];
-  if (name !== undefined) { updates.push('name = ?'); values.push(name.trim() || server.name); }
+  if (name !== undefined) {
+    const trimmed = String(name).trim().slice(0, 100);
+    if (!trimmed) return res.status(400).json({ error: 'Name cannot be empty' });
+    updates.push('name = ?'); values.push(trimmed);
+  }
   if (description !== undefined) { updates.push('description = ?'); values.push(description); }
   if (startup_command !== undefined) { updates.push('startup_command = ?'); values.push(startup_command); }
   if (pre_start_script !== undefined) { updates.push('pre_start_script = ?'); values.push(String(pre_start_script || '')); }
   if (disk_limit !== undefined && req.user.role === 'admin') { updates.push('disk_limit = ?'); values.push(Math.max(0, parseInt(disk_limit) || 0)); }
   if (memory_limit !== undefined && req.user.role === 'admin') { updates.push('memory_limit = ?'); values.push(Math.max(64, parseInt(memory_limit) || 512)); }
-  if (cpu_limit !== undefined && req.user.role === 'admin') { updates.push('cpu_limit = ?'); values.push(Math.max(0.1, parseFloat(cpu_limit) || 1)); }
+  if (cpu_limit    !== undefined && req.user.role === 'admin') { updates.push('cpu_limit = ?'); values.push(Math.max(0.1, Number.isFinite(parseFloat(cpu_limit)) ? parseFloat(cpu_limit) : 1.0)); }
   if (discord_webhook !== undefined) {
     const url = discord_webhook?.trim() || null;
     if (url && !/^https:\/\/discord(app)?\.com\/api\/webhooks\//.test(url)) {
@@ -814,7 +832,10 @@ router.patch('/:id/settings', async (req, res) => {
     values.push(url);
   }
   if (env_vars !== undefined && Array.isArray(env_vars)) {
-    const sanitized = env_vars.filter(e => e.key && String(e.key).trim()).map(e => ({ key: String(e.key).trim(), value: String(e.value ?? '') }));
+    const sanitized = env_vars
+      .filter(e => e.key && String(e.key).trim())
+      .map(e => ({ key: String(e.key).trim().slice(0, 256), value: String(e.value ?? '').slice(0, 4096) }))
+      .filter(e => e.key);
     updates.push('env_vars = ?');
     values.push(JSON.stringify(sanitized));
   }
@@ -824,7 +845,7 @@ router.patch('/:id/settings', async (req, res) => {
     const sanitized = secret_vars
       .filter(e => e.key && String(e.key).trim())
       .map(e => {
-        const key = String(e.key).trim();
+        const key = String(e.key).trim().slice(0, 256);
         // Empty value means "keep existing" — look up the stored value
         const value = (e.value === '' || e.value == null) && key in existingMap
           ? existingMap[key]
@@ -862,6 +883,7 @@ router.delete('/:id', async (req, res) => {
   if (req.user.role !== 'admin') audit(req.user.id, server.id, 'server.delete', { name: server.name }, req);
   log.warn('server', `"${server.name}" (${server.id.slice(0, 8)}) deleted by ${req.user.username || req.user.id}`);
   db.prepare("UPDATE servers SET status = 'deleting' WHERE id = ?").run(server.id);
+  emitServerDeleted(server);
 
   if (nodeManager.isOnline(server.node_id) && server.container_id) {
     await nodeManager.send(server.node_id, {
@@ -972,7 +994,7 @@ router.get('/:id/activity', (req, res) => {
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
 
-  const limit  = Math.min(parseInt(req.query.limit)  || 50, 200);
+  const limit  = Math.max(1, Math.min(parseInt(req.query.limit) || 50, 200));
   const offset = Math.max(parseInt(req.query.offset) || 0, 0);
 
   const logs = db.prepare(`
@@ -1240,6 +1262,7 @@ router.post('/:id/migrate', requireAdmin, async (req, res) => {
 
     // 4. Assign fresh port on target node and update DB
     const port_mappings = autoPortMappings(targetNodeId);
+    if (port_mappings.length === 0) return res.status(503).json({ error: 'No free ports available on the target node. Ask an admin to expand the port range.' });
     db.prepare('UPDATE servers SET node_id = ?, port_mappings = ?, container_id = NULL, status = ? WHERE id = ?')
       .run(targetNodeId, JSON.stringify(port_mappings), 'stopped', server.id);
 

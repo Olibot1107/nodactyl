@@ -70,7 +70,7 @@ router.post('/import', requireAdmin, (req, res) => {
           JSON.stringify(safeImages), '[]',
           JSON.stringify(Array.isArray(p.env_vars) ? p.env_vars : []),
           JSON.stringify(safeSetupVars),
-          p.memory_limit || 512, p.cpu_limit || 1.0,
+          Math.max(64, parseInt(p.memory_limit) || 512), Math.max(0.1, parseFloat(p.cpu_limit) || 1.0),
           Math.max(0, parseInt(p.disk_limit) || 0),
           p.startup_command || '', p.install_script || '', p.pre_start_script || '');
       imported++;
@@ -96,7 +96,11 @@ router.post('/', requireAdmin, (req, res) => {
 
   const id = uuidv4();
   db.prepare('INSERT INTO presets (id, name, description, image, images, port_mappings, env_vars, setup_vars, memory_limit, cpu_limit, disk_limit, startup_command, install_script, pre_start_script, required_rank_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(id, name, description, image, JSON.stringify(safeImages), JSON.stringify(port_mappings), JSON.stringify(env_vars), JSON.stringify(safeSetupVars), memory_limit, cpu_limit, Math.max(0, parseInt(disk_limit) || 0), startup_command, install_script, pre_start_script, required_rank_id || null);
+    .run(id, name, description, image, JSON.stringify(safeImages), JSON.stringify(port_mappings), JSON.stringify(env_vars), JSON.stringify(safeSetupVars),
+      Math.max(64, parseInt(memory_limit) || 512),
+      Math.max(0.1, parseFloat(cpu_limit) || 1.0),
+      Math.max(0, parseInt(disk_limit) || 0),
+      startup_command, install_script, pre_start_script, required_rank_id || null);
 
   res.status(201).json(parsePreset(db.prepare('SELECT * FROM presets WHERE id = ?').get(id)));
 });
@@ -121,8 +125,8 @@ router.put('/:id', requireAdmin, (req, res) => {
       JSON.stringify(port_mappings ?? JSON.parse(existing.port_mappings)),
       JSON.stringify(env_vars ?? JSON.parse(existing.env_vars)),
       JSON.stringify(safeSetupVars),
-      memory_limit ?? existing.memory_limit,
-      cpu_limit ?? existing.cpu_limit,
+      memory_limit !== undefined ? Math.max(64, parseInt(memory_limit) || 512) : existing.memory_limit,
+      cpu_limit    !== undefined ? Math.max(0.1, parseFloat(cpu_limit) || 1.0) : existing.cpu_limit,
       disk_limit !== undefined ? Math.max(0, parseInt(disk_limit) || 0) : (existing.disk_limit || 0),
       startup_command ?? existing.startup_command ?? '',
       install_script !== undefined ? install_script : (existing.install_script ?? ''),

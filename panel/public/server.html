@@ -447,6 +447,11 @@ function connectSocket() {
     server.node_online = status === 'online';
     updateLiveBits();
   });
+
+  socket.on('server-deleted', ({ serverId: sid }) => {
+    if (sid !== serverId) return;
+    window.location.href = '/dashboard.html';
+  });
 }
 
 function subscribeToLogs() {

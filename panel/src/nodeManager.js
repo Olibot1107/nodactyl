@@ -176,9 +176,11 @@ class NodeManager {
       }
 
       case 'server-status': {
-        // Guard: only accept status updates for servers that belong to this node
-        const server = db.prepare('SELECT node_id, owner_id, name FROM servers WHERE id = ?').get(msg.serverId);
-        if (!server || server.node_id !== nodeId) break;
+        // Guard: only accept status updates for servers that belong to this node.
+        // Also ignore updates for servers being deleted — the die event from force-remove
+        // would otherwise overwrite 'deleting' status and break the cleanup DELETE query.
+        const server = db.prepare('SELECT node_id, owner_id, name, status FROM servers WHERE id = ?').get(msg.serverId);
+        if (!server || server.node_id !== nodeId || server.status === 'deleting') break;
 
         log.info('server', `"${server.name}" (${msg.serverId.slice(0, 8)}) → ${msg.status}`);
 

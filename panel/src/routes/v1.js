@@ -249,6 +249,12 @@ router.delete('/servers/:id', async (req, res) => {
   if (server.suspended && req.user.role !== 'admin') return res.status(403).json({ error: 'Server is suspended' });
   audit(req.user.id, server.id, 'server.delete', { name: server.name }, req, req.apiKeyId);
   db.prepare("UPDATE servers SET status = 'deleting' WHERE id = ?").run(server.id);
+  const io = nodeManager.io;
+  if (io) {
+    io.to(`user:${server.owner_id}`).to('admins').emit('server-deleted', { serverId: server.id });
+    db.prepare('SELECT user_id FROM server_members WHERE server_id = ?').all(server.id)
+      .forEach(m => io.to(`user:${m.user_id}`).emit('server-deleted', { serverId: server.id }));
+  }
 
   if (nodeManager.isOnline(server.node_id) && server.container_id) {
     await nodeManager.send(server.node_id, { type: 'delete-server', serverId: server.id, containerId: server.container_id }).catch(() => {});
@@ -538,6 +544,7 @@ router.post('/servers/from-preset', async (req, res) => {
 
   const id = uuidv4();
   const port_mappings  = autoPortMappings(finalNodeId);
+  if (port_mappings.length === 0) return res.status(503).json({ error: 'No free ports available on this node. Ask an admin to expand the port range.' });
   const installScript  = preset.install_script   || '';
   const preStartScript = preset.pre_start_script || '';
 
@@ -633,6 +640,7 @@ router.post('/servers/from-template', async (req, res) => {
 
   const id = uuidv4();
   const port_mappings  = autoPortMappings(finalNodeId);
+  if (port_mappings.length === 0) return res.status(503).json({ error: 'No free ports available on this node. Ask an admin to expand the port range.' });
   const files          = JSON.parse(tpl.files || '[]');
   const installScript  = tpl.install_script   || '';
   const preStartScript = tpl.pre_start_script || '';
@@ -683,7 +691,7 @@ router.get('/servers/:id/activity', (req, res) => {
   if (!server) return res.status(404).json({ error: 'Not found' });
   if (!canAccess(server, req.user)) return res.status(403).json({ error: 'Forbidden' });
 
-  const limit  = Math.min(parseInt(req.query.limit)  || 50, 200);
+  const limit  = Math.max(1, Math.min(parseInt(req.query.limit) || 50, 200));
   const offset = Math.max(parseInt(req.query.offset) || 0,  0);
 
   const logs = db.prepare(`

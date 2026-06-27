@@ -2,6 +2,7 @@ const express = require('express');
 const { db } = require('../db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const nodeManager = require('../nodeManager');
+const { audit } = require('../audit');
 
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
@@ -58,6 +59,18 @@ router.delete('/:id', async (req, res) => {
   if (user.role === 'admin') return res.status(400).json({ error: 'Cannot delete admin accounts' });
 
   const servers = db.prepare('SELECT * FROM servers WHERE owner_id = ?').all(req.params.id);
+
+  // Notify browsers immediately — do this before the async daemon calls so dashboards
+  // remove the cards without waiting for container teardown to complete.
+  const io = nodeManager.io;
+  if (io) {
+    for (const s of servers) {
+      io.to(`user:${s.owner_id}`).to('admins').emit('server-deleted', { serverId: s.id });
+      db.prepare('SELECT user_id FROM server_members WHERE server_id = ?').all(s.id)
+        .forEach(m => io.to(`user:${m.user_id}`).emit('server-deleted', { serverId: s.id }));
+    }
+  }
+
   await Promise.all(servers.map(s => {
     if (nodeManager.isOnline(s.node_id) && s.container_id) {
       return nodeManager.send(s.node_id, {
@@ -66,8 +79,10 @@ router.delete('/:id', async (req, res) => {
     }
   }));
 
+  db.prepare('DELETE FROM server_members WHERE user_id = ?').run(req.params.id);
   db.prepare('DELETE FROM servers WHERE owner_id = ?').run(req.params.id);
   db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  audit(req.user.id, null, 'user.delete', { username: user.username }, req);
   res.json({ ok: true });
 });
 
