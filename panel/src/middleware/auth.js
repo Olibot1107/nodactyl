@@ -13,9 +13,9 @@ function requireAuth(req, res, next) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     // Re-read from DB on every request: catches role changes and suspensions before token expires
-    const user = db.prepare('SELECT id, username, role, suspended FROM users WHERE id = ?').get(decoded.id);
+    const user = db.prepare('SELECT id, username, role, suspended, rank_id FROM users WHERE id = ?').get(decoded.id);
     if (!user || user.suspended) return res.status(401).json({ error: 'Unauthorized' });
-    req.user = { ...decoded, role: user.role };
+    req.user = { ...decoded, role: user.role, rank_id: user.rank_id };
     next();
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' });

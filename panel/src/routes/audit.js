@@ -36,8 +36,12 @@ router.get('/', (req, res) => {
     LIMIT ? OFFSET ?
   `).all([...params, limit, offset]);
 
-  const total = db.prepare(`SELECT COUNT(*) as n FROM audit_logs al ${whereClause}`)
-    .get(params)?.n ?? 0;
+  const total = db.prepare(`
+    SELECT COUNT(*) as n FROM audit_logs al
+    LEFT JOIN users u ON al.user_id = u.id
+    LEFT JOIN servers s ON al.server_id = s.id
+    ${whereClause}
+  `).get([...params])?.n ?? 0;
 
   res.json({
     logs: logs.map(l => ({ ...l, metadata: (() => { try { return JSON.parse(l.metadata || '{}'); } catch { return {}; } })() })),

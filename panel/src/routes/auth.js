@@ -13,11 +13,14 @@ function ip(req) { return req.ip || req.headers['x-forwarded-for']?.split(',')[0
 
 const router = express.Router();
 
+const isTest = process.env.NODE_ENV === 'test';
+
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => isTest,
   message: { error: 'Too many login attempts. Try again in 15 minutes.' },
 });
 
@@ -26,6 +29,7 @@ const registerLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => isTest,
   message: { error: 'Too many registrations from this IP. Try again later.' },
 });
 

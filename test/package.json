@@ -1,0 +1,23 @@
+{
+  "name": "nodactyl-tests",
+  "private": true,
+  "scripts": {
+    "test": "node run.js",
+    "test:auth": "node run.js auth",
+    "test:transfer": "node run.js transfer",
+    "test:ranks": "node run.js ranks",
+    "test:users": "node run.js users",
+    "test:nodes": "node run.js nodes",
+    "test:presets": "node run.js presets",
+    "test:settings": "node run.js settings",
+    "test:servers": "node run.js servers",
+    "test:members": "node run.js members",
+    "test:apikeys": "node run.js apikeys",
+    "test:lifecycle": "node run.js lifecycle",
+    "test:templates": "node run.js templates",
+    "test:audit": "node run.js audit",
+    "test:shares": "node run.js shares",
+    "test:v1api": "node run.js v1api",
+    "test:import-export": "node run.js import-export"
+  }
+}

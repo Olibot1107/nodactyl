@@ -94,6 +94,36 @@ async function main() {
   app.use('/api/apikeys', apikeyRoutes);
   app.use('/api/v1', v1Routes);
 
+  // ── Test-only seeding routes (never loaded in production) ────────────────────
+  if (process.env.NODE_ENV === 'test') {
+    const { v4: uuidv4test } = require('uuid');
+    const { requireAdmin: testRequireAdmin } = require('./middleware/auth');
+
+    // Seed a fake node + stopped server owned by the given owner_id
+    app.post('/api/test/seed', requireAuth, testRequireAdmin, (req, res) => {
+      const { db: tdb } = require('./db');
+      const nodeId = uuidv4test();
+      const serverId = uuidv4test();
+      const ownerId = req.body.owner_id || req.user.id;
+      tdb.prepare('INSERT INTO nodes (id, name, token, memory, cpu, disk_limit, port_range_start, port_range_end, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(nodeId, 'test-node-' + nodeId.slice(0, 4), uuidv4test(), 99999, 99, 0, 10000, 30000, 'online');
+      tdb.prepare("INSERT INTO servers (id, name, image, node_id, owner_id, port_mappings, env_vars, memory_limit, cpu_limit, status) VALUES (?, ?, ?, ?, ?, '[]', '[]', 512, 1.0, 'stopped')")
+        .run(serverId, req.body.name || 'test-server', 'test:latest', nodeId, ownerId);
+      res.json({ nodeId, serverId });
+    });
+
+    // Wipe all non-admin users and their servers (keeps admin intact)
+    app.post('/api/test/reset', requireAuth, testRequireAdmin, (req, res) => {
+      const { db: tdb } = require('./db');
+      tdb.prepare("DELETE FROM servers WHERE owner_id IN (SELECT id FROM users WHERE role != 'admin')").run();
+      tdb.prepare("DELETE FROM servers WHERE owner_id IN (SELECT id FROM users WHERE role = 'admin') AND name LIKE 'test-%'").run();
+      tdb.prepare("DELETE FROM nodes WHERE name LIKE 'test-node-%'").run();
+      tdb.prepare("DELETE FROM server_members").run();
+      tdb.prepare("DELETE FROM users WHERE role != 'admin'").run();
+      res.json({ ok: true });
+    });
+  }
+
   app.get('/api/random-name', requireAuth, (req, res) => {
     const words = getWords();
     const pick = () => words[Math.floor(Math.random() * words.length)].toLowerCase();

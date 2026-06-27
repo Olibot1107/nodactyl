@@ -3,7 +3,7 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
-const DB_PATH = path.join(__dirname, '..', 'data', 'panel.db');
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'panel.db');
 
 let _db = null;
 let _saveTimer = null;
@@ -11,6 +11,7 @@ let _saveTimer = null;
 function scheduleSave() {
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => {
+    fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
     fs.writeFileSync(DB_PATH, Buffer.from(_db.export()));
   }, 300);
 }
