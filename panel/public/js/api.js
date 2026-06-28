@@ -3,7 +3,7 @@
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     try {
-      const s = await fetch('/settings/public').then(r => r.json());
+      const s = await fetch('/api/settings/public').then(r => r.json());
       if ((s.pwa_installable ?? '1') === '0') {
         // Unregister any existing SW so the site becomes non-installable
         const regs = await navigator.serviceWorker.getRegistrations();
