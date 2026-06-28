@@ -82,7 +82,7 @@ async function init() {
     renderTopbar();
     document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'settings', server);
     if (server.suspended && getUser()?.role !== 'admin') {
-      document.getElementById('content').innerHTML = `<div class="empty-state"><div class="empty-icon" style="font-size:28px">âš </div><p>This server is suspended. Settings are unavailable until an admin unsuspends it.</p></div>`;
+      document.getElementById('content').innerHTML = `<div class="empty-state"><div class="empty-icon" style="font-size:28px">⚠</div><p>This server is suspended. Settings are unavailable until an admin unsuspends it.</p></div>`;
       return;
     }
     document.getElementById('content').innerHTML = buildContent();
@@ -101,9 +101,9 @@ function buildShell() {
       <div class="topbar" id="topbar">
         <div class="flex-center gap-2">
           <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
-          <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
-          <span class="page-title">Loadingâ€¦</span>
-          <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
+          <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+          <span class="page-title">Loading…</span>
+          <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
           <span class="text-muted" style="font-size:13px">Settings</span>
         </div>
       </div>
@@ -118,9 +118,9 @@ function renderTopbar() {
   document.getElementById('topbar').innerHTML = `
     <div class="flex-center gap-2">
       <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
-      <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
+      <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
       <a class="topbar-link" href="/server/${serverId}">${esc(server.name)}</a>
-      <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
+      <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
       <span class="page-title">Settings</span>
     </div>
     <div class="flex-center gap-2">
@@ -165,14 +165,14 @@ function buildContent() {
               <input type="checkbox" id="fieldEnableMods" ${server.enable_mods !== 0 ? 'checked' : ''} style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
               <div>
                 <div style="font-size:13px;font-weight:500">Enable Mods page</div>
-                <div style="font-size:12px;color:var(--text-muted)">Shows the Mods tab â€” lets users browse and install Modrinth content.</div>
+                <div style="font-size:12px;color:var(--text-muted)">Shows the Mods tab — lets users browse and install Modrinth content.</div>
               </div>
             </label>
             <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
               <input type="checkbox" id="fieldEnablePackages" ${server.enable_packages !== 0 ? 'checked' : ''} style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
               <div>
                 <div style="font-size:13px;font-weight:500">Enable Packages page</div>
-                <div style="font-size:12px;color:var(--text-muted)">Shows the Packages tab â€” lets users install system packages.</div>
+                <div style="font-size:12px;color:var(--text-muted)">Shows the Packages tab — lets users install system packages.</div>
               </div>
             </label>
           </div>
@@ -187,7 +187,7 @@ function buildContent() {
 
         <div class="card mb-4">
           <div class="card-title mb-2">Secrets</div>
-          <div class="form-hint mb-4">${UI.info} Secret values are write-only â€” they are never shown after saving. Leave the value blank to keep an existing secret unchanged.</div>
+          <div class="form-hint mb-4">${UI.info} Secret values are write-only — they are never shown after saving. Leave the value blank to keep an existing secret unchanged.</div>
           <div id="secretList"></div>
           <button class="btn btn-ghost btn-sm mt-3" type="button" onclick="addSecretRow()">+ Add Secret</button>
           <div class="form-hint mt-2">Secrets are injected as env vars at startup, alongside regular variables.</div>
@@ -263,10 +263,10 @@ function buildContent() {
           ${(isAdmin || server.owner_id === getUser()?.id) ? `
           <div class="form-group mb-4" style="border-top:1px solid var(--border);padding-top:16px;margin-top:4px">
             <label class="form-label mb-2">Transfer Ownership</label>
-            ${isAdmin ? `<div class="form-hint mb-2" style="color:var(--text-muted)">Current owner: <b>${esc(server.owner_name || 'â€”')}</b></div>` : ''}
+            ${isAdmin ? `<div class="form-hint mb-2" style="color:var(--text-muted)">Current owner: <b>${esc(server.owner_name || '—')}</b></div>` : ''}
             ${server.transfer_to_user_id ? `
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.25);border-radius:8px">
-              <span style="font-size:13px;flex:1">Pending â€” waiting for <b>${esc(server.transfer_to_username || '...')}</b> to accept.</span>
+              <span style="font-size:13px;flex:1">Pending — waiting for <b>${esc(server.transfer_to_username || '...')}</b> to accept.</span>
               <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="cancelTransfer()">Cancel</button>
             </div>` : `
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -327,7 +327,7 @@ function addEnvRow(key = '', value = '') {
     <input type="text" class="form-input env-key" id="ek_${id}" placeholder="KEY" value="${esc(key)}" style="flex:1;font-family:monospace">
     <span class="text-muted env-eq">=</span>
     <input type="text" class="form-input env-val" id="ev_${id}" placeholder="value" value="${esc(value)}" style="flex:2">
-    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px" type="button">âœ•</button>`;
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px" type="button">✕</button>`;
   document.getElementById('envList').appendChild(div);
 }
 
@@ -353,7 +353,7 @@ function addSecretRow(key = '', existing = false) {
     <input type="text" class="form-input env-key" id="sk_${id}" placeholder="SECRET_KEY" value="${esc(key)}" ${existing ? 'readonly style="flex:1;font-family:monospace;opacity:.7"' : 'style="flex:1;font-family:monospace"'}>
     <span class="text-muted env-eq">=</span>
     <input type="password" class="form-input env-val" id="sv_${id}" placeholder="${existing ? 'leave blank to keep' : 'value'}" style="flex:2">
-    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px" type="button">âœ•</button>`;
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px" type="button">✕</button>`;
   document.getElementById('secretList').appendChild(div);
 }
 
@@ -426,7 +426,7 @@ async function saveMemberPerms(userId) {
   try {
     await API.patch(`/servers/${serverId}/members/${userId}`, { permissions: checked });
     const row = document.querySelector(`.member-row[data-uid="${userId}"]`);
-    if (row) { const btn = row.querySelector('.btn-primary'); if (btn) { btn.textContent = 'Saved âœ“'; setTimeout(() => btn.textContent = 'Save', 1500); } }
+    if (row) { const btn = row.querySelector('.btn-primary'); if (btn) { btn.textContent = 'Saved ✓'; setTimeout(() => btn.textContent = 'Save', 1500); } }
   } catch (e) { alert(e.message); }
 }
 

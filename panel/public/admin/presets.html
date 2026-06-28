@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nodactyl â€” Presets</title>
+  <title>Nodactyl — Presets</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#f97316">
@@ -18,7 +18,7 @@
   <div class="modal modal-lg">
     <div class="modal-header">
       <h2 class="modal-title" id="modalTitle">New Preset</h2>
-      <button class="modal-close" onclick="closeModal()">âœ•</button>
+      <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
       <div class="alert alert-error" id="modalError"></div>
@@ -61,7 +61,7 @@
       <div class="form-group">
         <label class="form-label">Required Rank <span class="text-muted">(optional)</span></label>
         <select class="form-select" id="p_rank">
-          <option value="">None â€” available to all users</option>
+          <option value="">None — available to all users</option>
         </select>
         <div class="form-hint">Users need this rank or higher to see and deploy this preset.</div>
       </div>
@@ -99,14 +99,14 @@
             <input type="checkbox" id="p_enable_mods" checked style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
             <div>
               <div style="font-size:13px;font-weight:500">Enable Mods page</div>
-              <div style="font-size:12px;color:var(--text-muted)">Shows the Mods tab â€” lets users browse and install Modrinth content.</div>
+              <div style="font-size:12px;color:var(--text-muted)">Shows the Mods tab — lets users browse and install Modrinth content.</div>
             </div>
           </label>
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
             <input type="checkbox" id="p_enable_packages" checked style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
             <div>
               <div style="font-size:13px;font-weight:500">Enable Packages page</div>
-              <div style="font-size:12px;color:var(--text-muted)">Shows the Packages tab â€” lets users install system packages.</div>
+              <div style="font-size:12px;color:var(--text-muted)">Shows the Packages tab — lets users install system packages.</div>
             </div>
           </label>
         </div>
@@ -169,7 +169,7 @@ async function loadPresets() {
 function renderPresets() {
   const el = document.getElementById('presetsGrid');
   if (!presets.length) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">â€”</div><p>No presets yet. Create one so users can deploy servers.</p></div>`;
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">—</div><p>No presets yet. Create one so users can deploy servers.</p></div>`;
     return;
   }
   el.innerHTML = `<div class="grid-3">${presets.map(p => `
@@ -196,11 +196,11 @@ function renderPresets() {
     </div>`).join('')}</div>`;
 }
 
-// â”€â”€ Modal helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Modal helpers ─────────────────────────────────────────────────────────────
 function populateRankDropdown(selectedId = '') {
   const sel = document.getElementById('p_rank');
   const sorted = [...ranks].sort((a, b) => a.sort_order - b.sort_order);
-  sel.innerHTML = `<option value="">None â€” available to all users</option>` +
+  sel.innerHTML = `<option value="">None — available to all users</option>` +
     sorted.map(r => `<option value="${r.id}" ${r.id === selectedId ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
 }
 
@@ -266,7 +266,7 @@ function addEnv(key='', value='') {
     <input type="text" class="form-input" id="ek_${id}" placeholder="KEY" value="${esc(key)}" style="flex:1">
     <span class="text-muted">=</span>
     <input type="text" class="form-input" id="ev_${id}" placeholder="value" value="${esc(value)}" style="flex:2">
-    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">âœ•</button>`;
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">✕</button>`;
   document.getElementById('envList').appendChild(div);
 }
 
@@ -288,7 +288,7 @@ function addImage(label='', image='') {
   div.innerHTML = `
     <input type="text" class="form-input" id="il_${id}" placeholder="Label (e.g. Java 21)" value="${esc(label)}" style="flex:1">
     <input type="text" class="form-input" id="ii_${id}" placeholder="image:tag" value="${esc(image)}" style="flex:2;font-family:monospace">
-    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">âœ•</button>`;
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">✕</button>`;
   document.getElementById('imageList').appendChild(div);
 }
 
@@ -311,7 +311,7 @@ function addSetupVar(key='', label='', description='') {
     <div style="display:flex;gap:8px;align-items:center">
       <input type="text" class="form-input" id="sv_key_${id}" placeholder="ENV_VAR_KEY" value="${esc(key)}" style="flex:1;font-family:monospace">
       <input type="text" class="form-input" id="sv_label_${id}" placeholder="Label shown to user" value="${esc(label)}" style="flex:2">
-      <button onclick="this.closest('div[style]').remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">âœ•</button>
+      <button onclick="this.closest('div[style]').remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">✕</button>
     </div>
     <input type="text" class="form-input" id="sv_desc_${id}" placeholder="Description / hint (optional)" value="${esc(description)}" style="font-size:12px">`;
   document.getElementById('setupVarList').appendChild(div);

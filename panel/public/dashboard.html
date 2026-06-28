@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nodactyl â€” Dashboard</title>
+  <title>Nodactyl — Dashboard</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#f97316">
@@ -18,7 +18,7 @@
   <div class="modal modal-sm">
     <div class="modal-header">
       <h2 class="modal-title">Deploy <span id="deployPresetName" style="color:var(--primary)"></span></h2>
-      <button class="modal-close" onclick="closeDeployModal()">âœ•</button>
+      <button class="modal-close" onclick="closeDeployModal()">✕</button>
     </div>
     <div class="modal-body">
       <div class="alert alert-error" id="deployError"></div>
@@ -51,7 +51,7 @@
   <div class="modal modal-sm">
     <div class="modal-header">
       <h2 class="modal-title">Deploy <span id="deployTemplateName" style="color:#818cf8"></span></h2>
-      <button class="modal-close" onclick="closeDeployTemplateModal()">âœ•</button>
+      <button class="modal-close" onclick="closeDeployTemplateModal()">✕</button>
     </div>
     <div class="modal-body">
       <div class="alert alert-error" id="deployTemplateError"></div>
@@ -79,7 +79,7 @@
   <div class="modal">
     <div class="modal-header">
       <h2 class="modal-title">Create Server</h2>
-      <button class="modal-close" onclick="closeCreateModal()">âœ•</button>
+      <button class="modal-close" onclick="closeCreateModal()">✕</button>
     </div>
     <div class="modal-body">
       <div class="alert alert-error" id="createError"></div>
@@ -335,7 +335,7 @@ function renderDeploySection() {
     <div class="section-header" style="margin-top:32px;margin-bottom:16px" id="deployAnchor">
       <div>
         <div class="section-title">Deploy a New Server</div>
-        ${atLimit ? `<div class="section-sub"><span style="color:var(--danger)">Server limit reached (${ownedCount}/${maxServers}) â€” contact an admin to upgrade your rank.</span></div>` : ''}
+        ${atLimit ? `<div class="section-sub"><span style="color:var(--danger)">Server limit reached (${ownedCount}/${maxServers}) — contact an admin to upgrade your rank.</span></div>` : ''}
       </div>
     </div>
     <div class="grid-3">
@@ -394,7 +394,7 @@ function serverCard(s, showOwner = false) {
       <div class="server-node">
         <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>
         ${esc(s.node_name || 'Unknown')}
-        ${!s.node_online ? '<span class="text-danger text-xs"> â€” offline</span>' : ''}
+        ${!s.node_online ? '<span class="text-danger text-xs"> — offline</span>' : ''}
       </div>
       <div class="server-mini-stats">
         <div class="server-mini-stat">RAM: <span>${fmtMb(s.memory_limit)}</span></div>
@@ -425,7 +425,7 @@ function renderServers() {
     el.innerHTML = `
       <div class="section-header mb-4"><div class="section-title">My Servers</div></div>
       <div class="empty-state">
-        <div class="empty-icon" style="font-size:28px">â€”</div>
+        <div class="empty-icon" style="font-size:28px">—</div>
         <p>No servers yet.${presets.length || templates.length ? ' Click <strong>+ New Server</strong> to deploy one.' : ' Ask an admin to create presets.'}</p>
       </div>`;
     return;
@@ -459,7 +459,7 @@ function renderServers() {
   }
 }
 
-// â”€â”€ Deploy from preset â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Deploy from preset ────────────────────────────────────────────────────────
 let _autoNodeId = null;
 
 function openDeployModal(presetId, presetName) {
@@ -476,7 +476,7 @@ function openDeployModal(presetId, presetName) {
   if (preset?.images?.length) {
     versionSelect.innerHTML =
       `<option value="">${esc(preset.image)} (default)</option>` +
-      preset.images.map(v => `<option value="${esc(v.image)}">${esc(v.label)} â€” ${esc(v.image)}</option>`).join('');
+      preset.images.map(v => `<option value="${esc(v.image)}">${esc(v.label)} — ${esc(v.image)}</option>`).join('');
     versionGroup.style.display = '';
   } else {
     versionGroup.style.display = 'none';
@@ -555,7 +555,7 @@ async function deployServer() {
   }
 }
 
-// â”€â”€ Deploy from template â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Deploy from template ──────────────────────────────────────────────────────
 let _templateAutoNodeId = null;
 
 function openDeployTemplateModal(templateId, templateName) {
@@ -613,7 +613,7 @@ async function deployTemplate() {
   }
 }
 
-// â”€â”€ Admin custom create â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Admin custom create ───────────────────────────────────────────────────────
 let envCount = 0;
 let _createAutoNodeId = null;
 
@@ -637,7 +637,7 @@ function openCreateModal() {
     nodeSelect.innerHTML = onlineNodes.map(n => `<option value="${n.id}">${esc(n.name)}</option>`).join('');
   } else {
     nodeGroup.style.display = '';
-    nodeSelect.innerHTML = '<option value="">â€” No nodes online â€”</option>';
+    nodeSelect.innerHTML = '<option value="">— No nodes online —</option>';
   }
 
   document.getElementById('createError').classList.remove('show');
@@ -654,7 +654,7 @@ function addEnv() {
     <input type="text" class="form-input" id="ek_${id}" placeholder="KEY" style="flex:1">
     <span class="text-muted">=</span>
     <input type="text" class="form-input" id="ev_${id}" placeholder="value" style="flex:2">
-    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">âœ•</button>`;
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">✕</button>`;
   document.getElementById('envList').appendChild(div);
 }
 
@@ -700,7 +700,7 @@ document.getElementById('deployModal').addEventListener('click', e => { if (e.ta
 document.getElementById('deployTemplateModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeDeployTemplateModal(); });
 document.getElementById('createModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeCreateModal(); });
 
-// â”€â”€ Easter egg: type "teddy" â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Easter egg: type "teddy" ──────────────────────────────────────────────────
 (function() {
   const SECRET = 'teddy';
   let buf = '';
@@ -765,12 +765,12 @@ document.getElementById('createModal').addEventListener('click', e => { if (e.ta
 
     const closeBtn = document.createElement('button');
     closeBtn.id = 'teddy-close';
-    closeBtn.textContent = 'âœ•  Close';
+    closeBtn.textContent = '✕  Close';
     closeBtn.onclick = closeTeddy;
 
     const label = document.createElement('div');
     label.id = 'teddy-label';
-    label.textContent = 'press ESC or click Ã— to escape the teddy bears';
+    label.textContent = 'press ESC or click × to escape the teddy bears';
 
     document.body.appendChild(style);
     document.body.appendChild(overlay);

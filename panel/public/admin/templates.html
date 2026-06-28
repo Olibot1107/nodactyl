@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nodactyl â€” Templates</title>
+  <title>Nodactyl — Templates</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#f97316">
@@ -27,7 +27,7 @@
   <div class="modal modal-lg" style="max-width:820px">
     <div class="modal-header">
       <h2 class="modal-title" id="modalTitle">New Template</h2>
-      <button class="modal-close" onclick="closeModal()">âœ•</button>
+      <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
       <div class="alert alert-error" id="modalError"></div>
@@ -63,7 +63,7 @@
       <div class="form-group">
         <label class="form-label">Required Rank <span class="text-muted">(optional)</span></label>
         <select class="form-select" id="t_rank">
-          <option value="">None â€” available to all users</option>
+          <option value="">None — available to all users</option>
         </select>
         <div class="form-hint">Users need this rank or higher to see and deploy this template.</div>
       </div>
@@ -95,14 +95,14 @@
             <input type="checkbox" id="t_enable_mods" checked style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
             <div>
               <div style="font-size:13px;font-weight:500">Enable Mods page</div>
-              <div style="font-size:12px;color:var(--text-muted)">Shows the Mods tab â€” lets users browse and install Modrinth content.</div>
+              <div style="font-size:12px;color:var(--text-muted)">Shows the Mods tab — lets users browse and install Modrinth content.</div>
             </div>
           </label>
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
             <input type="checkbox" id="t_enable_packages" checked style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
             <div>
               <div style="font-size:13px;font-weight:500">Enable Packages page</div>
-              <div style="font-size:12px;color:var(--text-muted)">Shows the Packages tab â€” lets users install system packages.</div>
+              <div style="font-size:12px;color:var(--text-muted)">Shows the Packages tab — lets users install system packages.</div>
             </div>
           </label>
         </div>
@@ -176,7 +176,7 @@ async function loadTemplates() {
 function renderTemplates() {
   const el = document.getElementById('templatesGrid');
   if (!templates.length) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">â€”</div><p>No templates yet. Create one to pre-populate server files on deploy.</p></div>`;
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">—</div><p>No templates yet. Create one to pre-populate server files on deploy.</p></div>`;
     return;
   }
   el.innerHTML = `<div class="grid-3">${templates.map(t => `
@@ -204,11 +204,11 @@ function renderTemplates() {
     </div>`).join('')}</div>`;
 }
 
-// â”€â”€ Modal helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Modal helpers ─────────────────────────────────────────────────────────────
 function populateRankDropdown(selectedId = '') {
   const sel = document.getElementById('t_rank');
   const sorted = [...ranks].sort((a, b) => a.sort_order - b.sort_order);
-  sel.innerHTML = `<option value="">None â€” available to all users</option>` +
+  sel.innerHTML = `<option value="">None — available to all users</option>` +
     sorted.map(r => `<option value="${r.id}" ${r.id === selectedId ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
 }
 
@@ -271,7 +271,7 @@ function addEnv(key='', value='') {
     <input type="text" class="form-input" id="ek_${id}" placeholder="KEY" value="${esc(key)}" style="flex:1">
     <span class="text-muted">=</span>
     <input type="text" class="form-input" id="ev_${id}" placeholder="value" value="${esc(value)}" style="flex:2">
-    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">âœ•</button>`;
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px">✕</button>`;
   document.getElementById('envList').appendChild(div);
 }
 
@@ -297,7 +297,7 @@ function addFile(path='', content='') {
   div.innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
       <input type="text" class="form-input file-path-input" id="fp_${id}" placeholder="/config.json" value="${esc(path)}" style="flex:1;font-size:12px">
-      <button onclick="document.getElementById('file_row_${id}').remove();checkFilesEmpty()" class="btn btn-ghost btn-sm" style="padding:5px 8px;flex-shrink:0">âœ•</button>
+      <button onclick="document.getElementById('file_row_${id}').remove();checkFilesEmpty()" class="btn btn-ghost btn-sm" style="padding:5px 8px;flex-shrink:0">✕</button>
     </div>
     <textarea class="form-input file-content-input" id="fc_${id}" placeholder="File content here..." rows="4">${esc(content)}</textarea>`;
   document.getElementById('filesList').appendChild(div);

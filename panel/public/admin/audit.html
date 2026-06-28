@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nodactyl â€” Audit Log</title>
+  <title>Nodactyl — Audit Log</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#f97316">
@@ -64,39 +64,39 @@ requireAdmin();
 
 const BADGE = {
   'server.create':   { label: 'Create',    bg: '#22c55e22', color: '#22c55e', dot: '+' },
-  'server.delete':   { label: 'Delete',    bg: '#ef444422', color: '#ef4444', dot: 'âœ•' },
-  'server.settings': { label: 'Settings',  bg: '#f59e0b22', color: '#fbbf24', dot: 'âœŽ' },
-  'power.start':     { label: 'Start',     bg: '#22c55e22', color: '#22c55e', dot: 'â–¶' },
-  'power.stop':      { label: 'Stop',      bg: '#6b728022', color: '#9ca3af', dot: 'â– ' },
-  'power.restart':   { label: 'Restart',   bg: '#f59e0b22', color: '#f59e0b', dot: 'â†º' },
-  'power.kill':      { label: 'Kill',      bg: '#ef444422', color: '#ef4444', dot: 'âœ•' },
-  'power.sigint':    { label: 'SIGINT',    bg: '#ef444422', color: '#ef4444', dot: 'âœ•' },
-  'power.sigterm':   { label: 'SIGTERM',   bg: '#ef444422', color: '#ef4444', dot: 'âœ•' },
-  'file.read':       { label: 'Read',      bg: '#3b82f622', color: '#3b82f6', dot: 'â—Ž' },
-  'file.write':      { label: 'Write',     bg: '#6366f122', color: '#818cf8', dot: 'âœŽ' },
-  'file.upload':     { label: 'Upload',    bg: '#6366f122', color: '#818cf8', dot: 'â†‘' },
-  'file.delete':     { label: 'Delete',    bg: '#ef444422', color: '#ef4444', dot: 'âœ•' },
+  'server.delete':   { label: 'Delete',    bg: '#ef444422', color: '#ef4444', dot: '✕' },
+  'server.settings': { label: 'Settings',  bg: '#f59e0b22', color: '#fbbf24', dot: '✎' },
+  'power.start':     { label: 'Start',     bg: '#22c55e22', color: '#22c55e', dot: '▶' },
+  'power.stop':      { label: 'Stop',      bg: '#6b728022', color: '#9ca3af', dot: '■' },
+  'power.restart':   { label: 'Restart',   bg: '#f59e0b22', color: '#f59e0b', dot: '↺' },
+  'power.kill':      { label: 'Kill',      bg: '#ef444422', color: '#ef4444', dot: '✕' },
+  'power.sigint':    { label: 'SIGINT',    bg: '#ef444422', color: '#ef4444', dot: '✕' },
+  'power.sigterm':   { label: 'SIGTERM',   bg: '#ef444422', color: '#ef4444', dot: '✕' },
+  'file.read':       { label: 'Read',      bg: '#3b82f622', color: '#3b82f6', dot: '◎' },
+  'file.write':      { label: 'Write',     bg: '#6366f122', color: '#818cf8', dot: '✎' },
+  'file.upload':     { label: 'Upload',    bg: '#6366f122', color: '#818cf8', dot: '↑' },
+  'file.delete':     { label: 'Delete',    bg: '#ef444422', color: '#ef4444', dot: '✕' },
   'file.mkdir':      { label: 'Mkdir',     bg: '#3b82f622', color: '#60a5fa', dot: '+' },
-  'file.rename':     { label: 'Rename',    bg: '#f59e0b22', color: '#fbbf24', dot: 'â†”' },
-  'file.git_clone':  { label: 'Git Clone', bg: '#8b5cf622', color: '#a78bfa', dot: 'âŽ‡' },
-  'file.git_pull':   { label: 'Git Pull',  bg: '#8b5cf622', color: '#a78bfa', dot: 'â†“' },
-  'file.git_reset':  { label: 'Git Reset', bg: '#ef444422', color: '#fca5a5', dot: 'â†©' },
+  'file.rename':     { label: 'Rename',    bg: '#f59e0b22', color: '#fbbf24', dot: '↔' },
+  'file.git_clone':  { label: 'Git Clone', bg: '#8b5cf622', color: '#a78bfa', dot: '⎇' },
+  'file.git_pull':   { label: 'Git Pull',  bg: '#8b5cf622', color: '#a78bfa', dot: '↓' },
+  'file.git_reset':  { label: 'Git Reset', bg: '#ef444422', color: '#fca5a5', dot: '↩' },
   'console.command': { label: 'Command',   bg: '#0ea5e922', color: '#38bdf8', dot: '>' },
-  'package.install': { label: 'Package',   bg: '#10b98122', color: '#34d399', dot: 'â†“' },
-  'auth.login':      { label: 'Login',     bg: '#22c55e22', color: '#86efac', dot: 'â†’' },
-  'auth.password_change': { label: 'Password', bg: '#f59e0b22', color: '#fcd34d', dot: 'ðŸ”‘' },
-  'auth.username_change': { label: 'Username', bg: '#f59e0b22', color: '#fcd34d', dot: 'âœŽ' },
+  'package.install': { label: 'Package',   bg: '#10b98122', color: '#34d399', dot: '↓' },
+  'auth.login':      { label: 'Login',     bg: '#22c55e22', color: '#86efac', dot: '→' },
+  'auth.password_change': { label: 'Password', bg: '#f59e0b22', color: '#fcd34d', dot: '🔑' },
+  'auth.username_change': { label: 'Username', bg: '#f59e0b22', color: '#fcd34d', dot: '✎' },
 };
 
 function badgeFor(action) {
-  const b = BADGE[action] || { label: action, bg: '#6b728022', color: '#9ca3af', dot: 'â€¢' };
+  const b = BADGE[action] || { label: action, bg: '#6b728022', color: '#9ca3af', dot: '•' };
   return `<span class="audit-badge" style="background:${b.bg};color:${b.color}">${b.dot} ${b.label}</span>`;
 }
 
 function metaFor(action, meta) {
   if (!meta) return '';
   if (action.startsWith('power.') || action.startsWith('auth.')) return '';
-  if (action === 'file.rename') return `${esc(meta.from || '')} â†’ ${esc(meta.to || '')}`;
+  if (action === 'file.rename') return `${esc(meta.from || '')} → ${esc(meta.to || '')}`;
   if (action === 'file.git_clone') return esc(meta.url || '');
   if (action === 'file.git_pull') return `strategy: ${esc(meta.strategy || 'ff-only')}`;
   if (action === 'file.git_reset') return `${esc(meta.commit || 'HEAD~1')} --${esc(meta.mode || 'mixed')}`;
@@ -135,7 +135,7 @@ async function init() {
       </div>
       <div class="content">
         <div class="filter-bar">
-          <input type="text" class="form-input" id="filterUser" placeholder="Filter by usernameâ€¦" style="width:180px" oninput="reload()">
+          <input type="text" class="form-input" id="filterUser" placeholder="Filter by username…" style="width:180px" oninput="reload()">
           <select class="form-input" id="filterAction" onchange="reload()">
             <option value="">All actions</option>
             <optgroup label="Server">
@@ -240,7 +240,7 @@ function renderRow(row) {
   const meta = row.metadata || {};
   const serverLink = row.server_id
     ? `<a href="/server/${esc(row.server_id)}" style="color:var(--text);font-weight:600">${esc(row.server_name || row.server_id.slice(0,8))}</a>`
-    : '<span class="text-muted">â€”</span>';
+    : '<span class="text-muted">—</span>';
 
   const detail = metaFor(row.action, meta);
   const detailHtml = detail
@@ -255,14 +255,14 @@ function renderRow(row) {
         ${row.api_key_id
           ? `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:5px">
                <span style="font-size:10px;font-weight:700;letter-spacing:.06em;padding:1px 5px;border-radius:4px;background:rgba(99,102,241,.18);color:#818cf8;border:1px solid rgba(99,102,241,.3);flex-shrink:0">API</span>
-               <span title="${esc(row.api_key_name || '')} Â· ${esc(row.username || '')}">${esc(row.api_key_name || 'Unknown key')} <span style="color:var(--text-muted);font-weight:400">Â· ${esc(row.username || 'Unknown')}</span></span>
+               <span title="${esc(row.api_key_name || '')} · ${esc(row.username || '')}">${esc(row.api_key_name || 'Unknown key')} <span style="color:var(--text-muted);font-weight:400">· ${esc(row.username || 'Unknown')}</span></span>
              </span>`
           : `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(row.username || '')}">${esc(row.username || row.user_id.slice(0,8))}</span>`
         }
       </div>
       <div>${badgeFor(row.action)}</div>
       <div style="overflow:hidden;display:flex;align-items:center;gap:8px;min-width:0">${detailHtml}</div>
-      <div class="audit-ip">${esc(row.ip || 'â€”')}</div>
+      <div class="audit-ip">${esc(row.ip || '—')}</div>
     </div>`;
 }
 

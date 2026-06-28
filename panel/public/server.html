@@ -55,8 +55,8 @@ async function init() {
       <div class="topbar" id="topbar">
         <div class="flex-center gap-2">
           <a class="topbar-link" href="/dashboard">${UI.arrowLeft} Dashboard</a>
-          <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
-          <span class="page-title">Loadingâ€¦</span>
+          <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+          <span class="page-title">Loading…</span>
         </div>
       </div>
       <div id="serverNavSlot"></div>
@@ -83,7 +83,7 @@ function topbarHtml() {
   return `
     <div class="flex-center gap-2">
       <a class="topbar-link" href="/dashboard">${UI.arrowLeft} Dashboard</a>
-      <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
+      <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
       <span class="page-title">${esc(server.name)}</span>
     </div>
     <div class="flex-center gap-2">
@@ -124,21 +124,21 @@ function render() {
       </div>
       <div class="stat-card">
         <div class="stat-label">Disk</div>
-        <div class="stat-value" id="statDisk">â€”</div>
+        <div class="stat-value" id="statDisk">—</div>
         <div class="stat-sub">${server.disk_limit > 0 ? `of ${server.disk_limit} MB` : 'unlimited'}</div>
         <div class="bar-wrap"><div class="bar-fill" id="diskBar" style="width:0%"></div></div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Net â†“ Rx</div>
-        <div class="stat-value" id="statNetRx">â€”</div>
+        <div class="stat-label">Net ↓ Rx</div>
+        <div class="stat-value" id="statNetRx">—</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Net â†‘ Tx</div>
-        <div class="stat-value" id="statNetTx">â€”</div>
+        <div class="stat-label">Net ↑ Tx</div>
+        <div class="stat-value" id="statNetTx">—</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Uptime</div>
-        <div class="stat-value" id="statUptime">${server.started_at ? 'â€”' : '<span style="color:var(--text-muted)">Offline</span>'}</div>
+        <div class="stat-value" id="statUptime">${server.started_at ? '—' : '<span style="color:var(--text-muted)">Offline</span>'}</div>
       </div>
     </div>
 
@@ -221,7 +221,7 @@ function render() {
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <span class="font-mono" style="font-size:${addr.length > 20 ? '16px' : '22px'};font-weight:700;color:var(--primary);letter-spacing:-0.5px;word-break:break-all">${esc(addr)}</span>
             <div style="font-size:12px;color:var(--text-dim);line-height:1.5">
-              ${esc((pm.protocol || 'tcp').toUpperCase())} Â· port ${esc(String(port))}
+              ${esc((pm.protocol || 'tcp').toUpperCase())} · port ${esc(String(port))}
               <br><button class="btn btn-ghost btn-xs mt-1" onclick="copyText('${esc(copyVal)}', this)">${label}</button>
             </div>
           </div>
@@ -299,7 +299,7 @@ let _logQueue = [];
 let _logRafPending = false;
 
 function appendLog(raw, isErr) {
-  // Normalize \r\n â†’ \n; bare \r (progress overwrites) â†’ keep final segment
+  // Normalize \r\n → \n; bare \r (progress overwrites) → keep final segment
   const normalized = String(raw).replace(/\r\n/g, '\n');
   const newlines = normalized.split('\n');
   for (let i = 0; i < newlines.length; i++) {
@@ -368,7 +368,7 @@ function toggleLiveScroll() {
   const btn = document.getElementById('liveScrollBtn');
   if (btn) {
     btn.style.color = liveScroll ? 'var(--success,#22c55e)' : '';
-    btn.title = liveScroll ? 'Live scroll ON â€” click to pause' : 'Live scroll OFF â€” click to follow';
+    btn.title = liveScroll ? 'Live scroll ON — click to pause' : 'Live scroll OFF — click to follow';
   }
   if (liveScroll) {
     const el = document.getElementById('consoleOut');
@@ -386,7 +386,7 @@ function setupConsoleScrollDetect() {
       const btn = document.getElementById('liveScrollBtn');
       if (btn) {
         btn.style.color = '';
-        btn.title = 'Live scroll OFF â€” click to follow';
+        btn.title = 'Live scroll OFF — click to follow';
       }
     }
   }, { passive: true });
@@ -399,7 +399,7 @@ function connectSocket() {
     logsSubscribed = false;
     if (server.status === 'running') {
       if (logsTailDone) {
-        // Already showed startup history â€” just catch a few lines missed during reconnect
+        // Already showed startup history — just catch a few lines missed during reconnect
         logsSubscribed = true;
         socket.emit('subscribe-logs', { serverId, tail: 15 });
       } else {
@@ -471,7 +471,7 @@ async function sendCommand() {
   if (!cmd || server.status !== 'running') return;
   inp.value = '';
   if (isTerminalMode) {
-    // Send as raw stdin â€” bash (PID 1) receives it, echoes it, and executes it
+    // Send as raw stdin — bash (PID 1) receives it, echoes it, and executes it
     // cd persists, running processes receive signals properly
     try { await API.post(`/servers/${serverId}/stdin`, { data: cmd + '\n' }); }
     catch (e) { appendLog(`[Error: ${e.message}]`, true); }
@@ -484,7 +484,7 @@ async function sendCommand() {
 async function sendSignal() {
   if (server.status !== 'running') return;
   appendLog('$ ^C');
-  // Write \x03 (ETX) to the container's TTY stdin â€” the terminal discipline converts
+  // Write \x03 (ETX) to the container's TTY stdin — the terminal discipline converts
   // it to SIGINT for the foreground process group, same as pressing Ctrl+C in a terminal.
   // This interrupts the current command without sending kill signals to the whole container.
   try { await API.post(`/servers/${serverId}/stdin`, { data: '\x03' }); }
@@ -493,7 +493,7 @@ async function sendSignal() {
 
 async function doAction(action) {
   // Console is cleared by the server-status:'running' event handler (covers start, restart, crash-recovery)
-  // Optimistic status â€” disables buttons immediately
+  // Optimistic status — disables buttons immediately
   const expectStopped = new Set(['stop', 'kill', 'sigint', 'sigterm']);
   if (expectStopped.has(action)) server.status = 'stopping';
   else if (action === 'restart') server.status = 'stopping';
@@ -578,7 +578,7 @@ async function startStats() {
 }
 
 function fmtBytes(bytes) {
-  if (bytes == null) return 'â€”';
+  if (bytes == null) return '—';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
   if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
   return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB';
@@ -605,7 +605,7 @@ function updateStats(stats) {
 
   cpuEl.textContent = cpu.toFixed(1) + '%';
   memEl.textContent = mem.toFixed(0) + ' MB';
-  if (diskEl) diskEl.textContent = diskUsedMb != null ? fmtBytes(diskUsedBytes) : 'â€”';
+  if (diskEl) diskEl.textContent = diskUsedMb != null ? fmtBytes(diskUsedBytes) : '—';
 
   if (cpuBar) {
     cpuBar.style.width = Math.min(cpu, 100) + '%';
@@ -622,8 +622,8 @@ function updateStats(stats) {
 
   const rxEl = document.getElementById('statNetRx');
   const txEl = document.getElementById('statNetTx');
-  if (rxEl) rxEl.textContent = stats.network ? fmtBytes(stats.network.rx) : 'â€”';
-  if (txEl) txEl.textContent = stats.network ? fmtBytes(stats.network.tx) : 'â€”';
+  if (rxEl) rxEl.textContent = stats.network ? fmtBytes(stats.network.rx) : '—';
+  if (txEl) txEl.textContent = stats.network ? fmtBytes(stats.network.tx) : '—';
 }
 
 window.addEventListener('beforeunload', () => {
@@ -631,7 +631,7 @@ window.addEventListener('beforeunload', () => {
   if (socket && logsSubscribed) socket.emit('unsubscribe-logs', { serverId });
 });
 
-// â”€â”€ Log sharing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Log sharing ───────────────────────────────────────────────────────────────
 
 function openLogShareModal() {
   let modal = document.getElementById('logShareModal');
@@ -670,7 +670,7 @@ function openLogShareModal() {
 
         <div style="flex:1;overflow-y:auto;border-top:1px solid var(--border);padding:14px 18px">
           <div style="font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--text-dim);margin-bottom:10px" id="logShareListHeader">SHARES</div>
-          <div id="logShareList"><div style="font-size:12.5px;color:var(--text-muted)">Loadingâ€¦</div></div>
+          <div id="logShareList"><div style="font-size:12.5px;color:var(--text-muted)">Loading…</div></div>
         </div>
 
       </div>`;
@@ -686,12 +686,12 @@ async function uploadLogShare() {
   const errEl = document.getElementById('logShareError');
   const successEl = document.getElementById('logShareSuccess');
   errEl.style.display = 'none';
-  if (!content.trim()) { errEl.textContent = 'Console is empty â€” nothing to share.'; errEl.style.display = ''; return; }
+  if (!content.trim()) { errEl.textContent = 'Console is empty — nothing to share.'; errEl.style.display = ''; return; }
   const label = document.getElementById('logShareLabel').value.trim() || null;
   const ttl_seconds = parseInt(document.getElementById('logShareTtl').value) || 604800;
   const btn = document.getElementById('uploadLogBtn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Uploadingâ€¦';
+  btn.innerHTML = '<span class="spinner"></span> Uploading…';
   successEl.style.display = 'none';
   try {
     const result = await API.post('/servers/' + serverId + '/log-shares', { content, label, ttl_seconds });
@@ -699,7 +699,7 @@ async function uploadLogShare() {
     document.getElementById('logShareUrl').value = url;
     document.getElementById('logShareOpenBtn').href = url;
     const expiryEl = document.getElementById('logShareExpiry');
-    if (expiryEl) expiryEl.textContent = 'Link ready â€” ' + document.getElementById('logShareTtl').options[document.getElementById('logShareTtl').selectedIndex].text.toLowerCase();
+    if (expiryEl) expiryEl.textContent = 'Link ready — ' + document.getElementById('logShareTtl').options[document.getElementById('logShareTtl').selectedIndex].text.toLowerCase();
     successEl.style.display = '';
     document.getElementById('logShareLabel').value = '';
     loadLogShares();
@@ -716,7 +716,7 @@ function copyLogUrl(btn) {
   const url = document.getElementById('logShareUrl').value;
   navigator.clipboard.writeText(url).catch(() => {});
   const prev = btn.innerHTML;
-  btn.textContent = 'âœ“';
+  btn.textContent = '✓';
   setTimeout(() => { btn.innerHTML = prev; }, 1500);
 }
 
@@ -738,7 +738,7 @@ async function loadLogShares() {
       return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">'
         + '<div style="flex:1;min-width:0;cursor:pointer" onclick="window.open(\'' + url + '\',\'_blank\')">'
         + '<div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)">' + esc(s.label || 'Untitled') + '</div>'
-        + '<div style="font-size:11px;color:var(--text-dim);margin-top:3px">' + expiresIn + ' Â· ' + views + '</div>'
+        + '<div style="font-size:11px;color:var(--text-dim);margin-top:3px">' + expiresIn + ' · ' + views + '</div>'
         + '</div>'
         + '<button class="btn btn-ghost btn-xs" title="Copy link" onclick="copyShareUrl(\'' + url + '\',this)" style="flex-shrink:0">' + UI.copy + '</button>'
         + '<button class="btn btn-ghost btn-xs" title="Redact lines" onclick="openRedactView(\'' + s.id + '\',\'' + esc(s.label || 'Untitled').replace(/'/g, "\\'") + '\')" style="flex-shrink:0">' + UI.edit + '</button>'
@@ -753,7 +753,7 @@ async function loadLogShares() {
 function copyShareUrl(url, btn) {
   navigator.clipboard.writeText(url).catch(() => {});
   const prev = btn.innerHTML;
-  btn.textContent = 'âœ“';
+  btn.textContent = '✓';
   setTimeout(() => { btn.innerHTML = prev; }, 1500);
 }
 
@@ -819,7 +819,7 @@ async function openRedactView(sid, label) {
   function renderRedact() {
     inner.innerHTML = ''
       + '<div style="padding:14px 18px 12px;display:flex;align-items:center;gap:8px;flex-shrink:0;border-bottom:1px solid var(--border)">'
-      +   '<button id="redactBackBtn" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px 6px;border-radius:4px;font-size:12px;display:flex;align-items:center;gap:4px" onmouseover="this.style.color=\'var(--text)\'" onmouseout="this.style.color=\'var(--text-muted)\'">â† Back</button>'
+      +   '<button id="redactBackBtn" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px 6px;border-radius:4px;font-size:12px;display:flex;align-items:center;gap:4px" onmouseover="this.style.color=\'var(--text)\'" onmouseout="this.style.color=\'var(--text-muted)\'">← Back</button>'
       +   '<span style="font-size:13px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(label) + '</span>'
       +   '<button onclick="document.getElementById(\'logShareModal\').remove()" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;line-height:1;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:6px" onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'none\'">&times;</button>'
       + '</div>'
@@ -875,9 +875,9 @@ async function openRedactView(sid, label) {
   }
 
   async function doSave() {
-    if (!markedLines.size && !confirm('No lines marked â€” save anyway?')) return;
+    if (!markedLines.size && !confirm('No lines marked — save anyway?')) return;
     const btn = inner.querySelector('#redactSaveBtn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Savingâ€¦'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
     const newLines = lines.map(function(line, i) {
       return markedLines.has(i) ? '[REDACTED]' : line;
     });

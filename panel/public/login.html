@@ -141,11 +141,11 @@
           <span class="term-dot"></span>
           <span class="term-dot"></span>
           <span class="term-dot"></span>
-          <span class="term-title">node-1 â€” bash</span>
+          <span class="term-title">node-1 — bash</span>
         </div>
         <div class="term-line"><span class="term-prompt">$</span><span>nodactyl status</span></div>
-        <div class="term-line"><span class="term-ok">âœ“</span><span>daemon connected</span></div>
-        <div class="term-line"><span class="term-ok">âœ“</span><span>3 servers running</span></div>
+        <div class="term-line"><span class="term-ok">✓</span><span>daemon connected</span></div>
+        <div class="term-line"><span class="term-ok">✓</span><span>3 servers running</span></div>
         <div class="term-line"><span class="term-dim">&nbsp;&nbsp;uptime 14d 6h 22m</span></div>
         <div class="term-line" style="margin-top:6px"><span class="term-prompt">$</span><span style="opacity:.35">_</span></div>
       </div>
@@ -171,7 +171,7 @@
         </div>
         <div class="form-group" style="margin-bottom:18px">
           <label class="form-label">Password</label>
-          <input type="password" class="form-input" id="password" autocomplete="current-password" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" required>
+          <input type="password" class="form-input" id="password" autocomplete="current-password" placeholder="••••••••" required>
         </div>
         <button type="submit" class="btn btn-primary w-full" style="justify-content:center;padding:9px" id="loginBtn">
           Sign In
@@ -273,7 +273,7 @@
   fetch('/api/settings/public').then(r => r.json()).then(s => {
     if (s.panel_name) {
       document.getElementById('brandName').textContent = s.panel_name;
-      document.title = 'Sign In â€” ' + s.panel_name;
+      document.title = 'Sign In — ' + s.panel_name;
     }
     if (s.panel_logo) {
       const el = document.getElementById('brandLogo');
@@ -300,7 +300,7 @@
 
   // Show passkey button if WebAuthn is supported AND passkeys not disabled by admin
   // (passkeys_enabled is absent = default on; only hidden when explicitly '0')
-  // The settings fetch below handles this â€” don't show here
+  // The settings fetch below handles this — don't show here
 
   function _b64ToBuf(val) {
     // Node.js Buffer JSON: {"type":"Buffer","data":[...]}
@@ -320,7 +320,7 @@
     const err = document.getElementById('loginError');
     err.classList.remove('show');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Waiting for passkeyâ€¦';
+    btn.innerHTML = '<span class="spinner"></span> Waiting for passkey…';
     try {
       const username = document.getElementById('username').value.trim();
       const opts = await fetch('/api/passkey/auth/options', {
@@ -387,7 +387,7 @@
     err.classList.remove('show');
     if (!code) { err.textContent = 'Enter the 6-digit code.'; err.classList.add('show'); return; }
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Verifyingâ€¦';
+    btn.innerHTML = '<span class="spinner"></span> Verifying…';
     try {
       const res = await fetch('/api/totp/verify', {
         method: 'POST',

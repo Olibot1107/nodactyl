@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>File Share â€” Nodactyl</title>
+  <title>File Share — Nodactyl</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#f97316">
@@ -113,10 +113,10 @@
 
 <div class="header">
   <a class="header-logo" href="/">Nodactyl</a>
-  <span class="header-sep">â€º</span>
+  <span class="header-sep">›</span>
   <span class="header-crumb">File Share</span>
-  <span class="header-sep">â€º</span>
-  <span class="header-label" id="shareLabel">Loadingâ€¦</span>
+  <span class="header-sep">›</span>
+  <span class="header-label" id="shareLabel">Loading…</span>
   <span class="header-lang" id="shareLang" style="display:none"></span>
   <div class="header-spacer"></div>
   <button class="hdr-btn primary" id="copyAllBtn" onclick="copyAll(this)" style="display:none">
@@ -148,7 +148,7 @@
 <div class="loading-state" id="loadingState"><div class="spinner"></div></div>
 
 <div class="error-state" id="errorState" style="display:none">
-  <span class="error-icon">âš ï¸</span>
+  <span class="error-icon">⚠️</span>
   <h2>File not found</h2>
   <p id="errorMsg">This link may have expired or been deleted.</p>
 </div>
@@ -311,7 +311,7 @@ function fmtCountdown(ts) {
 
     var fname = share.file_path ? share.file_path.split('/').filter(Boolean).pop() : null;
     var label = share.label || fname || 'Untitled file';
-    document.title = label + ' â€” ' + panelName;
+    document.title = label + ' — ' + panelName;
     document.getElementById('shareLabel').textContent = label;
 
     if (share.language && share.language !== 'plaintext') {

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nodactyl â€” Ranks</title>
+  <title>Nodactyl — Ranks</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#f97316">
@@ -18,7 +18,7 @@
   <div class="modal modal-sm">
     <div class="modal-header">
       <h2 class="modal-title" id="modalTitle">New Rank</h2>
-      <button class="modal-close" onclick="closeModal()">âœ•</button>
+      <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
       <div class="alert alert-error" id="modalError"></div>
@@ -94,13 +94,13 @@ async function init() {
         <div class="card mt-4" style="margin-top:16px">
           <div class="card-title mb-3">How ranks work</div>
           <ul style="list-style:none;display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--text-dim)">
-            <li>â€¢ Admins assign ranks to users from the <a href="/admin/users" style="color:#a5b4fc">Users</a> page.</li>
-            <li>â€¢ <b>Server Limit</b>: max servers a user can own. -1 = unlimited.</li>
-            <li>â€¢ <b>Memory Limit</b>: total RAM across all user's servers in MB. 0 = unlimited.</li>
-            <li>â€¢ <b>Disk Limit</b>: total disk across all user's servers in MB. 0 = unlimited.</li>
-            <li>â€¢ Users with no rank assigned default to <b>1 server, no resource limits</b>.</li>
-            <li>â€¢ Admins are always unlimited regardless of rank.</li>
-            <li>â€¢ Node capacity is always enforced â€” a server can't be created if the node is full.</li>
+            <li>• Admins assign ranks to users from the <a href="/admin/users" style="color:#a5b4fc">Users</a> page.</li>
+            <li>• <b>Server Limit</b>: max servers a user can own. -1 = unlimited.</li>
+            <li>• <b>Memory Limit</b>: total RAM across all user's servers in MB. 0 = unlimited.</li>
+            <li>• <b>Disk Limit</b>: total disk across all user's servers in MB. 0 = unlimited.</li>
+            <li>• Users with no rank assigned default to <b>1 server, no resource limits</b>.</li>
+            <li>• Admins are always unlimited regardless of rank.</li>
+            <li>• Node capacity is always enforced — a server can't be created if the node is full.</li>
           </ul>
         </div>
       </div>
@@ -117,7 +117,7 @@ async function loadRanks() {
 }
 
 function fmtMb(mb) {
-  if (!mb) return '<span class="text-muted">â€”</span>';
+  if (!mb) return '<span class="text-muted">—</span>';
   if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
   return mb + ' MB';
 }

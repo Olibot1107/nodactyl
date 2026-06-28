@@ -74,13 +74,13 @@ function statusBadge(status) {
 
 // Which managers support live search and how to fetch results
 const SEARCH = {
-  npm:      { search: npmSearch,       placeholder: 'Search npm packagesâ€¦',    hint: 'e.g. express   @types/node@^18   lodash@4',   manifestCmd: 'npm install',                   manifestHint: 'Reads package.json in /home/container' },
-  yarn:     { search: npmSearch,       placeholder: 'Search npm packagesâ€¦',    hint: 'e.g. express   @types/node@^18   lodash@4',   manifestCmd: 'yarn install',                  manifestHint: 'Reads package.json in /home/container' },
-  pip:      { search: pypiSearch,      placeholder: 'Search PyPI packagesâ€¦',   hint: 'e.g. flask   requests==2.31   numpy>=1.0',   manifestCmd: 'pip install -r requirements.txt', manifestHint: 'Reads requirements.txt in /home/container' },
-  pip3:     { search: pypiSearch,      placeholder: 'Search PyPI packagesâ€¦',   hint: 'e.g. flask   requests==2.31   numpy>=1.0',   manifestCmd: 'pip3 install -r requirements.txt', manifestHint: 'Reads requirements.txt in /home/container' },
-  composer: { search: composerSearch,  placeholder: 'Search Packagistâ€¦',       hint: 'e.g. laravel/framework   monolog/monolog',    manifestCmd: 'composer install',              manifestHint: 'Reads composer.json in /home/container' },
-  gem:      { search: null,            placeholder: 'Enter gem nameâ€¦',         hint: 'e.g. rails   sinatra   puma',                 manifestCmd: null },
-  cargo:    { search: cargoSearch,     placeholder: 'Search crates.ioâ€¦',       hint: 'e.g. serde   tokio   clap@4',                 manifestCmd: 'cargo build',                   manifestHint: 'Reads Cargo.toml in /home/container' },
+  npm:      { search: npmSearch,       placeholder: 'Search npm packages…',    hint: 'e.g. express   @types/node@^18   lodash@4',   manifestCmd: 'npm install',                   manifestHint: 'Reads package.json in /home/container' },
+  yarn:     { search: npmSearch,       placeholder: 'Search npm packages…',    hint: 'e.g. express   @types/node@^18   lodash@4',   manifestCmd: 'yarn install',                  manifestHint: 'Reads package.json in /home/container' },
+  pip:      { search: pypiSearch,      placeholder: 'Search PyPI packages…',   hint: 'e.g. flask   requests==2.31   numpy>=1.0',   manifestCmd: 'pip install -r requirements.txt', manifestHint: 'Reads requirements.txt in /home/container' },
+  pip3:     { search: pypiSearch,      placeholder: 'Search PyPI packages…',   hint: 'e.g. flask   requests==2.31   numpy>=1.0',   manifestCmd: 'pip3 install -r requirements.txt', manifestHint: 'Reads requirements.txt in /home/container' },
+  composer: { search: composerSearch,  placeholder: 'Search Packagist…',       hint: 'e.g. laravel/framework   monolog/monolog',    manifestCmd: 'composer install',              manifestHint: 'Reads composer.json in /home/container' },
+  gem:      { search: null,            placeholder: 'Enter gem name…',         hint: 'e.g. rails   sinatra   puma',                 manifestCmd: null },
+  cargo:    { search: cargoSearch,     placeholder: 'Search crates.io…',       hint: 'e.g. serde   tokio   clap@4',                 manifestCmd: 'cargo build',                   manifestHint: 'Reads Cargo.toml in /home/container' },
 };
 
 async function npmSearch(q) {
@@ -148,8 +148,8 @@ function buildShell() {
       <div class="topbar" id="topbar">
         <div class="flex-center gap-2">
           <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
-          <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
-          <span class="page-title">Loadingâ€¦</span>
+          <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+          <span class="page-title">Loading…</span>
         </div>
       </div>
       <div id="serverNavSlot"></div>
@@ -163,9 +163,9 @@ function renderTopbar() {
   document.getElementById('topbar').innerHTML = `
     <div class="flex-center gap-2">
       <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
-      <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
+      <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
       <a class="topbar-link" href="/server/${serverId}">${esc(server.name)}</a>
-      <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
+      <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
       <span class="page-title">Packages</span>
     </div>
     <div class="flex-center gap-2">
@@ -261,7 +261,7 @@ function attachListeners() {
       const manifestCmdLabel = document.getElementById('manifestCmdLabel');
       const mBtn = document.getElementById('manifestBtn');
       if (manifestSection) manifestSection.style.display = cfg.manifestCmd ? '' : 'none';
-      if (manifestCmdLabel) manifestCmdLabel.textContent = cfg.manifestCmd ? `${cfg.manifestCmd} â€” ${cfg.manifestHint || ''}` : '';
+      if (manifestCmdLabel) manifestCmdLabel.textContent = cfg.manifestCmd ? `${cfg.manifestCmd} — ${cfg.manifestHint || ''}` : '';
       if (mBtn) mBtn.disabled = !cfg.manifestCmd || !canInstall();
       hideResults();
     });
@@ -316,7 +316,7 @@ function renderResults(results, q) {
     <div class="pkg-result" data-name="${esc(r.name)}" data-version="${esc(r.version)}">
       <div>
         <div class="pkg-result-name">${esc(r.name)}</div>
-        ${r.description ? `<div class="pkg-result-desc">${esc(r.description.slice(0, 80))}${r.description.length > 80 ? 'â€¦' : ''}</div>` : ''}
+        ${r.description ? `<div class="pkg-result-desc">${esc(r.description.slice(0, 80))}${r.description.length > 80 ? '…' : ''}</div>` : ''}
       </div>
       ${r.version ? `<span class="pkg-result-version">${esc(r.version)}</span>` : ''}
     </div>`).join('');
@@ -377,7 +377,7 @@ function showStatus(ok, msg) {
   if (!tag) return;
   tag.style.display = '';
   tag.className = ok ? 'pkg-status-ok' : 'pkg-status-err';
-  tag.textContent = (ok ? 'âœ“ ' : 'âœ— ') + msg;
+  tag.textContent = (ok ? '✓ ' : '✗ ') + msg;
 }
 
 async function doInstall(fromManifest = false) {
@@ -392,7 +392,7 @@ async function doInstall(fromManifest = false) {
   installing = true;
   const btn = document.getElementById('installBtn');
   const mBtn = document.getElementById('manifestBtn');
-  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spinner" style="width:11px;height:11px;border-width:2px;margin-right:6px"></span>Installingâ€¦`; }
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spinner" style="width:11px;height:11px;border-width:2px;margin-right:6px"></span>Installing…`; }
   if (mBtn) mBtn.disabled = true;
 
   clearOutput();
@@ -413,7 +413,7 @@ async function doInstall(fromManifest = false) {
   }
 }
 
-// â”€â”€ Socket.IO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Socket.IO ──────────────────────────────────────────────────────────────────
 
 function connectSocket() {
   socket = io({ auth: { token: getToken() } });

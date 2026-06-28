@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nodactyl â€” Activity</title>
+  <title>Nodactyl — Activity</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#f97316">
@@ -83,7 +83,7 @@ function badge(action) {
 
 function detail(action, meta) {
   if (!meta) return '';
-  if (action === 'file.rename')    return `<span class="act-code">${esc(meta.from || '')} â†’ ${esc(meta.to || '')}</span>`;
+  if (action === 'file.rename')    return `<span class="act-code">${esc(meta.from || '')} → ${esc(meta.to || '')}</span>`;
   if (action === 'file.git_clone') return `<span class="act-code">${esc(meta.url || '')}</span>${meta.branch ? ` <span style="font-size:12px;color:var(--text-muted)">branch: ${esc(meta.branch)}</span>` : ''}`;
   if (action === 'file.git_pull')  return `<span style="font-size:12px;color:var(--text-muted)">strategy: ${esc(meta.strategy || 'ff-only')}</span>`;
   if (action === 'file.git_reset') return `<span class="act-code">${esc(meta.commit || 'HEAD~1')}</span> <span style="font-size:12px;color:var(--text-muted)">--${esc(meta.mode || 'mixed')}</span>`;
@@ -124,9 +124,9 @@ function buildShell() {
       <div class="topbar" id="topbar">
         <div class="flex-center gap-2">
           <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
-          <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
-          <span class="page-title">Loadingâ€¦</span>
-          <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
+          <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+          <span class="page-title">Loading…</span>
+          <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
           <span class="text-muted" style="font-size:13px">Activity</span>
         </div>
       </div>
@@ -141,9 +141,9 @@ function renderTopbar() {
   document.getElementById('topbar').innerHTML = `
     <div class="flex-center gap-2">
       <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
-      <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
+      <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
       <a class="topbar-link" href="/server/${serverId}">${esc(server.name)}</a>
-      <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
+      <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
       <span class="page-title">Activity</span>
     </div>
     <div class="flex-center gap-2">
@@ -180,7 +180,7 @@ function renderRow(row) {
   const det = detail(row.action, meta);
   const isApi = !!row.api_key_id;
   const actor = isApi
-    ? `<span style="display:inline-flex;align-items:center;gap:6px"><span style="font-size:10px;font-weight:700;letter-spacing:.06em;padding:1px 6px;border-radius:4px;background:rgba(99,102,241,.18);color:#818cf8;border:1px solid rgba(99,102,241,.3)">API</span><strong>${esc(row.api_key_name || 'Unknown key')}</strong><span style="color:var(--text-muted);font-size:12px">Â· ${esc(row.username || 'Unknown')}</span></span>`
+    ? `<span style="display:inline-flex;align-items:center;gap:6px"><span style="font-size:10px;font-weight:700;letter-spacing:.06em;padding:1px 6px;border-radius:4px;background:rgba(99,102,241,.18);color:#818cf8;border:1px solid rgba(99,102,241,.3)">API</span><strong>${esc(row.api_key_name || 'Unknown key')}</strong><span style="color:var(--text-muted);font-size:12px">· ${esc(row.username || 'Unknown')}</span></span>`
     : `<strong>${esc(row.username || 'Unknown')}</strong>`;
   return `
     <div class="act-row">

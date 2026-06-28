@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nodactyl â€” Nodes</title>
+  <title>Nodactyl — Nodes</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#f97316">
@@ -306,7 +306,7 @@ function pingClass(ms) {
 }
 
 function fmtMb(mb) {
-  if (mb == null) return 'â€”';
+  if (mb == null) return '—';
   if (mb === 0) return '0 MB';
   if (mb >= 1024) return (mb / 1024).toFixed(1).replace(/\.0$/, '') + ' GB';
   return mb + ' MB';
@@ -358,7 +358,7 @@ function renderNodes() {
 function nodeHeader(n) {
   var online = n.online;
   var ping = pingCache[n.id];
-  var pingLabel = online ? (ping == null ? '...' : ping + ' ms') : 'â€”';
+  var pingLabel = online ? (ping == null ? '...' : ping + ' ms') : '—';
   var pClass = online ? pingClass(ping) : 'slow';
   return '<div class="node-card-header">' +
     '<span class="node-status-dot ' + (online ? 'online' : 'offline') + '"></span>' +
@@ -375,7 +375,7 @@ function nodeHeader(n) {
 function nodeStatsGrid(n) {
   return '<div class="node-stats">' +
     '<div class="node-stat-item"><div class="node-stat-val">' + fmtMb(n.memory) + '</div><div class="node-stat-lbl">Total RAM</div></div>' +
-    '<div class="node-stat-item"><div class="node-stat-val">' + (n.cpu || 'â€”') + '</div><div class="node-stat-lbl">CPU Cores</div></div>' +
+    '<div class="node-stat-item"><div class="node-stat-val">' + (n.cpu || '—') + '</div><div class="node-stat-lbl">CPU Cores</div></div>' +
     '<div class="node-stat-item"><div class="node-stat-val">' + (n.server_count || 0) + '</div><div class="node-stat-lbl">Servers</div></div>' +
   '</div>';
 }
@@ -407,7 +407,7 @@ function renderUserCard(n) {
     '<div class="node-divider"></div>' +
     nodeStatsGrid(n) +
     nodeAllocBars(n) +
-    (!n.online ? '<div style="padding:0 18px 12px;font-size:12px;color:var(--danger)">Node offline â€” hosted servers may be unavailable.</div>' : '') +
+    (!n.online ? '<div style="padding:0 18px 12px;font-size:12px;color:var(--danger)">Node offline — hosted servers may be unavailable.</div>' : '') +
   '</div>';
 }
 

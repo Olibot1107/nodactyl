@@ -23,7 +23,7 @@
     .file-row.selected:hover { background:rgba(99,102,241,.18); }
     .selection-bar { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:5px 10px; border-top:1px solid var(--border); background:rgba(99,102,241,.08); flex-shrink:0; font-size:12px; }
 
-    /* â”€â”€ Mobile file manager â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── Mobile file manager ─────────────────────────────── */
     .mobile-back-btn { display: none; }
 
     @media (max-width: 720px) {
@@ -71,7 +71,7 @@
       /* Editor toolbar: tighter on mobile */
       .editor-toolbar { flex-wrap: nowrap; padding: 8px 10px; min-height: 44px; gap: 8px; }
 
-      /* Hide Close btn â€” the mobile back button replaces it */
+      /* Hide Close btn — the mobile back button replaces it */
       #closeBtn { display: none !important; }
     }
   </style>
@@ -92,13 +92,13 @@
   <div class="modal modal-sm">
     <div class="modal-header">
       <div class="modal-title">Upload</div>
-      <button class="modal-close" onclick="closeModal('uploadModal')">âœ•</button>
+      <button class="modal-close" onclick="closeModal('uploadModal')">✕</button>
     </div>
     <div class="modal-body">
       <div id="uploadZone" class="upload-zone">
         <svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24" width="32" height="32" style="opacity:.3;margin-bottom:8px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         <div style="font-size:13px;font-weight:500;margin-bottom:4px">Drop files or folders here</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Files and folders can be mixed â€” drop them all at once</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Files and folders can be mixed — drop them all at once</div>
         <div style="display:flex;gap:8px;justify-content:center">
           <button class="btn btn-ghost btn-sm" onclick="document.getElementById('fileUploadInput').click()">Choose Files</button>
           <button class="btn btn-ghost btn-sm" onclick="document.getElementById('folderUploadInput').click()">Choose Folder</button>
@@ -123,7 +123,7 @@
   <button class="ctx-item" id="ctxOpen">Open</button>
   <div class="ctx-divider"></div>
   <button class="ctx-item" id="ctxRename">Rename</button>
-  <button class="ctx-item" id="ctxMove">Move toâ€¦</button>
+  <button class="ctx-item" id="ctxMove">Move to…</button>
   <button class="ctx-item ctx-item-danger" id="ctxDelete">Delete</button>
   <div class="ctx-divider" id="ctxDlDivider"></div>
   <button class="ctx-item" id="ctxDownload">Download</button>
@@ -138,7 +138,7 @@
   <div class="modal modal-sm">
     <div class="modal-header">
       <div class="modal-title" id="newItemTitle">New File</div>
-      <button class="modal-close" onclick="closeModal('newItemModal')">âœ•</button>
+      <button class="modal-close" onclick="closeModal('newItemModal')">✕</button>
     </div>
     <div class="modal-body">
       <div class="form-group mb-2">
@@ -160,7 +160,7 @@
   <div class="modal modal-sm">
     <div class="modal-header">
       <div class="modal-title">Move</div>
-      <button class="modal-close" onclick="closeModal('moveModal')">âœ•</button>
+      <button class="modal-close" onclick="closeModal('moveModal')">✕</button>
     </div>
     <div class="modal-body">
       <div class="form-group mb-2">
@@ -182,7 +182,7 @@
   <div class="modal modal-sm">
     <div class="modal-header">
       <div class="modal-title">Git</div>
-      <button class="modal-close" onclick="closeModal('gitModal')">âœ•</button>
+      <button class="modal-close" onclick="closeModal('gitModal')">✕</button>
     </div>
     <div class="git-tabs">
       <button class="git-tab active" id="gitTab-clone" onclick="switchGitTab('clone')">Clone</button>
@@ -237,7 +237,7 @@
         <div class="form-group mb-0">
           <label class="form-label mb-2">Strategy</label>
           <div style="display:flex;flex-direction:column;gap:7px">
-            <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px"><input type="radio" name="gitPullStrategy" value="ff-only" checked style="accent-color:var(--primary);margin-top:2px"> <span><b>Fast-forward only</b><br><span style="color:var(--text-muted);font-size:11.5px">Fails if a merge commit would be needed â€” safest option</span></span></label>
+            <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px"><input type="radio" name="gitPullStrategy" value="ff-only" checked style="accent-color:var(--primary);margin-top:2px"> <span><b>Fast-forward only</b><br><span style="color:var(--text-muted);font-size:11.5px">Fails if a merge commit would be needed — safest option</span></span></label>
             <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px"><input type="radio" name="gitPullStrategy" value="merge" style="accent-color:var(--primary);margin-top:2px"> <span><b>Merge</b><br><span style="color:var(--text-muted);font-size:11.5px">Creates a merge commit if diverged</span></span></label>
             <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px"><input type="radio" name="gitPullStrategy" value="rebase" style="accent-color:var(--primary);margin-top:2px"> <span><b>Rebase</b><br><span style="color:var(--text-muted);font-size:11.5px">Replays local commits on top of upstream</span></span></label>
           </div>
@@ -252,7 +252,7 @@
         <div class="form-group mb-3">
           <label class="form-label">Target commit</label>
           <input class="form-input font-mono" id="gitResetCommit" placeholder="HEAD~1" value="HEAD~1" autocomplete="off">
-          <div class="form-hint mt-1">e.g. HEAD~1 Â· HEAD~3 Â· a1b2c3d</div>
+          <div class="form-hint mt-1">e.g. HEAD~1 · HEAD~3 · a1b2c3d</div>
         </div>
         <div class="form-group mb-0">
           <label class="form-label mb-2">Mode</label>
@@ -278,7 +278,7 @@
   <div class="modal modal-sm">
     <div class="modal-header">
       <div class="modal-title">Rename</div>
-      <button class="modal-close" onclick="closeModal('renameModal')">âœ•</button>
+      <button class="modal-close" onclick="closeModal('renameModal')">✕</button>
     </div>
     <div class="modal-body">
       <div class="form-group mb-2">
@@ -299,7 +299,7 @@
   <div class="modal modal-sm">
     <div class="modal-header">
       <div class="modal-title" id="bulkMoveTitle">Move items</div>
-      <button class="modal-close" onclick="closeModal('bulkMoveModal')">âœ•</button>
+      <button class="modal-close" onclick="closeModal('bulkMoveModal')">✕</button>
     </div>
     <div class="modal-body">
       <div class="form-group mb-2">
@@ -321,7 +321,7 @@
   <div class="modal modal-sm">
     <div class="modal-header">
       <div class="modal-title">Share File</div>
-      <button class="modal-close" onclick="closeModal('fileShareModal')">âœ•</button>
+      <button class="modal-close" onclick="closeModal('fileShareModal')">✕</button>
     </div>
     <div class="modal-body">
       <div class="form-group mb-3">
@@ -383,10 +383,10 @@ let renameTarget = null;
 let moveTarget = null;
 let monacoEditor = null;
 let monacoReady = false;
-// path â†’ { path, isDir, name }
+// path → { path, isDir, name }
 let selectedItems = new Map();
 
-// â”€â”€ Icons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Icons ─────────────────────────────────────────────────────────────────────
 const UI = {
   back:     `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>`,
   folder:   `<svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24" width="15" height="15"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>`,
@@ -404,7 +404,7 @@ const UI = {
   share:    `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`,
 };
 
-// â”€â”€ File type badges â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── File type badges ──────────────────────────────────────────────────────────
 function fileIcon(name, isDir) {
   if (isDir) return `<span class="ftype-dir">${UI.folder}</span>`;
   const ext = name.includes('.') ? name.toLowerCase().split('.').pop() : '';
@@ -426,11 +426,11 @@ function fileIcon(name, isDir) {
   const color = specials[lname] || colors[ext] || '#6b7280';
   const raw = specials[lname]
     ? (lname === 'dockerfile' ? 'D' : ext.slice(0, 3))
-    : (ext.slice(0, 3) || 'â€¢');
+    : (ext.slice(0, 3) || '•');
   return `<span class="ftype-badge" style="color:${color};background:${color}18;border-color:${color}2e">${raw.toUpperCase()}</span>`;
 }
 
-// â”€â”€ Monaco language detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Monaco language detection ─────────────────────────────────────────────────
 function detectLanguage(filename) {
   const ext = filename.includes('.') ? filename.toLowerCase().split('.').pop() : '';
   const lname = filename.toLowerCase();
@@ -451,7 +451,7 @@ function detectLanguage(filename) {
   return specials[lname] || map[ext] || 'plaintext';
 }
 
-// â”€â”€ File type detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── File type detection ───────────────────────────────────────────────────────
 const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','bmp','ico','tiff','tif','avif']);
 
 function getExt(name) { return name.includes('.') ? name.toLowerCase().split('.').pop() : ''; }
@@ -484,7 +484,7 @@ function imgMimeType(name) {
   return m[getExt(name)] || 'image/octet-stream';
 }
 
-// â”€â”€ Binary fetch helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Binary fetch helper ───────────────────────────────────────────────────────
 async function fetchBinary(filePath) {
   const r = await API.get(`/servers/${serverId}/files/read-binary?path=${encodeURIComponent(filePath)}`);
   return r.content; // base64 string
@@ -497,7 +497,7 @@ function base64ToBlob(b64, mimeType) {
   return new Blob([arr], { type: mimeType });
 }
 
-// â”€â”€ Image viewer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Image viewer ─────────────────────────────────────────────────────────────
 async function openImageViewer(filePath) {
   setStatusState('Loading...');
   setActiveRow(filePath);
@@ -530,7 +530,7 @@ async function openImageViewer(filePath) {
 }
 
 
-// â”€â”€ Binary viewer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Binary viewer ─────────────────────────────────────────────────────────────
 function openBinaryViewer(filePath, fname) {
   if (modified && openFile && !confirm('You have unsaved changes. Discard them?')) return;
   openFile = filePath;
@@ -556,7 +556,7 @@ function openBinaryViewer(filePath, fname) {
   mobileOpenEditor();
 }
 
-// â”€â”€ Breadcrumb: shows ~ for HOME, relative segments below â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Breadcrumb: shows ~ for HOME, relative segments below ─────────────────────
 function renderBreadcrumb(path) {
   const el = document.getElementById('breadcrumb');
   if (!el) return;
@@ -569,12 +569,12 @@ function renderBreadcrumb(path) {
   for (const p of parts) {
     acc += '/' + p;
     const target = acc;
-    html += `<span class="bc-sep">â€º</span><span class="bc-seg" onclick="listDir('${esc(target)}')" title="${esc(acc)}">${esc(p)}</span>`;
+    html += `<span class="bc-sep">›</span><span class="bc-seg" onclick="listDir('${esc(target)}')" title="${esc(acc)}">${esc(p)}</span>`;
   }
   el.innerHTML = html;
 }
 
-// â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   await loadPanelSettings();
   document.getElementById('app').innerHTML = buildShell();
@@ -643,9 +643,9 @@ function buildShell() {
       <div class="topbar" id="topbar">
         <div class="flex-center gap-2">
           <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
-          <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
-          <span class="page-title">Loadingâ€¦</span>
-          <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
+          <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+          <span class="page-title">Loading…</span>
+          <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
           <span class="text-muted" style="font-size:13px">Files</span>
         </div>
       </div>
@@ -669,8 +669,8 @@ function buildShell() {
           </div>
           <div style="padding:4px 8px 2px;display:flex;align-items:center;gap:5px">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="13" height="13" style="flex-shrink:0;color:var(--text-dim)"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-            <input type="text" id="fileSearch" style="flex:1;height:24px;font-size:12px;background:transparent;border:none;outline:none;color:var(--text);caret-color:var(--primary)" placeholder="Search filesâ€¦" oninput="onFileSearch(this.value)" autocomplete="off">
-            <button id="fileSearchClear" onclick="clearFileSearch()" style="display:none;background:none;border:none;color:var(--text-dim);cursor:pointer;padding:0 2px;font-size:13px;line-height:1" title="Clear search">âœ•</button>
+            <input type="text" id="fileSearch" style="flex:1;height:24px;font-size:12px;background:transparent;border:none;outline:none;color:var(--text);caret-color:var(--primary)" placeholder="Search files…" oninput="onFileSearch(this.value)" autocomplete="off">
+            <button id="fileSearchClear" onclick="clearFileSearch()" style="display:none;background:none;border:none;color:var(--text-dim);cursor:pointer;padding:0 2px;font-size:13px;line-height:1" title="Clear search">✕</button>
           </div>
 
           <div class="file-banner" id="fileBanner"></div>
@@ -692,7 +692,7 @@ function buildShell() {
         <main class="editor-pane">
           <div class="editor-toolbar">
             <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1">
-              <button class="btn btn-ghost btn-sm mobile-back-btn" onclick="mobileBackToFiles()" style="flex-shrink:0;white-space:nowrap">â† Files</button>
+              <button class="btn btn-ghost btn-sm mobile-back-btn" onclick="mobileBackToFiles()" style="flex-shrink:0;white-space:nowrap">← Files</button>
               <div class="editor-file-meta" style="min-width:0">
                 <div class="editor-filename" id="editorFilename">No file open</div>
                 <div class="editor-subline" id="editorSubline">Select a file from the explorer</div>
@@ -708,17 +708,17 @@ function buildShell() {
 
           <div class="editor-empty" id="editorEmpty">
             <div style="text-align:center">
-              <div style="font-size:32px;opacity:.12;margin-bottom:12px">ðŸ“„</div>
+              <div style="font-size:32px;opacity:.12;margin-bottom:12px">📄</div>
               <div style="font-size:13px;color:var(--text-muted)">Select a file to view or edit</div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:6px;opacity:.6">Ctrl+S to save &nbsp;Â·&nbsp; drag files onto the explorer to upload</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:6px;opacity:.6">Ctrl+S to save &nbsp;·&nbsp; drag files onto the explorer to upload</div>
             </div>
           </div>
 
           <div id="editorArea"></div>
           <div id="imageViewer"><img id="imageViewerImg" src="" alt=""></div>
           <div id="binaryViewer" style="display:none;flex:1;min-height:0;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:var(--bg2);color:var(--text-muted);font-size:13px">
-            <div style="font-size:36px;opacity:.15">ðŸ“¦</div>
-            <div>Binary file â€” cannot display as text</div>
+            <div style="font-size:36px;opacity:.15">📦</div>
+            <div>Binary file — cannot display as text</div>
             <button class="btn btn-ghost btn-sm" id="binaryDownloadBtn" onclick="downloadOpenFile()">Download</button>
           </div>
 
@@ -735,15 +735,15 @@ function buildShell() {
     </div>`;
 }
 
-// â”€â”€ Header & banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Header & banner ───────────────────────────────────────────────────────────
 function renderHeader() {
   document.getElementById('serverNavSlot').innerHTML = renderServerNav(serverId, 'files', server);
   document.getElementById('topbar').innerHTML = `
     <div class="flex-center gap-2">
       <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
-      <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
+      <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
       <a class="topbar-link" href="/server/${serverId}">${esc(server.name)}</a>
-      <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
+      <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
       <span class="page-title">Files</span>
     </div>
     <div class="flex-center gap-2">
@@ -758,14 +758,14 @@ function syncBanner() {
   const stopped = server.status !== 'running' && !!server.container_id && server.node_online;
   if (stopped) {
     el.className = 'file-banner file-banner-info show';
-    el.innerHTML = `${UI.info} <span>Container stopped â€” you can still browse and edit files.</span>`;
+    el.innerHTML = `${UI.info} <span>Container stopped — you can still browse and edit files.</span>`;
   } else {
     el.className = 'file-banner';
     el.innerHTML = '';
   }
 }
 
-// â”€â”€ Directory listing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Directory listing ─────────────────────────────────────────────────────────
 async function listDir(dirPath) {
   const nextPath = normalizePath(dirPath);
   if (nextPath !== currentPath) {
@@ -811,7 +811,7 @@ function clearFileSearch() {
 
 async function refreshDirectory() { await listDir(currentPath); }
 
-// â”€â”€ File list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── File list ─────────────────────────────────────────────────────────────────
 function renderFileList(files, dirPath) {
   const q = fileSearchQuery;
   const visible = q ? files.filter(f => f.name.toLowerCase().includes(q)) : files;
@@ -851,7 +851,7 @@ function renderFileList(files, dirPath) {
   if (!rows.length) {
     document.getElementById('fileList').innerHTML = q
       ? `<div class="file-state"><div style="text-align:center"><div style="font-size:11px;color:var(--text-muted)">No files match <b>${esc(q)}</b></div></div></div>`
-      : `<div class="file-state"><div style="text-align:center"><div style="font-size:24px;opacity:.15;margin-bottom:8px">ðŸ“</div><div>Empty directory</div><div style="font-size:11px;color:var(--text-muted);margin-top:6px">Drop files here to upload</div></div></div>`;
+      : `<div class="file-state"><div style="text-align:center"><div style="font-size:24px;opacity:.15;margin-bottom:8px">📁</div><div>Empty directory</div><div style="font-size:11px;color:var(--text-muted);margin-top:6px">Drop files here to upload</div></div></div>`;
     return;
   }
 
@@ -883,7 +883,7 @@ function renderFileList(files, dirPath) {
   });
 }
 
-// â”€â”€ Editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Editor ────────────────────────────────────────────────────────────────────
 async function openFileForEdit(filePath) {
   if (modified && openFile && !confirm('You have unsaved changes. Discard them?')) return;
   const fname = filePath.split('/').filter(Boolean).pop();
@@ -1020,7 +1020,7 @@ async function downloadFileBinary(filePath, name) {
   }
 }
 
-// â”€â”€ Upload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Upload ────────────────────────────────────────────────────────────────────
 function openUploadModal() {
   document.getElementById('uploadModalProgress').style.display = 'none';
   document.getElementById('uploadModalStatus').textContent = '';
@@ -1183,7 +1183,7 @@ function uploadChunk(blob, filePath, offset, total) {
   });
 }
 
-// â”€â”€ Context menu â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Context menu ──────────────────────────────────────────────────────────────
 function showCtx(e, path, isDir, name) {
   ctxTarget = { path, isDir, name };
   const menu = document.getElementById('ctxMenu');
@@ -1239,7 +1239,7 @@ function showCtx(e, path, isDir, name) {
 function openCtxFromDots(e, path, isDir, name) { e.stopPropagation(); showCtx(e, path, isDir, name); }
 function closeCtx() { document.getElementById('ctxMenu').style.display = 'none'; ctxTarget = null; }
 
-// â”€â”€ File operations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── File operations ───────────────────────────────────────────────────────────
 function openNewItemModal(type) {
   newItemType = type;
   document.getElementById('newItemTitle').textContent = type === 'dir' ? 'New Folder' : 'New File';
@@ -1362,9 +1362,9 @@ async function confirmDelete({ path, isDir, name }) {
   }
 }
 
-// â”€â”€ Extract archive â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Extract archive ───────────────────────────────────────────────────────────
 async function extractArchive(archivePath, name) {
-  setStatusState(`Extracting ${name}â€¦`);
+  setStatusState(`Extracting ${name}…`);
   try {
     const res = await API.post(`/servers/${serverId}/files/extract`, { path: archivePath });
     setStatusState('Extracted');
@@ -1391,7 +1391,7 @@ async function extractArchive(archivePath, name) {
   }
 }
 
-// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 function setActiveRow(filePath) {
@@ -1482,7 +1482,7 @@ function formatBytes(size) {
   return `${(n / 1048576).toFixed(1)}M`;
 }
 
-// â”€â”€ Git unified modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Git unified modal ─────────────────────────────────────────────────────────
 let gitActiveTab = 'clone';
 
 function openGitModal(tab = 'clone') {
@@ -1648,7 +1648,7 @@ function updateDirtyIndicator() {
   }
 }
 
-// â”€â”€ Mobile panel navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Mobile panel navigation ───────────────────────────────────────────────────
 function isMobile() { return window.innerWidth <= 720; }
 
 function mobileOpenEditor() {
@@ -1660,7 +1660,7 @@ function mobileBackToFiles() {
   document.getElementById('fileShell')?.classList.remove('mobile-editor-open');
 }
 
-// â”€â”€ Multi-select â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Multi-select ──────────────────────────────────────────────────────────────
 function toggleSelect(path, isDir, name) {
   if (selectedItems.has(path)) {
     selectedItems.delete(path);
@@ -1702,7 +1702,7 @@ function clearSelection() {
 async function bulkDelete() {
   if (!selectedItems.size) return;
   const names = [...selectedItems.values()].map(i => i.name);
-  const preview = names.slice(0, 5).join('\n') + (names.length > 5 ? `\nâ€¦and ${names.length - 5} more` : '');
+  const preview = names.slice(0, 5).join('\n') + (names.length > 5 ? `\n…and ${names.length - 5} more` : '');
   if (!confirm(`Delete ${selectedItems.size} item${selectedItems.size !== 1 ? 's' : ''}?\n\n${preview}\n\nThis cannot be undone.`)) return;
   setStatusState('Deleting...');
   const errors = [];
@@ -1756,7 +1756,7 @@ async function submitBulkMove() {
   if (errors.length) alert('Some moves failed:\n' + errors.join('\n'));
 }
 
-// â”€â”€ File sharing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── File sharing ──────────────────────────────────────────────────────────────
 
 function canShare() {
   const user = getUser();
@@ -1919,7 +1919,7 @@ async function openFileRedactView(sid, label) {
   function renderRedact() {
     inner.innerHTML = ''
       + '<div style="padding:14px 18px 12px;display:flex;align-items:center;gap:8px;flex-shrink:0;border-bottom:1px solid var(--border)">'
-      +   '<button id="fRedactBackBtn" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px 6px;border-radius:4px;font-size:12px;display:flex;align-items:center;gap:4px" onmouseover="this.style.color=\'var(--text)\'" onmouseout="this.style.color=\'var(--text-muted)\'">â† Back</button>'
+      +   '<button id="fRedactBackBtn" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px 6px;border-radius:4px;font-size:12px;display:flex;align-items:center;gap:4px" onmouseover="this.style.color=\'var(--text)\'" onmouseout="this.style.color=\'var(--text-muted)\'">← Back</button>'
       +   '<span style="font-size:13px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(label) + '</span>'
       +   '<button onclick="closeModal(\'fileShareModal\')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;line-height:1;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:6px" onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'none\'">&times;</button>'
       + '</div>'
@@ -1975,9 +1975,9 @@ async function openFileRedactView(sid, label) {
   }
 
   async function doSave() {
-    if (!markedLines.size && !confirm('No lines marked â€” save anyway?')) return;
+    if (!markedLines.size && !confirm('No lines marked — save anyway?')) return;
     const btn = inner.querySelector('#fRedactSaveBtn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Savingâ€¦'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
     const newLines = lines.map(function(line, i) {
       return markedLines.has(i) ? '[REDACTED]' : line;
     });
