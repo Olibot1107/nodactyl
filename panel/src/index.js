@@ -188,10 +188,17 @@ async function main() {
   app.get('/manifest.json', (req, res) => {
     const { db } = require('./db');
     const name = db.prepare("SELECT value FROM settings WHERE key = 'panel_name'").get()?.value || 'Nodactyl';
+    const installable = db.prepare("SELECT value FROM settings WHERE key = 'pwa_installable'").get()?.value ?? '1';
+    res.setHeader('Content-Type', 'application/manifest+json');
+    res.setHeader('Cache-Control', 'no-store');
+    if (installable === '0') {
+      // Non-installable manifest — browsers won't offer an install button
+      return res.json({ name, display: 'browser' });
+    }
     const logo = db.prepare("SELECT value FROM settings WHERE key = 'panel_logo'").get()?.value || '';
     const iconUrl = (logo.startsWith('http') || logo.startsWith('/') || logo.startsWith('data:'))
       ? logo : '/favicon.svg';
-    const manifest = {
+    res.json({
       name,
       short_name: name.length > 12 ? name.slice(0, 12) : name,
       description: 'Game server management panel',
@@ -203,10 +210,7 @@ async function main() {
       icons: [
         { src: iconUrl, sizes: 'any', type: iconUrl.endsWith('.svg') ? 'image/svg+xml' : 'image/png', purpose: 'any maskable' },
       ],
-    };
-    res.setHeader('Content-Type', 'application/manifest+json');
-    res.setHeader('Cache-Control', 'public, max-age=60');
-    res.json(manifest);
+    });
   });
 
   // Redact lines in a log share (requires auth + sharelog permission on that server)

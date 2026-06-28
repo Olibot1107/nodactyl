@@ -1,7 +1,18 @@
 // Shared auth + fetch helpers
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
+  window.addEventListener('load', async () => {
+    try {
+      const s = await fetch('/settings/public').then(r => r.json());
+      if ((s.pwa_installable ?? '1') === '0') {
+        // Unregister any existing SW so the site becomes non-installable
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for (const r of regs) r.unregister();
+        return;
+      }
+    } catch {}
+    navigator.serviceWorker.register('/sw.js');
+  });
 }
 
 // ── PWA install prompt ────────────────────────────────────────────────────────

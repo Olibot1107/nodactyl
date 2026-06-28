@@ -4,7 +4,7 @@ const { requireAuth, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
-const PUBLIC_KEYS = ['panel_name', 'panel_logo', 'discord_enabled', 'github_enabled', 'totp_enabled', 'passkeys_enabled', 'api_enabled', 'pwa_enabled'];
+const PUBLIC_KEYS = ['panel_name', 'panel_logo', 'discord_enabled', 'github_enabled', 'totp_enabled', 'passkeys_enabled', 'api_enabled', 'pwa_enabled', 'pwa_installable'];
 
 // Public — no auth required
 router.get('/public', (req, res) => {
