@@ -355,6 +355,21 @@ async function main() {
     }
   });
 
+  function broadcastFilePresence(room) {
+    const sockets = io.sockets.adapter.rooms.get(room);
+    const users = [];
+    if (sockets) {
+      for (const sid of sockets) {
+        const s = io.sockets.sockets.get(sid);
+        if (s?.user) {
+          const u = db.prepare('SELECT avatar FROM users WHERE id = ?').get(s.user.id);
+          users.push({ id: s.user.id, username: s.user.username, avatar: u?.avatar || null });
+        }
+      }
+    }
+    io.to(room).emit('file:presence', { users });
+  }
+
   io.on('connection', (socket) => {
     // Join personal room so server-status can be scoped to owner only
     socket.join(`user:${socket.user.id}`);
@@ -387,6 +402,43 @@ async function main() {
         audit(socket.user.id, serverId, 'console.command', { command: String(command || '').trim().slice(0, 100) }, socket.handshake.address);
       }
       nodeManager.emit(server.node_id, { type: 'send-stdin', serverId, containerId: server.container_id, data: String(command) + '\n' });
+    });
+
+    // ── Collaborative file editing ──────────────────────────────────────────────
+    socket.on('file:join', ({ serverId: sid, filePath }) => {
+      if (!sid || !filePath || typeof filePath !== 'string' || filePath.length > 512) return;
+      const server = db.prepare('SELECT id, owner_id FROM servers WHERE id = ?').get(sid);
+      if (!server) return;
+      if (socket.user.role !== 'admin' && server.owner_id !== socket.user.id) {
+        const member = db.prepare('SELECT id FROM server_members WHERE server_id = ? AND user_id = ?').get(sid, socket.user.id);
+        if (!member) return;
+      }
+      if (socket.data.fileRoom) {
+        socket.leave(socket.data.fileRoom);
+        broadcastFilePresence(socket.data.fileRoom);
+      }
+      const room = `file:${sid}:${filePath}`;
+      socket.join(room);
+      socket.data.fileRoom = room;
+      broadcastFilePresence(room);
+    });
+
+    socket.on('file:leave', () => {
+      if (!socket.data.fileRoom) return;
+      const room = socket.data.fileRoom;
+      socket.leave(room);
+      delete socket.data.fileRoom;
+      broadcastFilePresence(room);
+    });
+
+    socket.on('file:change', ({ content }) => {
+      const room = socket.data.fileRoom;
+      if (!room || typeof content !== 'string' || content.length > 2 * 1024 * 1024) return;
+      socket.to(room).emit('file:change', { content, userId: socket.user.id, username: socket.user.username });
+    });
+
+    socket.on('disconnect', () => {
+      if (socket.data.fileRoom) broadcastFilePresence(socket.data.fileRoom);
     });
   });
 

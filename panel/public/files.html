@@ -77,6 +77,7 @@
       #closeBtn { display: none !important; }
     }
   </style>
+  <script src="/socket.io/socket.io.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
   <style>
     #imageViewer { display:none; flex:1; min-height:0; overflow:auto; align-items:center; justify-content:center; background:var(--bg2); }
@@ -388,6 +389,18 @@ let monacoReady = false;
 // path → { path, isDir, name }
 let selectedItems = new Map();
 
+// ── Collaborative editing state ───────────────────────────────────────────────
+let fileSocket = null;
+let applyingRemote = false;
+let changeDebounceTimer = null;
+let colabPresence = [];
+
+const COLAB_COLORS = ['#f97316','#3b82f6','#22c55e','#a855f7','#ec4899','#14b8a6','#f59e0b','#ef4444'];
+function userColor(id) {
+  let h = 0; for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) | 0;
+  return COLAB_COLORS[Math.abs(h) % COLAB_COLORS.length];
+}
+
 // ── Icons ─────────────────────────────────────────────────────────────────────
 const UI = {
   back:     `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>`,
@@ -580,6 +593,7 @@ function renderBreadcrumb(path) {
 async function init() {
   await loadPanelSettings();
   document.getElementById('app').innerHTML = buildShell();
+  connectFileSocket();
 
   // Boot Monaco asynchronously after the DOM is ready
   require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
@@ -612,6 +626,14 @@ async function init() {
       document.getElementById('saveBtn').disabled = false;
       updateDirtyIndicator();
       updateStatusBar();
+      if (!applyingRemote && fileSocket?.connected) {
+        clearTimeout(changeDebounceTimer);
+        changeDebounceTimer = setTimeout(() => {
+          if (openFile && fileSocket?.connected) {
+            fileSocket.emit('file:change', { content: monacoEditor.getValue() });
+          }
+        }, 500);
+      }
     });
     monacoReady = true;
   });
@@ -705,6 +727,7 @@ function buildShell() {
                 <div class="editor-filename" id="editorFilename">No file open</div>
                 <div class="editor-subline" id="editorSubline">Select a file from the explorer</div>
               </div>
+              <div id="colabPresence" style="display:flex;align-items:center;gap:3px;flex-shrink:0"></div>
             </div>
             <div class="flex-center gap-2" style="flex-shrink:0">
               <button class="btn btn-ghost btn-sm" id="downloadBtn" onclick="downloadOpenFile()" disabled title="Download">${UI.download}</button>
@@ -948,6 +971,7 @@ async function openFileForEdit(filePath) {
     document.getElementById('statusLang').textContent = lang !== 'plaintext' ? lang : '';
     setStatusState('Ready');
     updateStatusBar();
+    joinFileRoom(filePath);
   } catch (e) {
     setStatusState('Error');
     document.getElementById('editorSubline').textContent = e.message;
@@ -977,6 +1001,7 @@ async function saveFile() {
 
 function closeFile() {
   if (modified && !confirm('You have unsaved changes. Discard them?')) return;
+  leaveFileRoom();
   mobileBackToFiles();
   openFile = null;
   modified = false;
@@ -2043,6 +2068,72 @@ async function openFileRedactView(sid, label) {
 window.addEventListener('beforeunload', e => {
   if (modified) { e.preventDefault(); e.returnValue = ''; }
 });
+
+// ── Collaborative editing ─────────────────────────────────────────────────────
+function connectFileSocket() {
+  fileSocket = io({ auth: { token: getToken() } });
+
+  fileSocket.on('connect', () => {
+    // Rejoin after reconnect if a file is already open
+    if (openFile) fileSocket.emit('file:join', { serverId, filePath: openFile });
+  });
+
+  fileSocket.on('file:presence', ({ users }) => {
+    colabPresence = users || [];
+    renderColabPresence();
+  });
+
+  fileSocket.on('file:change', ({ content, userId, username }) => {
+    const me = getUser();
+    if (!monacoReady || !monacoEditor || !openFile || userId === me?.id) return;
+    const current = monacoEditor.getValue();
+    if (content === current) return;
+    applyingRemote = true;
+    try {
+      const model = monacoEditor.getModel();
+      const pos = monacoEditor.getPosition();
+      const scrollTop = monacoEditor.getScrollTop();
+      model.pushEditOperations([], [{ range: model.getFullModelRange(), text: content }], () => null);
+      if (pos) monacoEditor.setPosition(pos);
+      monacoEditor.setScrollTop(scrollTop);
+    } finally {
+      applyingRemote = false;
+    }
+    setStatusState(`↓ ${username}`);
+    setTimeout(() => { if (!modified) setStatusState('Ready'); }, 2000);
+  });
+}
+
+function joinFileRoom(filePath) {
+  if (fileSocket?.connected) {
+    fileSocket.emit('file:join', { serverId, filePath });
+  }
+}
+
+function leaveFileRoom() {
+  clearTimeout(changeDebounceTimer);
+  if (fileSocket?.connected && openFile) {
+    fileSocket.emit('file:leave', {});
+  }
+  colabPresence = [];
+  renderColabPresence();
+}
+
+function renderColabPresence() {
+  const el = document.getElementById('colabPresence');
+  if (!el) return;
+  const me = getUser();
+  const others = (colabPresence || []).filter(u => u.id !== me?.id);
+  if (!others.length) { el.innerHTML = ''; return; }
+  el.innerHTML = others.slice(0, 6).map(u => {
+    const color = userColor(u.id);
+    const initial = (u.username?.[0] || '?').toUpperCase();
+    const inner = u.avatar
+      ? `<img src="${esc(u.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" alt="">`
+      : initial;
+    return `<div title="${esc(u.username)} is editing" style="width:22px;height:22px;border-radius:50%;background:${color}20;border:1.5px solid ${color};color:${color};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;overflow:hidden;cursor:default;flex-shrink:0">${inner}</div>`;
+  }).join('') + (others.length > 6 ? `<span style="font-size:11px;color:var(--text-muted)">+${others.length - 6}</span>` : '');
+}
 
 init();
 </script>
