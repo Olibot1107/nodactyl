@@ -346,9 +346,9 @@ async function main() {
     if (!token) return next(new Error('Unauthorized'));
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
-      const user = db.prepare('SELECT id, username, role, suspended FROM users WHERE id = ?').get(decoded.id);
+      const user = db.prepare('SELECT id, username, role, suspended, avatar FROM users WHERE id = ?').get(decoded.id);
       if (!user || user.suspended) return next(new Error('Unauthorized'));
-      socket.user = { ...decoded, role: user.role };
+      socket.user = { ...decoded, role: user.role, avatar: user.avatar || null };
       next();
     } catch {
       next(new Error('Invalid token'));
@@ -362,8 +362,7 @@ async function main() {
       for (const sid of sockets) {
         const s = io.sockets.sockets.get(sid);
         if (s?.user) {
-          const u = db.prepare('SELECT avatar FROM users WHERE id = ?').get(s.user.id);
-          users.push({ id: s.user.id, username: s.user.username, avatar: u?.avatar || null });
+          users.push({ id: s.user.id, username: s.user.username, avatar: s.user.avatar || null });
         }
       }
     }
@@ -410,7 +409,7 @@ async function main() {
       const server = db.prepare('SELECT id, owner_id FROM servers WHERE id = ?').get(sid);
       if (!server) return;
       if (socket.user.role !== 'admin' && server.owner_id !== socket.user.id) {
-        const member = db.prepare('SELECT id FROM server_members WHERE server_id = ? AND user_id = ?').get(sid, socket.user.id);
+        const member = db.prepare('SELECT 1 FROM server_members WHERE server_id = ? AND user_id = ?').get(sid, socket.user.id);
         if (!member) return;
       }
       if (socket.data.fileRoom) {
