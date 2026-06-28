@@ -4,6 +4,153 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
 }
 
+// ── PWA install banner ────────────────────────────────────────────────────────
+(function() {
+  let _deferredPrompt = null;
+
+  const STYLE = `
+    #pwa-banner {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(120%);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: #1c1d25;
+      border: 1px solid rgba(249,115,22,.35);
+      box-shadow: 0 8px 32px rgba(0,0,0,.55), 0 0 0 1px rgba(249,115,22,.08);
+      border-radius: 14px;
+      padding: 14px 18px;
+      min-width: 280px;
+      max-width: calc(100vw - 32px);
+      transition: transform .35s cubic-bezier(.34,1.56,.64,1), opacity .25s;
+      opacity: 0;
+    }
+    #pwa-banner.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+    #pwa-banner-icon {
+      width: 40px; height: 40px;
+      border-radius: 10px;
+      background: rgba(249,115,22,.15);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      font-size: 20px;
+    }
+    #pwa-banner-text { flex: 1; min-width: 0; }
+    #pwa-banner-title { font-size: 13px; font-weight: 700; color: #f1f2f6; line-height: 1.2; }
+    #pwa-banner-sub   { font-size: 11px; color: #9597b0; margin-top: 2px; }
+    #pwa-banner-install {
+      background: #f97316;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 7px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: background .15s, transform .1s;
+    }
+    #pwa-banner-install:hover { background: #ea6c09; transform: scale(1.03); }
+    #pwa-banner-install:active { transform: scale(.97); }
+    #pwa-banner-dismiss {
+      background: none; border: none; cursor: pointer;
+      color: #5c5f7a; font-size: 16px; line-height: 1;
+      padding: 4px; flex-shrink: 0;
+      transition: color .15s;
+    }
+    #pwa-banner-dismiss:hover { color: #f1f2f6; }
+  `;
+
+  function showBanner() {
+    if (localStorage.getItem('pwa-dismissed') === '1') return;
+    if (document.getElementById('pwa-banner')) return;
+
+    const style = document.createElement('style');
+    style.textContent = STYLE;
+    document.head.appendChild(style);
+
+    const name = (typeof getPanelSettings === 'function' && getPanelSettings()?.panel_name) || 'Nodactyl';
+
+    const banner = document.createElement('div');
+    banner.id = 'pwa-banner';
+    banner.innerHTML = `
+      <div id="pwa-banner-icon">⚡</div>
+      <div id="pwa-banner-text">
+        <div id="pwa-banner-title">Install ${name}</div>
+        <div id="pwa-banner-sub">Add to home screen for a faster experience</div>
+      </div>
+      <button id="pwa-banner-install">Install</button>
+      <button id="pwa-banner-dismiss" title="Dismiss">✕</button>
+    `;
+    document.body.appendChild(banner);
+
+    requestAnimationFrame(() => requestAnimationFrame(() => banner.classList.add('show')));
+
+    document.getElementById('pwa-banner-install').onclick = async () => {
+      if (!_deferredPrompt) return;
+      _deferredPrompt.prompt();
+      const { outcome } = await _deferredPrompt.userChoice;
+      _deferredPrompt = null;
+      dismissBanner(outcome === 'accepted');
+    };
+
+    document.getElementById('pwa-banner-dismiss').onclick = () => dismissBanner(false);
+  }
+
+  function dismissBanner(accepted) {
+    localStorage.setItem('pwa-dismissed', '1');
+    const banner = document.getElementById('pwa-banner');
+    if (!banner) return;
+    banner.style.transform = 'translateX(-50%) translateY(120%)';
+    banner.style.opacity = '0';
+    setTimeout(() => banner.remove(), 400);
+  }
+
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    _deferredPrompt = e;
+    // Wait a moment so the page has settled before showing the banner
+    setTimeout(showBanner, 2500);
+  });
+
+  // On iOS, beforeinstallprompt doesn't fire — show a different message
+  window.addEventListener('load', () => {
+    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isStandalone = window.navigator.standalone;
+    if (isIos && !isStandalone && localStorage.getItem('pwa-dismissed') !== '1') {
+      _deferredPrompt = null;
+      setTimeout(() => {
+        if (document.getElementById('pwa-banner')) return;
+        const STYLE_IOS = STYLE.replace('#pwa-banner-install {', '#pwa-banner-install { display:none; ').replace('#pwa-banner-sub   {', '#pwa-banner-sub   { ');
+        const style = document.createElement('style');
+        style.textContent = STYLE_IOS;
+        document.head.appendChild(style);
+
+        const name = (typeof getPanelSettings === 'function' && getPanelSettings()?.panel_name) || 'Nodactyl';
+        const banner = document.createElement('div');
+        banner.id = 'pwa-banner';
+        banner.innerHTML = `
+          <div id="pwa-banner-icon">⚡</div>
+          <div id="pwa-banner-text">
+            <div id="pwa-banner-title">Install ${name}</div>
+            <div id="pwa-banner-sub">Tap Share → Add to Home Screen</div>
+          </div>
+          <button id="pwa-banner-dismiss" title="Dismiss">✕</button>
+        `;
+        document.body.appendChild(banner);
+        requestAnimationFrame(() => requestAnimationFrame(() => banner.classList.add('show')));
+        document.getElementById('pwa-banner-dismiss').onclick = () => dismissBanner(false);
+      }, 2500);
+    }
+  });
+})();
+
 function getToken() { return localStorage.getItem('token'); }
 function getUser() { try { return JSON.parse(localStorage.getItem('user')); } catch { return null; } }
 
