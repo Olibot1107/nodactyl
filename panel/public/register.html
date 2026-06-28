@@ -116,6 +116,32 @@
       background: var(--border);
       margin: 20px 0;
     }
+
+    .strength-track {
+      margin-top: 7px;
+      height: 3px;
+      background: var(--border2);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .strength-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width .22s ease, background-color .22s ease;
+      width: 0;
+    }
+    .strength-text {
+      font-size: 11px;
+      margin-top: 4px;
+      color: var(--text-muted);
+      transition: color .22s ease;
+    }
+    .username-status {
+      font-size: 11px;
+      font-weight: 400;
+      letter-spacing: 0;
+      margin-left: 2px;
+    }
   </style>
 </head>
 <body>
@@ -179,7 +205,10 @@
 
       <form id="registerForm">
         <div class="form-group">
-          <label class="form-label">Username</label>
+          <label class="form-label" style="display:flex;align-items:center;gap:5px">
+            Username
+            <span class="username-status" id="usernameStatus"></span>
+          </label>
           <input type="text" class="form-input" id="username" autocomplete="username" placeholder="choose-a-username" minlength="3" required>
         </div>
         <div class="form-group">
@@ -189,6 +218,10 @@
         <div class="form-group">
           <label class="form-label">Password</label>
           <input type="password" class="form-input" id="password" autocomplete="new-password" placeholder="••••••••" minlength="8" required>
+          <div id="strengthWrap" style="display:none">
+            <div class="strength-track"><div class="strength-fill" id="strengthFill"></div></div>
+            <div class="strength-text" id="strengthText"></div>
+          </div>
         </div>
         <div class="form-group" style="margin-bottom:18px">
           <label class="form-label">Confirm password</label>
@@ -248,6 +281,74 @@
 
   function registerWithDiscord() { window.location.href = '/api/connectors/discord/authorize?action=register'; }
   function registerWithGithub()  { window.location.href = '/api/connectors/github/authorize?action=register'; }
+
+  // ── Password strength ─────────────────────────────────────────────────────
+  (function () {
+    const LEVELS = [
+      { label: 'Too short',  color: '#ef4444', pct: 10 },
+      { label: 'Weak',       color: '#ef4444', pct: 25 },
+      { label: 'Fair',       color: '#f97316', pct: 50 },
+      { label: 'Good',       color: '#eab308', pct: 75 },
+      { label: 'Strong',     color: '#22c55e', pct: 100 },
+    ];
+    function score(pw) {
+      if (!pw) return -1;
+      if (pw.length < 8) return 0;
+      let s = 1;
+      if (pw.length >= 12) s++;
+      if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) s++;
+      if (/[0-9]/.test(pw)) s++;
+      if (/[^A-Za-z0-9]/.test(pw)) s++;
+      return Math.min(s, 4);
+    }
+    const input = document.getElementById('password');
+    const wrap  = document.getElementById('strengthWrap');
+    const fill  = document.getElementById('strengthFill');
+    const text  = document.getElementById('strengthText');
+    input.addEventListener('input', () => {
+      const s = score(input.value);
+      if (s === -1) { wrap.style.display = 'none'; return; }
+      wrap.style.display = '';
+      const lvl = LEVELS[s];
+      fill.style.width = lvl.pct + '%';
+      fill.style.backgroundColor = lvl.color;
+      text.textContent = lvl.label;
+      text.style.color = lvl.color;
+    });
+  })();
+
+  // ── Username availability ─────────────────────────────────────────────────
+  (function () {
+    const input  = document.getElementById('username');
+    const status = document.getElementById('usernameStatus');
+    let timer = null;
+    let lastChecked = '';
+
+    input.addEventListener('input', () => {
+      clearTimeout(timer);
+      const val = input.value.trim();
+      if (val === lastChecked) return;
+      if (val.length < 3) { status.textContent = ''; return; }
+      status.style.color = 'var(--text-muted)';
+      status.textContent = 'checking…';
+      timer = setTimeout(async () => {
+        lastChecked = val;
+        try {
+          const r = await fetch('/api/auth/check-username?username=' + encodeURIComponent(val));
+          if (input.value.trim() !== val) return; // stale
+          if (!r.ok) { status.textContent = ''; return; }
+          const d = await r.json();
+          if (d.available) {
+            status.style.color = '#22c55e';
+            status.textContent = '✓ available';
+          } else {
+            status.style.color = '#ef4444';
+            status.textContent = '✗ taken';
+          }
+        } catch { status.textContent = ''; }
+      }, 480);
+    });
+  })();
 
   document.getElementById('registerForm').addEventListener('submit', async (e) => {
     e.preventDefault();

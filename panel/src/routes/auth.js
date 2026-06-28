@@ -33,6 +33,15 @@ const registerLimiter = rateLimit({
   message: { error: 'Too many registrations from this IP. Try again later.' },
 });
 
+const checkUsernameLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => isTest,
+  message: { error: 'Too many requests.' },
+});
+
 function cookieOpts() {
   return { httpOnly: true, maxAge: 86400000, sameSite: 'strict' };
 }
@@ -223,6 +232,14 @@ router.delete('/me', requireAuth, async (req, res) => {
 
   res.clearCookie('token');
   res.json({ ok: true });
+});
+
+router.get('/check-username', checkUsernameLimiter, (req, res) => {
+  if (process.env.REGISTRATION_OPEN !== 'true') return res.json({ available: false });
+  const username = String(req.query.username || '').trim();
+  if (username.length < 3 || username.length > 32) return res.status(400).json({ error: 'Invalid username' });
+  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  res.json({ available: !existing });
 });
 
 module.exports = router;
