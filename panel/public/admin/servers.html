@@ -34,17 +34,28 @@
 
 <!-- Edit modal -->
 <div class="modal-overlay" id="editModal">
-  <div class="modal modal-sm">
+  <div class="modal modal-lg">
     <div class="modal-header">
-      <h2 class="modal-title">Edit Server</h2>
+      <h2 class="modal-title" id="editModalTitle">Edit Server</h2>
       <button class="modal-close" onclick="closeEditModal()">✕</button>
     </div>
     <div class="modal-body">
       <div class="alert alert-error" id="editError"></div>
-      <div class="form-group">
-        <label class="form-label">Name</label>
-        <input class="form-input" id="e_name" placeholder="Server name">
+
+      <!-- Read-only info strip -->
+      <div id="editInfoStrip" style="display:flex;gap:16px;flex-wrap:wrap;padding:10px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:18px;font-size:12px;color:var(--text-muted)"></div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Name *</label>
+          <input class="form-input" id="e_name" placeholder="Server name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description <span class="text-muted">(optional)</span></label>
+          <input class="form-input" id="e_desc" placeholder="What is this server for?">
+        </div>
       </div>
+
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Memory (MB)</label>
@@ -54,15 +65,46 @@
           <label class="form-label">CPU (cores)</label>
           <input class="form-input" id="e_cpu" type="number" min="0.1" step="0.1" placeholder="1">
         </div>
+        <div class="form-group">
+          <label class="form-label">Disk Limit (MB) <span class="text-muted">0 = unlimited</span></label>
+          <input class="form-input" id="e_disk" type="number" min="0" step="512" placeholder="0">
+        </div>
       </div>
-      <div class="form-group mb-0">
+
+      <div class="form-group">
         <label class="form-label">Startup Command <span class="text-muted">(optional)</span></label>
         <input class="form-input font-mono" id="e_startup" placeholder="Leave blank for image default">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Pre-Start Script <span class="text-muted">(optional)</span></label>
+        <textarea class="form-input font-mono" id="e_prestart" rows="3" placeholder="e.g. apk add --no-cache curl"></textarea>
+        <div class="form-hint">Runs every time the server starts, before the startup command.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Environment Variables</label>
+        <div id="e_envList"></div>
+        <button class="btn btn-ghost btn-sm mt-2" type="button" onclick="addEditEnv()">+ Add Variable</button>
+      </div>
+
+      <div class="form-group mb-0">
+        <label class="form-label">Feature Pages</label>
+        <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:6px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+            <input type="checkbox" id="e_enable_mods" style="width:15px;height:15px;accent-color:var(--primary)">
+            Enable Mods page
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+            <input type="checkbox" id="e_enable_packages" style="width:15px;height:15px;accent-color:var(--primary)">
+            Enable Packages page
+          </label>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeEditModal()">Cancel</button>
-      <button class="btn btn-primary" id="editSaveBtn" onclick="saveEdit()">Save</button>
+      <button class="btn btn-primary" id="editSaveBtn" onclick="saveEdit()">Save Changes</button>
     </div>
   </div>
 </div>
@@ -183,13 +225,60 @@ function renderTable() {
 }
 
 // ── Edit modal ────────────────────────────────────────────────────────────────
+let editEnvCount = 0;
+
+function addEditEnv(key = '', value = '') {
+  const id = ++editEnvCount;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:6px';
+  div.innerHTML = `
+    <input type="text" class="form-input" id="eek_${id}" placeholder="KEY" value="${esc(key)}" style="flex:1;font-family:monospace">
+    <span class="text-muted">=</span>
+    <input type="text" class="form-input" id="eev_${id}" placeholder="value" value="${esc(value)}" style="flex:2">
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px" type="button">✕</button>`;
+  document.getElementById('e_envList').appendChild(div);
+}
+
+function getEditEnvVars() {
+  const envs = [];
+  document.querySelectorAll('[id^="eek_"]').forEach(el => {
+    const id = el.id.slice(4);
+    const key = el.value.trim();
+    const value = document.getElementById(`eev_${id}`)?.value ?? '';
+    if (key) envs.push({ key, value });
+  });
+  return envs;
+}
+
 function openEdit(id) {
   editTarget = servers.find(s => s.id === id);
   if (!editTarget) return;
-  document.getElementById('e_name').value    = editTarget.name;
-  document.getElementById('e_memory').value  = editTarget.memory_limit;
-  document.getElementById('e_cpu').value     = editTarget.cpu_limit;
-  document.getElementById('e_startup').value = editTarget.startup_command || '';
+
+  document.getElementById('editModalTitle').textContent = `Edit — ${editTarget.name}`;
+  document.getElementById('e_name').value       = editTarget.name;
+  document.getElementById('e_desc').value       = editTarget.description || '';
+  document.getElementById('e_memory').value     = editTarget.memory_limit;
+  document.getElementById('e_cpu').value        = editTarget.cpu_limit;
+  document.getElementById('e_disk').value       = editTarget.disk_limit || 0;
+  document.getElementById('e_startup').value    = editTarget.startup_command || '';
+  document.getElementById('e_prestart').value   = editTarget.pre_start_script || '';
+  document.getElementById('e_enable_mods').checked     = editTarget.enable_mods !== 0;
+  document.getElementById('e_enable_packages').checked = editTarget.enable_packages !== 0;
+
+  // Env vars
+  document.getElementById('e_envList').innerHTML = '';
+  editEnvCount = 0;
+  (editTarget.env_vars || []).forEach(e => addEditEnv(e.key, e.value));
+
+  // Info strip
+  document.getElementById('editInfoStrip').innerHTML = [
+    `<span><b>ID</b> <code style="font-size:11px">${esc(editTarget.id)}</code></span>`,
+    `<span><b>Image</b> <code style="font-size:11px">${esc(editTarget.image)}</code></span>`,
+    `<span><b>Owner</b> ${esc(editTarget.owner_name || '—')}</span>`,
+    `<span><b>Node</b> ${esc(editTarget.node_name || '—')}${editTarget.node_online ? '' : ' <span style="color:var(--danger)">(offline)</span>'}</span>`,
+    `<span><b>Status</b> ${editTarget.status}</span>`,
+  ].join('');
+
   document.getElementById('editError').classList.remove('show');
   document.getElementById('editModal').classList.add('open');
 }
@@ -204,27 +293,35 @@ async function saveEdit() {
   const errEl = document.getElementById('editError');
   errEl.classList.remove('show');
 
-  const name    = document.getElementById('e_name').value.trim();
-  const memory  = parseInt(document.getElementById('e_memory').value);
-  const cpu     = parseFloat(document.getElementById('e_cpu').value);
-  const startup = document.getElementById('e_startup').value.trim();
+  const name     = document.getElementById('e_name').value.trim();
+  const memory   = parseInt(document.getElementById('e_memory').value);
+  const cpu      = parseFloat(document.getElementById('e_cpu').value);
+  const disk     = parseInt(document.getElementById('e_disk').value) || 0;
+  const startup  = document.getElementById('e_startup').value.trim();
+  const prestart = document.getElementById('e_prestart').value;
+  const desc     = document.getElementById('e_desc').value.trim();
+  const enable_mods     = document.getElementById('e_enable_mods').checked ? 1 : 0;
+  const enable_packages = document.getElementById('e_enable_packages').checked ? 1 : 0;
 
-  if (!name)            { errEl.textContent = 'Name is required.'; errEl.classList.add('show'); return; }
-  if (!memory || memory < 64) { errEl.textContent = 'Memory must be at least 64 MB.'; errEl.classList.add('show'); return; }
-  if (!cpu    || cpu < 0.1)   { errEl.textContent = 'CPU must be at least 0.1 cores.'; errEl.classList.add('show'); return; }
+  if (!name)           { errEl.textContent = 'Name is required.'; errEl.classList.add('show'); return; }
+  if (memory < 64)     { errEl.textContent = 'Memory must be at least 64 MB.'; errEl.classList.add('show'); return; }
+  if (cpu < 0.1)       { errEl.textContent = 'CPU must be at least 0.1 cores.'; errEl.classList.add('show'); return; }
 
   const btn = document.getElementById('editSaveBtn');
   btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true;
 
   try {
     await API.patch(`/servers/${editTarget.id}/settings`, {
-      name,
-      memory_limit: memory,
-      cpu_limit: cpu,
-      startup_command: startup,
+      name, description: desc, memory_limit: memory, cpu_limit: cpu, disk_limit: disk,
+      startup_command: startup, pre_start_script: prestart,
+      enable_mods, enable_packages,
+      env_vars: getEditEnvVars(),
     });
-    // update local cache
-    Object.assign(editTarget, { name, memory_limit: memory, cpu_limit: cpu, startup_command: startup });
+    Object.assign(editTarget, {
+      name, description: desc, memory_limit: memory, cpu_limit: cpu, disk_limit: disk,
+      startup_command: startup, pre_start_script: prestart,
+      enable_mods, enable_packages,
+    });
     closeEditModal();
     renderTable();
     showOk('Server updated.');
@@ -232,7 +329,7 @@ async function saveEdit() {
     errEl.textContent = e.message;
     errEl.classList.add('show');
   } finally {
-    btn.innerHTML = 'Save'; btn.disabled = false;
+    btn.innerHTML = 'Save Changes'; btn.disabled = false;
   }
 }
 
