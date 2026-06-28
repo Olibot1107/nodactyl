@@ -177,6 +177,24 @@ async function init() {
           </div>
         </div>
 
+        <div class="card" style="max-width:520px;margin-bottom:16px">
+          <div class="card-title" style="margin-bottom:6px">Install Prompt</div>
+          <div class="form-hint mb-3">Show an "Install App" card to users who haven't installed the panel as a PWA yet.</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:var(--text)">PWA Install Prompt</div>
+              <div class="form-hint" style="margin:2px 0 0">Disable to hide the install card for all users</div>
+            </div>
+            <label class="toggle-switch orange" style="flex-shrink:0">
+              <input type="checkbox" id="pwa_enabled" checked>
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div style="margin-top:16px">
+            <button class="btn btn-primary" id="savePwaBtn" onclick="savePwaSettings()">Save</button>
+          </div>
+        </div>
+
         <div class="card" style="max-width:520px">
           <div class="card-title mb-3">Quick links</div>
           <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
@@ -201,11 +219,27 @@ async function loadSettings() {
     if (s.panel_logo) document.getElementById('panel_logo').value = s.panel_logo;
     document.getElementById('robots_txt').value = s.robots_txt ?? 'User-agent: *\nDisallow: /';
     document.getElementById('api_enabled').checked = (s.api_enabled ?? '1') !== '0';
+    document.getElementById('pwa_enabled').checked = (s.pwa_enabled ?? '1') !== '0';
     document.getElementById('api_rate_limit_enabled').checked = (s.api_rate_limit_enabled ?? '1') !== '0';
     document.getElementById('api_rate_limit_per_min').value  = s.api_rate_limit_per_min  ?? '60';
     document.getElementById('api_rate_limit_per_hour').value = s.api_rate_limit_per_hour ?? '1000';
     updatePreview();
   } catch (e) { showErr(e.message); }
+}
+
+async function savePwaSettings() {
+  const btn = document.getElementById('savePwaBtn');
+  btn.innerHTML = '<span class="spinner"></span> Saving...';
+  btn.disabled = true;
+  try {
+    await API.patch('/settings', { pwa_enabled: document.getElementById('pwa_enabled').checked ? '1' : '0' });
+    showOk('PWA settings saved.');
+  } catch (e) {
+    showErr(e.message);
+  } finally {
+    btn.innerHTML = 'Save';
+    btn.disabled = false;
+  }
 }
 
 async function saveApiSettings() {

@@ -134,6 +134,7 @@ if ('serviceWorker' in navigator) {
   function buildCard(bodyHtml, onInstall) {
     if (localStorage.getItem(DISMISSED_KEY) === '1') return;
     if (isAlreadyInstalled()) return;
+    if ((typeof getPanelSettings === 'function' && getPanelSettings()?.pwa_enabled) === '0') return;
     if (document.getElementById('pwa-card')) return;
     injectCSS();
 
@@ -146,13 +147,8 @@ if ('serviceWorker' in navigator) {
         <div id="pwa-card-logo"><img src="/favicon.svg" onerror="this.parentElement.textContent='⚡'"></div>
         <div>
           <div id="pwa-card-name">${name}</div>
-          <div id="pwa-card-tagline">Install for the best experience</div>
+          <div id="pwa-card-tagline">Make ${name} a app not a website</div>
         </div>
-      </div>
-      <div id="pwa-card-perks">
-        <span class="pwa-perk">No browser UI</span>
-        <span class="pwa-perk">Faster loads</span>
-        <span class="pwa-perk">Works offline</span>
       </div>
       ${bodyHtml}
     `;
