@@ -377,6 +377,25 @@ router.post('/servers/:id/files/upload', express.raw({ type: '*/*', limit: '512m
   } catch (err) { sendFileError(res, err); }
 });
 
+// POST /api/v1/servers/:id/files/upload-chunk?path=/file.bin&offset=0&total=SIZE  body: raw chunk bytes
+router.post('/servers/:id/files/upload-chunk', express.raw({ type: '*/*', limit: '6mb' }), async (req, res) => {
+  const server = getServer(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!checkFileAccess(server, req.user, res)) return;
+  const { path: filePath } = req.query;
+  const offset = parseInt(req.query.offset, 10) || 0;
+  const total = parseInt(req.query.total, 10) || 0;
+  if (!filePath) return res.status(400).json({ error: 'path query param is required' });
+  try {
+    const body = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body));
+    const content = body.toString('base64');
+    const isLast = total === 0 || offset + body.length >= total;
+    await nodeManager.send(server.node_id, fileMsg(server, { type: 'write-file-chunk', path: filePath, content, encoding: 'base64', offset, isLast }));
+    if (isLast) audit(req.user.id, server.id, 'file.upload', { path: filePath }, req, req.apiKeyId);
+    res.json({ ok: true });
+  } catch (err) { sendFileError(res, err); }
+});
+
 // POST /api/v1/servers/:id/files/mkdir  { path }
 router.post('/servers/:id/files/mkdir', async (req, res) => {
   const server = getServer(req.params.id);

@@ -651,6 +651,33 @@ async function handleMessage(msg) {
       break;
     }
 
+    case 'write-file-chunk': {
+      const { requestId, serverId, containerId, path: filePath, content, offset, isLast, encoding } = msg;
+      try {
+        if (hasDataDir(serverId)) {
+          hostfs.writeFileChunk(serverDataDir(serverId), toHostPath(filePath), content || '', offset, encoding);
+          respond(requestId, {});
+        } else {
+          // Docker: buffer chunks, flush on last
+          if (!global._chunkBufs) global._chunkBufs = new Map();
+          const key = `${serverId}:${filePath}`;
+          if (offset === 0) global._chunkBufs.set(key, []);
+          const chunks = global._chunkBufs.get(key) || [];
+          chunks.push(Buffer.from(content || '', encoding === 'base64' ? 'base64' : 'utf8'));
+          global._chunkBufs.set(key, chunks);
+          if (isLast) {
+            const buf = Buffer.concat(chunks);
+            global._chunkBufs.delete(key);
+            await docker.writeFile(containerId, filePath, buf.toString('base64'), 'base64');
+          }
+          respond(requestId, {});
+        }
+      } catch (err) {
+        respond(requestId, {}, err);
+      }
+      break;
+    }
+
     case 'mkdir': {
       const { requestId, serverId, containerId, path: dirPath } = msg;
       try {

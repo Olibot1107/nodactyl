@@ -634,6 +634,27 @@ router.post('/:id/files/upload', express.raw({ type: '*/*', limit: '512mb' }), a
   } catch (err) { sendFileError(res, err); }
 });
 
+router.post('/:id/files/upload-chunk', express.raw({ type: '*/*', limit: '6mb' }), async (req, res) => {
+  const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
+  if (!server) return res.status(404).json({ error: 'Not found' });
+  if (!hasPerm(server, req.user, 'files')) return res.status(403).json({ error: 'Forbidden' });
+  const suspErr = suspendedBlock(server, req.user); if (suspErr) return res.status(suspErr.status).json({ error: suspErr.error });
+  const accessError = fileAccessError(server);
+  if (accessError) return res.status(accessError.status).json({ error: accessError.error });
+  const { path: filePath } = req.query;
+  const offset = parseInt(req.query.offset, 10) || 0;
+  const total = parseInt(req.query.total, 10) || 0;
+  if (!filePath) return res.status(400).json({ error: 'path query param is required' });
+  try {
+    const content = req.body.toString('base64');
+    const isLast = total === 0 || offset + req.body.length >= total;
+    await nodeManager.send(server.node_id,
+      fileMsg(server, { type: 'write-file-chunk', path: filePath, content, encoding: 'base64', offset, isLast }));
+    if (isLast && req.user.role !== 'admin') audit(req.user.id, server.id, 'file.upload', { path: filePath }, req);
+    res.json({ ok: true });
+  } catch (err) { sendFileError(res, err); }
+});
+
 router.post('/:id/files/mkdir', async (req, res) => {
   const server = db.prepare("SELECT * FROM servers WHERE id = ? AND status != 'deleting'").get(req.params.id);
   if (!server) return res.status(404).json({ error: 'Not found' });

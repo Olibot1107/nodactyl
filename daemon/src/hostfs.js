@@ -69,6 +69,19 @@ function writeFile(dataDir, filePath, content, encoding = 'utf8') {
   fs.writeFileSync(fullPath, buf);
 }
 
+function writeFileChunk(dataDir, filePath, content, offset, encoding = 'base64') {
+  const fullPath = safePath(dataDir, filePath);
+  fs.mkdirSync(nodePath.dirname(fullPath), { recursive: true });
+  const buf = encoding === 'base64' ? Buffer.from(content, 'base64') : Buffer.from(content, 'utf8');
+  if (offset === 0) {
+    fs.writeFileSync(fullPath, buf);
+  } else {
+    const fd = fs.openSync(fullPath, 'r+');
+    try { fs.writeSync(fd, buf, 0, buf.length, offset); }
+    finally { fs.closeSync(fd); }
+  }
+}
+
 function createDirectory(dataDir, dirPath) {
   const fullPath = safePath(dataDir, dirPath);
   fs.mkdirSync(fullPath, { recursive: true });
@@ -100,4 +113,4 @@ function getDiskUsage(dir) {
   return bytes;
 }
 
-module.exports = { safePath, listFiles, readFile, readFileBinary, writeFile, createDirectory, deleteFile, renameFile, getDiskUsage };
+module.exports = { safePath, listFiles, readFile, readFileBinary, writeFile, writeFileChunk, createDirectory, deleteFile, renameFile, getDiskUsage };

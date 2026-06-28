@@ -1147,22 +1147,36 @@ async function uploadBatch(uploads) {
   if (errors.length) alert('Some uploads failed:\n' + errors.join('\n'));
 }
 
-function uploadSingleFile(file, filePath, onProgress) {
+async function uploadSingleFile(file, filePath, onProgress) {
+  const CHUNK = 5 * 1024 * 1024; // 5 MB
+  const total = file.size;
+  if (total === 0) {
+    await uploadChunk(new Blob([]), filePath, 0, 0);
+    onProgress(100);
+    return;
+  }
+  let offset = 0;
+  while (offset < total) {
+    const slice = file.slice(offset, offset + CHUNK);
+    await uploadChunk(slice, filePath, offset, total);
+    offset += slice.size;
+    onProgress(Math.min(100, Math.round(offset / total * 100)));
+  }
+}
+
+function uploadChunk(blob, filePath, offset, total) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `/api/servers/${serverId}/files/upload?path=${encodeURIComponent(filePath)}`);
+    xhr.open('POST', `/api/servers/${serverId}/files/upload-chunk?path=${encodeURIComponent(filePath)}&offset=${offset}&total=${total}`);
     xhr.setRequestHeader('Authorization', 'Bearer ' + getToken());
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100));
-    });
     xhr.addEventListener('load', () => {
       if (xhr.status >= 200 && xhr.status < 300) return resolve();
       try { reject(new Error(JSON.parse(xhr.responseText).error || 'Upload failed')); }
       catch { reject(new Error(`HTTP ${xhr.status}`)); }
     });
     xhr.addEventListener('error', () => reject(new Error('Network error')));
-    xhr.send(file);
+    xhr.send(blob);
   });
 }
 
