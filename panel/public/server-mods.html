@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nodactyl — Mods</title>
+  <title>Nodactyl â€” Mods</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#f97316">
+  <link rel="apple-touch-icon" href="/favicon.svg">
   <link rel="stylesheet" href="/css/style.css">
   <style>
     .mod-filter-row {
@@ -372,7 +375,7 @@ function setTab(tab) {
   if (tab === 'installed') loadInstalled();
 }
 
-// ── Browse ──────────────────────────────────────────────────────────────────
+// â”€â”€ Browse â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function doSearch(reset = false) {
   if (reset) { offset = 0; results = []; }
@@ -472,7 +475,7 @@ function renderCard(h, i) {
     </div>`;
 }
 
-// ── Installed tab ────────────────────────────────────────────────────────────
+// â”€â”€ Installed tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function findDatapackDirs() {
   const found = [];
@@ -578,7 +581,7 @@ async function removeFile(btn) {
   const dir  = btn.dataset.dir;
   const name = btn.dataset.name;
 
-  // Two-step confirm: first click → "Confirm?" state, second click → delete
+  // Two-step confirm: first click â†’ "Confirm?" state, second click â†’ delete
   if (!btn.dataset.confirming) {
     btn.dataset.confirming = '1';
     btn.textContent = 'Confirm?';
@@ -596,7 +599,7 @@ async function removeFile(btn) {
 
   clearTimeout(btn._resetTimer);
   btn.disabled = true;
-  btn.textContent = 'Removing…';
+  btn.textContent = 'Removingâ€¦';
 
   try {
     await API.delete(`/servers/${serverId}/files?path=${encodeURIComponent(dir + '/' + name)}`);
@@ -629,7 +632,7 @@ function checkEmptySections() {
   }
 }
 
-// ── Install modal ────────────────────────────────────────────────────────────
+// â”€â”€ Install modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function openInstall(info) {
   installProject = info;
@@ -779,7 +782,7 @@ async function confirmInstall() {
 
   const btn = document.getElementById('installBtn');
   btn.disabled = true;
-  btn.textContent = 'Installing…';
+  btn.textContent = 'Installingâ€¦';
 
   try {
     await API.post(`/servers/${serverId}/mods/install`, {
@@ -796,7 +799,7 @@ async function confirmInstall() {
   }
 }
 
-// ── Toast ────────────────────────────────────────────────────────────────────
+// â”€â”€ Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function toast(msg, type = 'info') {
   const c = document.getElementById('toastContainer');

@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nodactyl — Settings</title>
+  <title>Nodactyl â€” Settings</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#f97316">
+  <link rel="apple-touch-icon" href="/favicon.svg">
   <link rel="stylesheet" href="/css/style.css">
   <style>
     .toggle-switch { position: relative; width: 38px; height: 22px; flex-shrink: 0; }
@@ -75,9 +78,9 @@ async function init() {
             <div class="upload-zone" id="uploadZone">
               <input type="file" id="logoFile" accept="image/*">
               <div style="pointer-events:none">
-                <div style="font-size:22px;margin-bottom:6px">📁</div>
+                <div style="font-size:22px;margin-bottom:6px">ðŸ“</div>
                 <div style="font-size:13px;font-weight:600;color:var(--text)">Click or drag an image here</div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:3px">PNG, JPG, GIF, SVG · max 2 MB · resized to 128 px</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:3px">PNG, JPG, GIF, SVG Â· max 2 MB Â· resized to 128 px</div>
               </div>
             </div>
 
@@ -87,7 +90,7 @@ async function init() {
               <div style="flex:1;height:1px;background:var(--border)"></div>
             </div>
 
-            <input type="text" class="form-input" id="panel_logo" placeholder="N  or  🚀  or  https://…/logo.png">
+            <input type="text" class="form-input" id="panel_logo" placeholder="N  or  ðŸš€  or  https://â€¦/logo.png">
             <div class="form-hint">Single character, emoji, or image URL. Uploading a file above fills this automatically.</div>
           </div>
 
@@ -98,7 +101,7 @@ async function init() {
               <div class="logo-thumb" id="logoPreview">N</div>
               <div>
                 <div style="font-size:18px;font-weight:700" id="namePreview">Nodactyl</div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:2px">sidebar logo · 32 px in production</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:2px">sidebar logo Â· 32 px in production</div>
               </div>
             </div>
           </div>
@@ -268,7 +271,7 @@ async function handleFile(file) {
     const dataUrl = await resizeImage(file, 128);
     document.getElementById('panel_logo').value = dataUrl;
     updatePreview();
-    showOk('Image ready — click Save Changes to apply.');
+    showOk('Image ready â€” click Save Changes to apply.');
   } catch (e) {
     showErr('Could not read image: ' + e.message);
   }

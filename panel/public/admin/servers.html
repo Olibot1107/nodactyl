@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nodactyl — All Servers</title>
+  <title>Nodactyl â€” All Servers</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#f97316">
+  <link rel="apple-touch-icon" href="/favicon.svg">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -15,7 +18,7 @@
   <div class="modal modal-sm">
     <div class="modal-header">
       <h2 class="modal-title">Migrate Server</h2>
-      <button class="modal-close" onclick="closeMigrateModal()">✕</button>
+      <button class="modal-close" onclick="closeMigrateModal()">âœ•</button>
     </div>
     <div class="modal-body">
       <p style="font-size:13px;color:var(--text-muted);margin:0 0 14px">Move this server to another node. The server must be stopped. All files will be copied to the new node and the port will be reassigned. This may take a few minutes for large servers.</p>
@@ -37,7 +40,7 @@
   <div class="modal modal-lg">
     <div class="modal-header">
       <h2 class="modal-title" id="editModalTitle">Edit Server</h2>
-      <button class="modal-close" onclick="closeEditModal()">✕</button>
+      <button class="modal-close" onclick="closeEditModal()">âœ•</button>
     </div>
     <div class="modal-body">
       <div class="alert alert-error" id="editError"></div>
@@ -195,9 +198,9 @@ function renderTable() {
               <a href="/server/${s.id}" style="color:var(--text);font-weight:600">${esc(s.name)}</a>
               ${s.description ? `<div class="text-xs text-muted">${esc(s.description)}</div>` : ''}
             </td>
-            <td class="text-dim">${esc(s.owner_name || '—')}</td>
+            <td class="text-dim">${esc(s.owner_name || 'â€”')}</td>
             <td>
-              <div>${esc(s.node_name || '—')}</div>
+              <div>${esc(s.node_name || 'â€”')}</div>
               ${!s.node_online ? '<div class="text-xs text-danger">offline</div>' : ''}
             </td>
             <td>
@@ -224,7 +227,7 @@ function renderTable() {
     </table>` : `<div class="empty-state"><p>${servers.length ? 'No results match your search.' : 'No servers found.'}</p></div>`;
 }
 
-// ── Edit modal ────────────────────────────────────────────────────────────────
+// â”€â”€ Edit modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let editEnvCount = 0;
 
 function addEditEnv(key = '', value = '') {
@@ -235,7 +238,7 @@ function addEditEnv(key = '', value = '') {
     <input type="text" class="form-input" id="eek_${id}" placeholder="KEY" value="${esc(key)}" style="flex:1;font-family:monospace">
     <span class="text-muted">=</span>
     <input type="text" class="form-input" id="eev_${id}" placeholder="value" value="${esc(value)}" style="flex:2">
-    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px" type="button">✕</button>`;
+    <button onclick="this.parentNode.remove()" class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:5px 8px" type="button">âœ•</button>`;
   document.getElementById('e_envList').appendChild(div);
 }
 
@@ -254,7 +257,7 @@ function openEdit(id) {
   editTarget = servers.find(s => s.id === id);
   if (!editTarget) return;
 
-  document.getElementById('editModalTitle').textContent = `Edit — ${editTarget.name}`;
+  document.getElementById('editModalTitle').textContent = `Edit â€” ${editTarget.name}`;
   document.getElementById('e_name').value       = editTarget.name;
   document.getElementById('e_desc').value       = editTarget.description || '';
   document.getElementById('e_memory').value     = editTarget.memory_limit;
@@ -274,8 +277,8 @@ function openEdit(id) {
   document.getElementById('editInfoStrip').innerHTML = [
     `<span><b>ID</b> <code style="font-size:11px">${esc(editTarget.id)}</code></span>`,
     `<span><b>Image</b> <code style="font-size:11px">${esc(editTarget.image)}</code></span>`,
-    `<span><b>Owner</b> ${esc(editTarget.owner_name || '—')}</span>`,
-    `<span><b>Node</b> ${esc(editTarget.node_name || '—')}${editTarget.node_online ? '' : ' <span style="color:var(--danger)">(offline)</span>'}</span>`,
+    `<span><b>Owner</b> ${esc(editTarget.owner_name || 'â€”')}</span>`,
+    `<span><b>Node</b> ${esc(editTarget.node_name || 'â€”')}${editTarget.node_online ? '' : ' <span style="color:var(--danger)">(offline)</span>'}</span>`,
     `<span><b>Status</b> ${editTarget.status}</span>`,
   ].join('');
 
@@ -333,7 +336,7 @@ async function saveEdit() {
   }
 }
 
-// ── Actions ───────────────────────────────────────────────────────────────────
+// â”€â”€ Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function doAction(id, action, name) {
   try {
     await API.post(`/servers/${id}/action`, { action });
@@ -359,7 +362,7 @@ async function deleteServer(id, name) {
   } catch (e) { showErr(e.message); }
 }
 
-// ── Migrate modal ─────────────────────────────────────────────────────────────
+// â”€â”€ Migrate modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function openMigrate(id) {
   migrateTarget = servers.find(s => s.id === id);
   if (!migrateTarget) return;
@@ -389,11 +392,11 @@ async function saveMigrate() {
   errEl.classList.remove('show');
   if (!nodeId) { errEl.textContent = 'Select a target node.'; errEl.classList.add('show'); return; }
   const btn = document.getElementById('migrateSaveBtn');
-  btn.innerHTML = '<span class="spinner"></span> Migrating…'; btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Migratingâ€¦'; btn.disabled = true;
   try {
     const result = await API.post(`/servers/${migrateTarget.id}/migrate`, { node_id: nodeId });
     closeMigrateModal();
-    const filesNote = result.files_transferred === false ? ' (no files — node has no data path)' : '';
+    const filesNote = result.files_transferred === false ? ' (no files â€” node has no data path)' : '';
     showOk(`"${migrateTarget.name}" migrated to ${result.node_name}${filesNote}.`);
     await loadServers();
   } catch (e) {

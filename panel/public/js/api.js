@@ -1,5 +1,9 @@
 // Shared auth + fetch helpers
 
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
+}
+
 function getToken() { return localStorage.getItem('token'); }
 function getUser() { try { return JSON.parse(localStorage.getItem('user')); } catch { return null; } }
 

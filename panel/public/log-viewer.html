@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Log Share — Nodactyl</title>
+  <title>Log Share â€” Nodactyl</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#f97316">
+  <link rel="apple-touch-icon" href="/favicon.svg">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
@@ -15,7 +18,7 @@
     }
     body { display: flex; flex-direction: column; min-height: 100vh; }
 
-    /* ── Header ── */
+    /* â”€â”€ Header â”€â”€ */
     .header {
       background: #161b22;
       border-bottom: 1px solid #21262d;
@@ -66,7 +69,7 @@
       border-radius: 3px;
     }
 
-    /* ── Meta bar ── */
+    /* â”€â”€ Meta bar â”€â”€ */
     .meta-bar {
       background: #161b22;
       border-bottom: 1px solid #21262d;
@@ -95,7 +98,7 @@
       color: #facc15;
     }
 
-    /* ── Console area ── */
+    /* â”€â”€ Console area â”€â”€ */
     .console-outer {
       flex: 1;
       background: #0d1117;
@@ -132,7 +135,7 @@
     .stderr .line-content { color: #f87171; }
     .empty { color: #3d444d; font-style: italic; padding: 60px; text-align: center; }
 
-    /* ── Error / loading ── */
+    /* â”€â”€ Error / loading â”€â”€ */
     .error-state, .loading-state {
       flex: 1;
       display: flex;
@@ -154,7 +157,7 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── ANSI colours ── */
+    /* â”€â”€ ANSI colours â”€â”€ */
     .ansi-30{color:#4a4a4a}.ansi-31{color:#f87171}.ansi-32{color:#4ade80}.ansi-33{color:#fbbf24}
     .ansi-34{color:#60a5fa}.ansi-35{color:#c084fc}.ansi-36{color:#22d3ee}.ansi-37{color:#e6edf3}
     .ansi-90{color:#3d444d}.ansi-91{color:#fca5a5}.ansi-92{color:#86efac}.ansi-93{color:#fde68a}
@@ -166,10 +169,10 @@
 
 <div class="header">
   <a class="header-logo" href="/">Nodactyl</a>
-  <span class="header-sep">›</span>
+  <span class="header-sep">â€º</span>
   <span class="header-crumb">Log Share</span>
-  <span class="header-sep">›</span>
-  <span class="header-label" id="shareLabel">Loading…</span>
+  <span class="header-sep">â€º</span>
+  <span class="header-label" id="shareLabel">Loadingâ€¦</span>
   <div class="header-spacer"></div>
   <button class="hdr-btn primary" id="copyAllBtn" onclick="copyAll(this)" style="display:none">
     <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
@@ -202,7 +205,7 @@
 </div>
 
 <div class="error-state" id="errorState" style="display:none">
-  <span class="error-icon">⚠️</span>
+  <span class="error-icon">âš ï¸</span>
   <h2>Log not found</h2>
   <p id="errorMsg">This link may have expired or been deleted.</p>
 </div>
@@ -320,7 +323,7 @@ function copyAll(btn) {
     var share = await res.json();
 
     var label = share.label || 'Untitled log';
-    document.title = label + ' — ' + panelName;
+    document.title = label + ' â€” ' + panelName;
     document.getElementById('shareLabel').textContent = label;
 
     document.getElementById('metaBar').style.display = '';

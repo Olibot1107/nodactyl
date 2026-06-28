@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nodactyl — My Account</title>
+  <title>Nodactyl â€” My Account</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#f97316">
+  <link rel="apple-touch-icon" href="/favicon.svg">
   <link rel="stylesheet" href="/css/style.css">
   <style>
     .avatar-lg {
@@ -54,7 +57,7 @@ async function init() {
       <div class="topbar">
         <div class="flex-center gap-2">
           <a class="topbar-link" href="/dashboard">${UI.back} Dashboard</a>
-          <span style="color:var(--border2);font-size:16px;line-height:1">›</span>
+          <span style="color:var(--border2);font-size:16px;line-height:1">â€º</span>
           <span class="page-title">My Account</span>
         </div>
       </div>
@@ -124,16 +127,16 @@ function render() {
         <div class="card-title mb-4">Change Password</div>
         <div class="form-group mb-3">
           <label class="form-label">Current Password</label>
-          <input type="password" class="form-input" id="fieldCurPw" placeholder="••••••••" autocomplete="current-password">
+          <input type="password" class="form-input" id="fieldCurPw" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" autocomplete="current-password">
         </div>
         <div class="form-row">
           <div class="form-group mb-0">
             <label class="form-label">New Password</label>
-            <input type="password" class="form-input" id="fieldNewPw" placeholder="••••••••" autocomplete="new-password">
+            <input type="password" class="form-input" id="fieldNewPw" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" autocomplete="new-password">
           </div>
           <div class="form-group mb-0">
             <label class="form-label">Confirm</label>
-            <input type="password" class="form-input" id="fieldConPw" placeholder="••••••••" autocomplete="new-password">
+            <input type="password" class="form-input" id="fieldConPw" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" autocomplete="new-password">
           </div>
         </div>
         <div class="form-hint mt-2">At least 8 characters.</div>
@@ -171,13 +174,13 @@ function render() {
       <div class="modal modal-sm">
         <div class="modal-header">
           <h2 class="modal-title" style="color:var(--danger)">Delete Account</h2>
-          <button class="modal-close" onclick="closeDeleteModal()">✕</button>
+          <button class="modal-close" onclick="closeDeleteModal()">âœ•</button>
         </div>
         <div class="modal-body">
           <p style="font-size:13.5px;color:var(--text-muted);margin:0 0 14px">This will permanently delete your account and all servers you own. There is no way to recover this data.</p>
           <div class="form-group mb-0">
             <label class="form-label">Confirm your password</label>
-            <input type="password" class="form-input" id="deletePassword" placeholder="••••••••" autocomplete="current-password">
+            <input type="password" class="form-input" id="deletePassword" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" autocomplete="current-password">
           </div>
           <div class="alert alert-error mt-3" id="deleteErr"></div>
         </div>
@@ -252,7 +255,7 @@ async function saveAvatar() {
     pendingAvatar = undefined;
     patchStoredUser({ avatar: me.avatar });
     updateSidebarAvatar();
-    btn.textContent = '✓ Saved';
+    btn.textContent = 'âœ“ Saved';
     setTimeout(() => { btn.innerHTML = `${UI.save} Save Photo`; btn.disabled = false; }, 2000);
   } catch (e) {
     errEl.textContent = e.message; errEl.classList.add('show');
@@ -361,7 +364,7 @@ async function confirmDelete() {
   }
 }
 
-// ── Two-Factor Authentication ─────────────────────────────────────────────────
+// â”€â”€ Two-Factor Authentication â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function renderTotpCard() {
   const s = getPanelSettings();
   if (s.totp_enabled === '0') { document.getElementById('totpCard').style.display = 'none'; return; }
@@ -380,7 +383,7 @@ function renderTotpCard() {
       <div class="alert alert-error" id="totpDisableErr"></div>
       <div class="form-group mb-3">
         <label class="form-label">Confirm password to disable</label>
-        <input type="password" class="form-input" id="totpDisablePw" placeholder="••••••••" autocomplete="current-password">
+        <input type="password" class="form-input" id="totpDisablePw" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" autocomplete="current-password">
       </div>
       <button class="btn btn-danger btn-sm" onclick="disableTotp()">Disable 2FA</button>`;
   } else {
@@ -450,7 +453,7 @@ async function disableTotp() {
   } catch (e) { errEl.textContent = e.message; errEl.classList.add('show'); }
 }
 
-// ── Passkeys ──────────────────────────────────────────────────────────────────
+// â”€â”€ Passkeys â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function _b64ToBuf(val) {
   // Node.js Buffer JSON: {"type":"Buffer","data":[...]}
   if (val && typeof val === 'object' && val.type === 'Buffer' && Array.isArray(val.data))

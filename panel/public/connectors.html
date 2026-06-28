@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nodactyl — Connectors</title>
+  <title>Nodactyl â€” Connectors</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#f97316">
+  <link rel="apple-touch-icon" href="/favicon.svg">
   <link rel="stylesheet" href="/css/style.css">
   <style>
     .connector-card {
@@ -177,7 +180,7 @@ function renderConnectors() {
   if (cards.length === 0) {
     document.getElementById('connectorsList').innerHTML = `
       <div class="empty-state">
-        <div class="empty-icon">—</div>
+        <div class="empty-icon">â€”</div>
         <p>No connectors are configured. Ask an admin to set them up in Settings.</p>
       </div>`;
     return;

@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nodactyl — Users</title>
+  <title>Nodactyl â€” Users</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#f97316">
+  <link rel="apple-touch-icon" href="/favicon.svg">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -45,7 +48,7 @@ async function init() {
 }
 
 function rankOptions(currentId) {
-  const none = `<option value="">— No rank —</option>`;
+  const none = `<option value="">â€” No rank â€”</option>`;
   return none + ranks.map(r => `<option value="${r.id}" ${r.id === currentId ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
 }
 
@@ -102,7 +105,7 @@ function renderTable() {
                     ? `<button class="btn btn-success btn-xs" onclick="unsuspend('${u.id}')">Unsuspend</button>`
                     : `<button class="btn btn-warning btn-xs" onclick="suspend('${u.id}')">Suspend</button>`}
                   <button class="btn btn-danger btn-xs" onclick="deleteUser('${u.id}', '${esc(u.username)}')">Delete</button>
-                ` : '<span class="text-muted text-xs">—</span>'}
+                ` : '<span class="text-muted text-xs">â€”</span>'}
               </div>
             </td>
           </tr>`).join('')}

@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Create Account</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#f97316">
+  <link rel="apple-touch-icon" href="/favicon.svg">
   <link rel="stylesheet" href="/css/style.css">
   <style>
     .auth-left {
@@ -133,12 +136,12 @@
           <span class="term-dot"></span>
           <span class="term-dot"></span>
           <span class="term-dot"></span>
-          <span class="term-title">node-1 — bash</span>
+          <span class="term-title">node-1 â€” bash</span>
         </div>
         <div class="term-line"><span class="term-prompt">$</span><span>nodactyl deploy minecraft</span></div>
-        <div class="term-line"><span class="term-ok">✓</span><span>image pulled</span></div>
-        <div class="term-line"><span class="term-ok">✓</span><span>container created</span></div>
-        <div class="term-line"><span class="term-ok">✓</span><span>server online on :25565</span></div>
+        <div class="term-line"><span class="term-ok">âœ“</span><span>image pulled</span></div>
+        <div class="term-line"><span class="term-ok">âœ“</span><span>container created</span></div>
+        <div class="term-line"><span class="term-ok">âœ“</span><span>server online on :25565</span></div>
         <div class="term-line" style="margin-top:6px"><span class="term-prompt">$</span><span style="opacity:.35">_</span></div>
       </div>
 
@@ -185,11 +188,11 @@
         </div>
         <div class="form-group">
           <label class="form-label">Password</label>
-          <input type="password" class="form-input" id="password" autocomplete="new-password" placeholder="••••••••" minlength="8" required>
+          <input type="password" class="form-input" id="password" autocomplete="new-password" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" minlength="8" required>
         </div>
         <div class="form-group" style="margin-bottom:18px">
           <label class="form-label">Confirm password</label>
-          <input type="password" class="form-input" id="confirm" autocomplete="new-password" placeholder="••••••••" required>
+          <input type="password" class="form-input" id="confirm" autocomplete="new-password" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" required>
         </div>
         <button type="submit" class="btn btn-primary w-full" style="justify-content:center;padding:9px" id="regBtn">
           Create Account
@@ -227,7 +230,7 @@
   fetch('/api/settings/public').then(r => r.json()).then(s => {
     if (s.panel_name) {
       document.getElementById('brandName').textContent = s.panel_name;
-      document.title = 'Create Account — ' + s.panel_name;
+      document.title = 'Create Account â€” ' + s.panel_name;
     }
     if (s.panel_logo) {
       const el = document.getElementById('brandLogo');

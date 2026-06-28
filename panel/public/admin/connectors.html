@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nodactyl — Connectors</title>
+  <title>Nodactyl â€” Connectors</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#f97316">
+  <link rel="apple-touch-icon" href="/favicon.svg">
   <link rel="stylesheet" href="/css/style.css">
   <style>
     .connectors-grid {
@@ -181,7 +184,7 @@ function render() {
         <div class="connector-service-icon discord">${DISCORD_ICON}</div>
         <div class="connector-header-info">
           <div class="connector-header-name">Discord</div>
-          <div class="connector-header-sub">OAuth2 — let users link their Discord account and log in with Discord</div>
+          <div class="connector-header-sub">OAuth2 â€” let users link their Discord account and log in with Discord</div>
         </div>
         ${discordBadge()}
       </div>
@@ -208,7 +211,7 @@ function render() {
         <div class="form-group">
           <label class="form-label">Client Secret</label>
           <input type="password" class="form-input" id="discord_client_secret"
-            placeholder="${settings.discord_client_secret ? '(saved — leave blank to keep)' : 'Paste your client secret'}">
+            placeholder="${settings.discord_client_secret ? '(saved â€” leave blank to keep)' : 'Paste your client secret'}">
           <div class="form-hint">Keep this secret. Not shown after saving.</div>
         </div>
 
@@ -227,8 +230,8 @@ function render() {
 
         <div style="background:rgba(88,101,242,.08);border:1px solid rgba(88,101,242,.2);border-radius:8px;padding:12px 14px;font-size:12px;color:var(--text-muted);line-height:1.7;margin-bottom:18px">
           <strong style="color:#818cf8">Setup guide:</strong><br>
-          1. Go to <a href="https://discord.com/developers/applications" target="_blank" rel="noopener" style="color:#7289da">discord.com/developers</a> → New Application<br>
-          2. OAuth2 tab → copy <strong>Client ID</strong> and <strong>Client Secret</strong><br>
+          1. Go to <a href="https://discord.com/developers/applications" target="_blank" rel="noopener" style="color:#7289da">discord.com/developers</a> â†’ New Application<br>
+          2. OAuth2 tab â†’ copy <strong>Client ID</strong> and <strong>Client Secret</strong><br>
           3. Under <strong>Redirects</strong>, add the callback URL above exactly<br>
           4. Paste credentials here and save
         </div>
@@ -245,7 +248,7 @@ function render() {
         <div class="connector-service-icon github">${GITHUB_ICON}</div>
         <div class="connector-header-info">
           <div class="connector-header-name">GitHub</div>
-          <div class="connector-header-sub">OAuth2 — let users link their GitHub account and log in with GitHub</div>
+          <div class="connector-header-sub">OAuth2 â€” let users link their GitHub account and log in with GitHub</div>
         </div>
         ${githubBadge()}
       </div>
@@ -272,7 +275,7 @@ function render() {
         <div class="form-group">
           <label class="form-label">Client Secret</label>
           <input type="password" class="form-input" id="github_client_secret"
-            placeholder="${settings.github_client_secret ? '(saved — leave blank to keep)' : 'Paste your client secret'}">
+            placeholder="${settings.github_client_secret ? '(saved â€” leave blank to keep)' : 'Paste your client secret'}">
           <div class="form-hint">Keep this secret. Not shown after saving.</div>
         </div>
 
@@ -291,7 +294,7 @@ function render() {
 
         <div style="background:rgba(36,41,47,.2);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:12px 14px;font-size:12px;color:var(--text-muted);line-height:1.7;margin-bottom:18px">
           <strong style="color:var(--text-dim)">Setup guide:</strong><br>
-          1. Go to <strong>GitHub → Settings → Developer settings → OAuth Apps → New OAuth App</strong><br>
+          1. Go to <strong>GitHub â†’ Settings â†’ Developer settings â†’ OAuth Apps â†’ New OAuth App</strong><br>
           2. Set <strong>Homepage URL</strong> to your panel's origin (e.g. <code style="font-size:11px">${esc(location.origin)}</code>)<br>
           3. Set <strong>Authorization callback URL</strong> to the callback URL above<br>
           4. Copy <strong>Client ID</strong> and generate a <strong>Client Secret</strong>, then paste them here and save
@@ -310,7 +313,7 @@ function render() {
         </div>
         <div class="connector-header-info">
           <div class="connector-header-name">Two-Factor Authentication</div>
-          <div class="connector-header-sub">TOTP 2FA — Authy, Google Authenticator, etc.</div>
+          <div class="connector-header-sub">TOTP 2FA â€” Authy, Google Authenticator, etc.</div>
         </div>
         ${totpBadge()}
       </div>
@@ -326,7 +329,7 @@ function render() {
           </label>
         </div>
         <div style="font-size:12px;color:var(--text-muted);line-height:1.7;margin-bottom:18px">
-          Users can set up TOTP 2FA from their account page. Each user controls their own — this toggle enables or disables the feature panel-wide.
+          Users can set up TOTP 2FA from their account page. Each user controls their own â€” this toggle enables or disables the feature panel-wide.
         </div>
         <button class="btn btn-primary" id="totpSaveBtn" onclick="saveTotp()">Save</button>
       </div>
@@ -339,7 +342,7 @@ function render() {
         </div>
         <div class="connector-header-info">
           <div class="connector-header-name">Passkeys</div>
-          <div class="connector-header-sub">WebAuthn — biometric or device PIN login</div>
+          <div class="connector-header-sub">WebAuthn â€” biometric or device PIN login</div>
         </div>
         ${passkeyBadge()}
       </div>
@@ -355,7 +358,7 @@ function render() {
           </label>
         </div>
         <div style="font-size:12px;color:var(--text-muted);line-height:1.7;margin-bottom:18px">
-          Passkeys let users sign in using Face ID, Touch ID, Windows Hello, or a hardware key — no password needed. Requires a modern browser.
+          Passkeys let users sign in using Face ID, Touch ID, Windows Hello, or a hardware key â€” no password needed. Requires a modern browser.
         </div>
         <button class="btn btn-primary" id="passkeysSaveBtn" onclick="savePasskeys()">Save</button>
       </div>
@@ -375,7 +378,7 @@ function copyText(el, text) {
 
 async function saveDiscord() {
   const btn = document.getElementById('discordSaveBtn');
-  btn.innerHTML = '<span class="spinner"></span> Saving…';
+  btn.innerHTML = '<span class="spinner"></span> Savingâ€¦';
   btn.disabled = true;
   try {
     const body = {
@@ -409,7 +412,7 @@ async function clearDiscord() {
 
 async function saveGithub() {
   const btn = document.getElementById('githubSaveBtn');
-  btn.innerHTML = '<span class="spinner"></span> Saving…';
+  btn.innerHTML = '<span class="spinner"></span> Savingâ€¦';
   btn.disabled = true;
   try {
     const body = {
@@ -443,7 +446,7 @@ async function clearGithub() {
 
 async function saveTotp() {
   const btn = document.getElementById('totpSaveBtn');
-  btn.innerHTML = '<span class="spinner"></span> Saving…'; btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Savingâ€¦'; btn.disabled = true;
   try {
     await API.patch('/settings', { totp_enabled: document.getElementById('totp_enabled').checked ? '1' : '0' });
     settings = await API.get('/settings');
@@ -454,7 +457,7 @@ async function saveTotp() {
 
 async function savePasskeys() {
   const btn = document.getElementById('passkeysSaveBtn');
-  btn.innerHTML = '<span class="spinner"></span> Saving…'; btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Savingâ€¦'; btn.disabled = true;
   try {
     await API.patch('/settings', { passkeys_enabled: document.getElementById('passkeys_enabled').checked ? '1' : '0' });
     settings = await API.get('/settings');

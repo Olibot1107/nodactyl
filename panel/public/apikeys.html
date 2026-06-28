@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nodactyl — API Keys</title>
+  <title>Nodactyl â€” API Keys</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#f97316">
+  <link rel="apple-touch-icon" href="/favicon.svg">
   <link rel="stylesheet" href="/css/style.css">
   <style>
     .key-table { width: 100%; border-collapse: collapse; }
@@ -39,7 +42,7 @@
   <div class="modal modal-sm">
     <div class="modal-header">
       <h2 class="modal-title">Create API Key</h2>
-      <button class="modal-close" onclick="closeCreate()">✕</button>
+      <button class="modal-close" onclick="closeCreate()">âœ•</button>
     </div>
     <div class="modal-body">
       <div class="alert alert-error" id="createError"></div>
@@ -51,7 +54,7 @@
         </div>
       </div>
       <div id="createSuccess" style="display:none">
-        <div class="key-warning">Copy this key now — it will not be shown again.</div>
+        <div class="key-warning">Copy this key now â€” it will not be shown again.</div>
         <div class="key-display">
           <span id="newKeyText" style="flex:1;overflow:hidden;text-overflow:ellipsis"></span>
           <button class="btn btn-ghost btn-sm" id="copyBtn" onclick="copyKey()">Copy</button>
@@ -73,7 +76,7 @@
   <div class="modal modal-sm">
     <div class="modal-header">
       <h2 class="modal-title" style="color:#f87171">Revoke API Key</h2>
-      <button class="modal-close" onclick="closeRevoke()">✕</button>
+      <button class="modal-close" onclick="closeRevoke()">âœ•</button>
     </div>
     <div class="modal-body">
       <p style="font-size:13px;color:var(--text-muted)">Revoking <strong id="revokeKeyName" style="color:var(--text)"></strong> will immediately invalidate it. Any services using this key will stop working.</p>
@@ -102,7 +105,7 @@ async function init() {
         <div class="topbar"><div><div class="page-title">API Keys</div></div></div>
         <div class="content">
           <div class="card" style="max-width:480px;text-align:center;padding:40px 24px">
-            <div style="font-size:32px;margin-bottom:12px">🔒</div>
+            <div style="font-size:32px;margin-bottom:12px">ðŸ”’</div>
             <div style="font-size:16px;font-weight:700;margin-bottom:8px">API Access Disabled</div>
             <div style="font-size:13px;color:var(--text-muted)">The REST API has been disabled by an administrator. API keys cannot be created or used while the API is off.</div>
           </div>
@@ -178,7 +181,7 @@ async function init() {
 
           <div class="ep-group">
             <div class="ep-group-title">Server Control</div>
-            <div class="ep-row"><span class="method method-post">POST</span><span class="ep-path">/api/v1/servers/<span class="param">:id</span>/action</span><span class="ep-desc">start · stop · restart · kill</span></div>
+            <div class="ep-row"><span class="method method-post">POST</span><span class="ep-path">/api/v1/servers/<span class="param">:id</span>/action</span><span class="ep-desc">start Â· stop Â· restart Â· kill</span></div>
             <div class="ep-row"><span class="method method-post">POST</span><span class="ep-path">/api/v1/servers/<span class="param">:id</span>/stdin</span><span class="ep-desc">Send console command</span></div>
             <div class="ep-row"><span class="method method-patch">PATCH</span><span class="ep-path">/api/v1/servers/<span class="param">:id</span>/settings</span><span class="ep-desc">Update name / startup / env vars</span></div>
             <div class="ep-row"><span class="method method-delete">DELETE</span><span class="ep-path">/api/v1/servers/<span class="param">:id</span></span><span class="ep-desc">Delete server</span></div>
@@ -200,7 +203,7 @@ async function init() {
             <div class="ep-row"><span class="method method-get">GET</span><span class="ep-path">/api/v1/servers/<span class="param">:id</span>/files/read-binary</span><span class="ep-desc">Read file as base64</span></div>
             <div class="ep-row"><span class="method method-put">PUT</span><span class="ep-path">/api/v1/servers/<span class="param">:id</span>/files/write</span><span class="ep-desc">Write text file</span></div>
             <div class="ep-row"><span class="method method-post">POST</span><span class="ep-path">/api/v1/servers/<span class="param">:id</span>/files/upload</span><span class="ep-desc">Upload binary file (single request)</span></div>
-            <div class="ep-row"><span class="method method-post">POST</span><span class="ep-path">/api/v1/servers/<span class="param">:id</span>/files/upload-chunk</span><span class="ep-desc">Upload file in 5 MB chunks — <code>?path=&amp;offset=&amp;total=</code></span></div>
+            <div class="ep-row"><span class="method method-post">POST</span><span class="ep-path">/api/v1/servers/<span class="param">:id</span>/files/upload-chunk</span><span class="ep-desc">Upload file in 5 MB chunks â€” <code>?path=&amp;offset=&amp;total=</code></span></div>
             <div class="ep-row"><span class="method method-post">POST</span><span class="ep-path">/api/v1/servers/<span class="param">:id</span>/files/mkdir</span><span class="ep-desc">Create directory</span></div>
             <div class="ep-row"><span class="method method-post">POST</span><span class="ep-path">/api/v1/servers/<span class="param">:id</span>/files/rename</span><span class="ep-desc">Rename file or folder</span></div>
             <div class="ep-row"><span class="method method-delete">DELETE</span><span class="ep-path">/api/v1/servers/<span class="param">:id</span>/files</span><span class="ep-desc">Delete file or folder</span></div>
@@ -252,7 +255,7 @@ function fmtDate(unix) {
   return new Date(unix * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-// ── Create modal ──────────────────────────────────────────────────────────────
+// â”€â”€ Create modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function openCreate() {
   document.getElementById('keyName').value = '';
@@ -305,7 +308,7 @@ function showCreateErr(msg) {
   el.textContent = msg; el.classList.add('show');
 }
 
-// ── Revoke modal ──────────────────────────────────────────────────────────────
+// â”€â”€ Revoke modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function openRevoke(id, name) {
   revokeId = id;
@@ -335,7 +338,7 @@ async function confirmRevoke() {
   }
 }
 
-// ── Util ──────────────────────────────────────────────────────────────────────
+// â”€â”€ Util â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function showErr(msg) { const el = document.getElementById('pageError'); el.textContent = msg; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 5000); }
 function showOk(msg)  { const el = document.getElementById('pageSuccess'); el.textContent = msg; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 3000); }
