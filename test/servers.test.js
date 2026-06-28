@@ -65,6 +65,57 @@ describe('servers.test.js', () => {
     status(r, 400);
   });
 
+  it('PATCH /api/servers/:id/settings — description persists', async () => {
+    const r = await userClient.patch(`/api/servers/${serverId}/settings`, { name: 'test-server-a', description: 'my cool server' });
+    status(r, 200);
+    const get = await userClient.get(`/api/servers/${serverId}`);
+    eq(get.body.description, 'my cool server', 'description persisted');
+  });
+
+  it('PATCH /api/servers/:id/settings — pre_start_script persists', async () => {
+    const r = await userClient.patch(`/api/servers/${serverId}/settings`, { name: 'test-server-a', pre_start_script: 'echo hello' });
+    status(r, 200);
+    const get = await userClient.get(`/api/servers/${serverId}`);
+    eq(get.body.pre_start_script, 'echo hello', 'pre_start_script persisted');
+  });
+
+  it('PATCH /api/servers/:id/settings — env_vars persist', async () => {
+    const envs = [{ key: 'FOO', value: 'bar' }, { key: 'PORT', value: '8080' }];
+    const r = await userClient.patch(`/api/servers/${serverId}/settings`, { name: 'test-server-a', env_vars: envs });
+    status(r, 200);
+    const get = await userClient.get(`/api/servers/${serverId}`);
+    ok(Array.isArray(get.body.env_vars), 'env_vars is array');
+    eq(get.body.env_vars.length, 2, 'two env vars saved');
+    ok(get.body.env_vars.some(e => e.key === 'FOO' && e.value === 'bar'), 'FOO=bar present');
+    ok(get.body.env_vars.some(e => e.key === 'PORT' && e.value === '8080'), 'PORT=8080 present');
+  });
+
+  it('PATCH /api/servers/:id/settings — disk_limit blocked for non-admin', async () => {
+    const before = (await userClient.get(`/api/servers/${serverId}`)).body.disk_limit;
+    await userClient.patch(`/api/servers/${serverId}/settings`, { name: 'test-server-a', disk_limit: 99999 });
+    const get = await userClient.get(`/api/servers/${serverId}`);
+    eq(get.body.disk_limit, before, 'disk_limit unchanged for non-admin');
+  });
+
+  it('PATCH /api/servers/:id/settings — admin can set disk_limit', async () => {
+    const r = await adm.patch(`/api/servers/${serverId}/settings`, { name: 'test-server-a', disk_limit: 2048 });
+    status(r, 200);
+    const get = await adm.get(`/api/servers/${serverId}`);
+    eq(get.body.disk_limit, 2048, 'disk_limit updated by admin');
+    // reset
+    await adm.patch(`/api/servers/${serverId}/settings`, { name: 'test-server-a', disk_limit: 0 });
+  });
+
+  it('PATCH /api/servers/:id/settings — admin can set memory_limit and cpu_limit', async () => {
+    const r = await adm.patch(`/api/servers/${serverId}/settings`, { name: 'test-server-a', memory_limit: 768, cpu_limit: 1.5 });
+    status(r, 200);
+    const get = await adm.get(`/api/servers/${serverId}`);
+    eq(get.body.memory_limit, 768, 'memory_limit updated');
+    eq(get.body.cpu_limit, 1.5, 'cpu_limit updated');
+    // reset
+    await adm.patch(`/api/servers/${serverId}/settings`, { name: 'test-server-a', memory_limit: 512, cpu_limit: 1 });
+  });
+
   it('GET /api/servers/:id — enable_mods and enable_packages default to 1', async () => {
     const r = await userClient.get(`/api/servers/${serverId}`);
     status(r, 200);
