@@ -4,150 +4,205 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
 }
 
-// ── PWA install banner ────────────────────────────────────────────────────────
+// ── PWA install prompt ────────────────────────────────────────────────────────
 (function() {
   let _deferredPrompt = null;
+  const DISMISSED_KEY = 'pwa-dismissed';
 
-  const STYLE = `
-    #pwa-banner {
+  const CSS = `
+    #pwa-card {
       position: fixed;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%) translateY(120%);
+      bottom: 20px;
+      right: 20px;
       z-index: 9999;
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      background: #1c1d25;
-      border: 1px solid rgba(249,115,22,.35);
-      box-shadow: 0 8px 32px rgba(0,0,0,.55), 0 0 0 1px rgba(249,115,22,.08);
-      border-radius: 14px;
-      padding: 14px 18px;
-      min-width: 280px;
+      width: 320px;
       max-width: calc(100vw - 32px);
-      transition: transform .35s cubic-bezier(.34,1.56,.64,1), opacity .25s;
+      background: #13141a;
+      border: 1px solid rgba(249,115,22,.4);
+      border-radius: 16px;
+      box-shadow: 0 16px 48px rgba(0,0,0,.7), 0 0 0 1px rgba(249,115,22,.06), inset 0 1px 0 rgba(255,255,255,.04);
+      padding: 20px;
+      font-family: 'Inter', system-ui, sans-serif;
+      transform: translateY(calc(100% + 28px));
       opacity: 0;
+      transition: transform .4s cubic-bezier(.34,1.56,.64,1), opacity .3s ease;
     }
-    #pwa-banner.show {
-      transform: translateX(-50%) translateY(0);
+    #pwa-card.show {
+      transform: translateY(0);
       opacity: 1;
     }
-    #pwa-banner-icon {
-      width: 40px; height: 40px;
-      border-radius: 10px;
-      background: rgba(249,115,22,.15);
+    #pwa-card-close {
+      position: absolute;
+      top: 12px; right: 12px;
+      background: rgba(255,255,255,.06);
+      border: none; border-radius: 50%;
+      width: 26px; height: 26px;
       display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0;
-      font-size: 20px;
+      cursor: pointer; color: #9597b0; font-size: 13px;
+      transition: background .15s, color .15s;
     }
-    #pwa-banner-text { flex: 1; min-width: 0; }
-    #pwa-banner-title { font-size: 13px; font-weight: 700; color: #f1f2f6; line-height: 1.2; }
-    #pwa-banner-sub   { font-size: 11px; color: #9597b0; margin-top: 2px; }
-    #pwa-banner-install {
+    #pwa-card-close:hover { background: rgba(255,255,255,.12); color: #f1f2f6; }
+    #pwa-card-head {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+    }
+    #pwa-card-logo {
+      width: 48px; height: 48px; border-radius: 12px; overflow: hidden; flex-shrink: 0;
+      background: rgba(249,115,22,.12);
+      display: flex; align-items: center; justify-content: center;
+    }
+    #pwa-card-logo img { width: 100%; height: 100%; object-fit: cover; }
+    #pwa-card-name { font-size: 15px; font-weight: 700; color: #f1f2f6; line-height: 1.2; }
+    #pwa-card-tagline { font-size: 11.5px; color: #9597b0; margin-top: 3px; }
+    #pwa-card-perks {
+      display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px;
+    }
+    .pwa-perk {
+      font-size: 10.5px; font-weight: 600;
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 99px; padding: 3px 9px;
+      color: #9597b0;
+    }
+    #pwa-card-actions { display: flex; gap: 8px; }
+    #pwa-card-install {
+      flex: 1;
       background: #f97316;
       color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 7px 14px;
-      font-size: 12px;
-      font-weight: 700;
+      border: none; border-radius: 9px;
+      padding: 9px 0;
+      font-size: 13px; font-weight: 700;
       cursor: pointer;
-      white-space: nowrap;
-      flex-shrink: 0;
-      transition: background .15s, transform .1s;
+      transition: background .15s, transform .1s, box-shadow .15s;
+      box-shadow: 0 4px 12px rgba(249,115,22,.35);
     }
-    #pwa-banner-install:hover { background: #ea6c09; transform: scale(1.03); }
-    #pwa-banner-install:active { transform: scale(.97); }
-    #pwa-banner-dismiss {
-      background: none; border: none; cursor: pointer;
-      color: #5c5f7a; font-size: 16px; line-height: 1;
-      padding: 4px; flex-shrink: 0;
-      transition: color .15s;
+    #pwa-card-install:hover  { background: #ea6c09; box-shadow: 0 4px 18px rgba(249,115,22,.5); }
+    #pwa-card-install:active { transform: scale(.97); }
+    #pwa-card-later {
+      background: rgba(255,255,255,.06);
+      color: #9597b0;
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 9px;
+      padding: 9px 14px;
+      font-size: 13px; font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, color .15s;
     }
-    #pwa-banner-dismiss:hover { color: #f1f2f6; }
+    #pwa-card-later:hover { background: rgba(255,255,255,.1); color: #f1f2f6; }
+    #pwa-ios-steps {
+      display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;
+    }
+    .pwa-ios-step {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 12px; color: #9597b0;
+    }
+    .pwa-ios-step-num {
+      width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+      background: rgba(249,115,22,.15); border: 1px solid rgba(249,115,22,.3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 700; color: #f97316;
+    }
+    @media (max-width: 400px) {
+      #pwa-card { bottom: 0; right: 0; width: 100%; max-width: 100%; border-radius: 20px 20px 0 0; }
+      #pwa-card.show { transform: translateY(0); }
+    }
   `;
 
-  function showBanner() {
-    if (localStorage.getItem('pwa-dismissed') === '1') return;
-    if (document.getElementById('pwa-banner')) return;
+  function isAlreadyInstalled() {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  }
 
-    const style = document.createElement('style');
-    style.textContent = STYLE;
-    document.head.appendChild(style);
+  function getAppName() {
+    return (typeof getPanelSettings === 'function' && getPanelSettings()?.panel_name) || 'Nodactyl';
+  }
 
-    const name = (typeof getPanelSettings === 'function' && getPanelSettings()?.panel_name) || 'Nodactyl';
+  function injectCSS() {
+    if (document.getElementById('pwa-css')) return;
+    const s = document.createElement('style');
+    s.id = 'pwa-css';
+    s.textContent = CSS;
+    document.head.appendChild(s);
+  }
 
-    const banner = document.createElement('div');
-    banner.id = 'pwa-banner';
-    banner.innerHTML = `
-      <div id="pwa-banner-icon">⚡</div>
-      <div id="pwa-banner-text">
-        <div id="pwa-banner-title">Install ${name}</div>
-        <div id="pwa-banner-sub">Add to home screen for a faster experience</div>
+  function dismissCard(remove) {
+    localStorage.setItem(DISMISSED_KEY, '1');
+    const card = document.getElementById('pwa-card');
+    if (!card) return;
+    card.classList.remove('show');
+    setTimeout(() => card.remove(), 450);
+  }
+
+  function buildCard(bodyHtml, onInstall) {
+    if (localStorage.getItem(DISMISSED_KEY) === '1') return;
+    if (isAlreadyInstalled()) return;
+    if (document.getElementById('pwa-card')) return;
+    injectCSS();
+
+    const name = getAppName();
+    const card = document.createElement('div');
+    card.id = 'pwa-card';
+    card.innerHTML = `
+      <button id="pwa-card-close" title="Close">✕</button>
+      <div id="pwa-card-head">
+        <div id="pwa-card-logo"><img src="/favicon.svg" onerror="this.parentElement.textContent='⚡'"></div>
+        <div>
+          <div id="pwa-card-name">${name}</div>
+          <div id="pwa-card-tagline">Install for the best experience</div>
+        </div>
       </div>
-      <button id="pwa-banner-install">Install</button>
-      <button id="pwa-banner-dismiss" title="Dismiss">✕</button>
+      <div id="pwa-card-perks">
+        <span class="pwa-perk">No browser UI</span>
+        <span class="pwa-perk">Faster loads</span>
+        <span class="pwa-perk">Works offline</span>
+      </div>
+      ${bodyHtml}
     `;
-    document.body.appendChild(banner);
-
-    requestAnimationFrame(() => requestAnimationFrame(() => banner.classList.add('show')));
-
-    document.getElementById('pwa-banner-install').onclick = async () => {
-      if (!_deferredPrompt) return;
-      _deferredPrompt.prompt();
-      const { outcome } = await _deferredPrompt.userChoice;
-      _deferredPrompt = null;
-      dismissBanner(outcome === 'accepted');
-    };
-
-    document.getElementById('pwa-banner-dismiss').onclick = () => dismissBanner(false);
+    document.body.appendChild(card);
+    requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add('show')));
+    document.getElementById('pwa-card-close').onclick = () => dismissCard();
+    if (onInstall) onInstall(card);
   }
 
-  function dismissBanner(accepted) {
-    localStorage.setItem('pwa-dismissed', '1');
-    const banner = document.getElementById('pwa-banner');
-    if (!banner) return;
-    banner.style.transform = 'translateX(-50%) translateY(120%)';
-    banner.style.opacity = '0';
-    setTimeout(() => banner.remove(), 400);
-  }
-
+  // Chrome / Edge / Android
   window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
     _deferredPrompt = e;
-    // Wait a moment so the page has settled before showing the banner
-    setTimeout(showBanner, 2500);
+    setTimeout(() => {
+      buildCard(
+        `<div id="pwa-card-actions">
+          <button id="pwa-card-install">Install App</button>
+          <button id="pwa-card-later">Not now</button>
+        </div>`,
+        card => {
+          card.querySelector('#pwa-card-install').onclick = async () => {
+            if (!_deferredPrompt) return;
+            _deferredPrompt.prompt();
+            const { outcome } = await _deferredPrompt.userChoice;
+            _deferredPrompt = null;
+            dismissCard();
+          };
+          card.querySelector('#pwa-card-later').onclick = () => dismissCard();
+        }
+      );
+    }, 2500);
   });
 
-  // On iOS, beforeinstallprompt doesn't fire — show a different message
+  // iOS Safari
   window.addEventListener('load', () => {
-    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    const isStandalone = window.navigator.standalone;
-    if (isIos && !isStandalone && localStorage.getItem('pwa-dismissed') !== '1') {
-      _deferredPrompt = null;
-      setTimeout(() => {
-        if (document.getElementById('pwa-banner')) return;
-        const STYLE_IOS = STYLE.replace('#pwa-banner-install {', '#pwa-banner-install { display:none; ').replace('#pwa-banner-sub   {', '#pwa-banner-sub   { ');
-        const style = document.createElement('style');
-        style.textContent = STYLE_IOS;
-        document.head.appendChild(style);
-
-        const name = (typeof getPanelSettings === 'function' && getPanelSettings()?.panel_name) || 'Nodactyl';
-        const banner = document.createElement('div');
-        banner.id = 'pwa-banner';
-        banner.innerHTML = `
-          <div id="pwa-banner-icon">⚡</div>
-          <div id="pwa-banner-text">
-            <div id="pwa-banner-title">Install ${name}</div>
-            <div id="pwa-banner-sub">Tap Share → Add to Home Screen</div>
-          </div>
-          <button id="pwa-banner-dismiss" title="Dismiss">✕</button>
-        `;
-        document.body.appendChild(banner);
-        requestAnimationFrame(() => requestAnimationFrame(() => banner.classList.add('show')));
-        document.getElementById('pwa-banner-dismiss').onclick = () => dismissBanner(false);
-      }, 2500);
-    }
+    if (!/iphone|ipad|ipod/i.test(navigator.userAgent)) return;
+    if (isAlreadyInstalled()) return;
+    setTimeout(() => {
+      buildCard(
+        `<div id="pwa-ios-steps">
+          <div class="pwa-ios-step"><span class="pwa-ios-step-num">1</span>Tap the <strong style="color:#f1f2f6">Share</strong> button at the bottom of Safari</div>
+          <div class="pwa-ios-step"><span class="pwa-ios-step-num">2</span>Scroll down and tap <strong style="color:#f1f2f6">Add to Home Screen</strong></div>
+          <div class="pwa-ios-step"><span class="pwa-ios-step-num">3</span>Tap <strong style="color:#f1f2f6">Add</strong> to confirm</div>
+        </div>
+        <div id="pwa-card-actions">
+          <button id="pwa-card-later" style="flex:1">Got it</button>
+        </div>`,
+        card => { card.querySelector('#pwa-card-later').onclick = () => dismissCard(); }
+      );
+    }, 2500);
   });
 })();
 
