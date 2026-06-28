@@ -22,6 +22,8 @@
     .file-row.selected { background:rgba(99,102,241,.12); color:var(--text); border-color:rgba(99,102,241,.25); }
     .file-row.selected:hover { background:rgba(99,102,241,.18); }
     .selection-bar { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:5px 10px; border-top:1px solid var(--border); background:rgba(99,102,241,.08); flex-shrink:0; font-size:12px; }
+    .status-btn { cursor:pointer; border-radius:3px; padding:0 3px; }
+    .status-btn:hover { color:var(--text); background:rgba(255,255,255,.06); }
 
     /* ── Mobile file manager ─────────────────────────────── */
     .mobile-back-btn { display: none; }
@@ -591,12 +593,18 @@ async function init() {
       scrollBeyondLastLine: false,
       fontSize: 13,
       fontFamily: 'Consolas, "Cascadia Code", "Fira Code", Menlo, monospace',
+      fontLigatures: true,
       lineNumbers: 'on',
       wordWrap: 'off',
       renderWhitespace: 'selection',
       tabSize: 2,
       padding: { top: 8, bottom: 8 },
+      smoothScrolling: true,
+      cursorBlinking: 'smooth',
+      bracketPairColorization: { enabled: true },
+      guides: { bracketPairs: true },
     });
+    monacoEditor.onDidChangeCursorPosition(() => updateStatusBar());
     monacoEditor.onDidChangeModelContent(() => {
       if (!openFile) return;
       modified = true;
@@ -710,7 +718,7 @@ function buildShell() {
             <div style="text-align:center">
               <div style="font-size:32px;opacity:.12;margin-bottom:12px">📄</div>
               <div style="font-size:13px;color:var(--text-muted)">Select a file to view or edit</div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:6px;opacity:.6">Ctrl+S to save &nbsp;·&nbsp; drag files onto the explorer to upload</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:6px;opacity:.6">Ctrl+S save &nbsp;·&nbsp; Alt+Z wrap &nbsp;·&nbsp; Shift+Alt+F format &nbsp;·&nbsp; drag files to upload</div>
             </div>
           </div>
 
@@ -723,9 +731,11 @@ function buildShell() {
           </div>
 
           <div class="status-bar" id="statusBar">
-            <span id="statusPath" style="min-width:0;overflow:hidden;text-overflow:ellipsis">~</span>
-            <span id="statusLines"></span>
+            <span id="statusPath" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:45%">~</span>
+            <span id="statusCursor"></span>
             <span style="flex:1"></span>
+            <span id="statusWrap" onclick="toggleWordWrap()" title="Toggle word wrap (Alt+Z)" class="status-btn">No Wrap</span>
+            <span id="statusTabSize" onclick="cycleTabSize()" title="Tab size" class="status-btn">Spaces: 2</span>
             <span id="statusLang" style="letter-spacing:.4px;text-transform:uppercase;font-size:10px"></span>
             <span id="statusState">Ready</span>
           </div>
@@ -1423,6 +1433,7 @@ function selectAll() {
 
 function onKeyDown(e) {
   if ((e.ctrlKey || e.metaKey) && e.key === 's' && openFile) { e.preventDefault(); saveFile(); }
+  if (e.altKey && e.key === 'z' && openFile) { e.preventDefault(); toggleWordWrap(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'a' && !openFile) { e.preventDefault(); selectAll(); }
   if (e.key === 'Escape') {
     closeCtx();
@@ -1442,18 +1453,42 @@ function onKeyDown(e) {
 }
 
 function updateStatusBar() {
+  const cursorEl = document.getElementById('statusCursor');
   if (!openFile) {
     document.getElementById('statusPath').textContent = '~';
-    document.getElementById('statusLines').textContent = '';
+    if (cursorEl) cursorEl.textContent = '';
     return;
   }
   const rel = openFile.startsWith(HOME + '/') ? '~/' + openFile.slice(HOME.length + 1) : openFile;
   document.getElementById('statusPath').textContent = rel;
-  if (monacoReady && monacoEditor) {
-    const lines = monacoEditor.getModel()?.getLineCount() ?? 0;
-    document.getElementById('statusLines').textContent = `${lines}L`;
+  if (monacoReady && monacoEditor && cursorEl) {
+    const pos = monacoEditor.getPosition();
+    const sel = monacoEditor.getSelection();
+    const selLen = sel ? monacoEditor.getModel()?.getValueInRange(sel).length : 0;
+    cursorEl.textContent = pos
+      ? (selLen > 0 ? `Ln ${pos.lineNumber}, Col ${pos.column} (${selLen} selected)` : `Ln ${pos.lineNumber}, Col ${pos.column}`)
+      : '';
   }
   if (modified) setStatusState('Unsaved');
+}
+
+function toggleWordWrap() {
+  if (!monacoEditor) return;
+  const isOn = monacoEditor.getOption(monaco.editor.EditorOption.wordWrap) !== 'off';
+  const next = isOn ? 'off' : 'on';
+  monacoEditor.updateOptions({ wordWrap: next });
+  const el = document.getElementById('statusWrap');
+  if (el) el.textContent = next === 'on' ? 'Wrap' : 'No Wrap';
+}
+
+function cycleTabSize() {
+  if (!monacoEditor) return;
+  const sizes = [2, 4, 8];
+  const current = monacoEditor.getOption(monaco.editor.EditorOption.tabSize);
+  const next = sizes[(sizes.indexOf(current) + 1) % sizes.length];
+  monacoEditor.updateOptions({ tabSize: next });
+  const el = document.getElementById('statusTabSize');
+  if (el) el.textContent = `Spaces: ${next}`;
 }
 
 function setStatusState(t) {
@@ -2004,6 +2039,10 @@ async function openFileRedactView(sid, label) {
 
   renderRedact();
 }
+
+window.addEventListener('beforeunload', e => {
+  if (modified) { e.preventDefault(); e.returnValue = ''; }
+});
 
 init();
 </script>
