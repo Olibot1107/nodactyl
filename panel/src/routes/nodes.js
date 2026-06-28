@@ -212,6 +212,53 @@ router.post('/:id/update', requireAdmin, async (req, res) => {
   }
 });
 
+// Bulk action on all servers on a node
+router.post('/:id/action-all', requireAdmin, async (req, res) => {
+  const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(req.params.id);
+  if (!node) return res.status(404).json({ error: 'Not found' });
+  if (!nodeManager.isOnline(node.id)) return res.status(503).json({ error: 'Node is offline' });
+
+  const { action } = req.body;
+  if (!['start', 'stop', 'restart'].includes(action)) return res.status(400).json({ error: 'action must be start, stop, or restart' });
+
+  const statusFilter = action === 'start' ? "= 'stopped'" : "= 'running'";
+  const servers = db.prepare(
+    `SELECT * FROM servers WHERE node_id = ? AND status ${statusFilter} AND suspended = 0`
+  ).all(node.id);
+
+  let sent = 0;
+  const errors = [];
+  await Promise.all(servers.map(async s => {
+    const portMappings = (() => { try { return JSON.parse(s.port_mappings); } catch { return []; } })();
+    const envVars      = (() => { try { return JSON.parse(s.env_vars);      } catch { return []; } })();
+    const msg = {
+      type: 'server-action',
+      serverId: s.id,
+      containerId: s.container_id,
+      action,
+      startupCommand: s.startup_command || '',
+      serverConfig: {
+        image: s.image,
+        portMappings,
+        envVars,
+        memoryLimit: s.memory_limit,
+        cpuLimit: s.cpu_limit,
+      },
+    };
+    try {
+      const result = await nodeManager.send(node.id, msg);
+      if (result?.containerId && result.containerId !== s.container_id) {
+        db.prepare('UPDATE servers SET container_id = ? WHERE id = ?').run(result.containerId, s.id);
+      }
+      sent++;
+    } catch (e) {
+      errors.push({ id: s.id, name: s.name, error: e.message });
+    }
+  }));
+
+  res.json({ ok: true, sent, skipped: servers.length - sent - errors.length, errors });
+});
+
 // Regenerate token
 router.post('/:id/reset-token', requireAdmin, (req, res) => {
   const token = crypto.randomBytes(32).toString('hex');

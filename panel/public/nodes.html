@@ -424,6 +424,9 @@ function renderAdminCard(n) {
       '<button class="btn btn-ghost btn-sm" onclick="openEdit(\'' + n.id + '\')">Edit</button>' +
       '<button class="btn btn-ghost btn-sm" onclick="showToken(\'' + n.id + '\',\'' + n.token + '\')">Token</button>' +
       (n.online ? '<button class="btn btn-ghost btn-sm" onclick="pingNode(\'' + n.id + '\')">Ping</button>' : '') +
+      (n.online ? '<button class="btn btn-success btn-sm" onclick="nodeActionAll(\'' + n.id + '\',\'start\')">Start All</button>' : '') +
+      (n.online ? '<button class="btn btn-warning btn-sm" onclick="nodeActionAll(\'' + n.id + '\',\'stop\')">Stop All</button>' : '') +
+      (n.online ? '<button class="btn btn-ghost btn-sm" onclick="nodeActionAll(\'' + n.id + '\',\'restart\')">Restart All</button>' : '') +
       '<button class="btn btn-warning btn-sm" onclick="resetToken(\'' + n.id + '\')">New Token</button>' +
       '<button class="btn btn-danger btn-sm" onclick="deleteNode(\'' + n.id + '\',\'' + esc(n.name).replace(/'/g, "\\'") + '\')">Delete</button>' +
     '</div>' +
@@ -434,6 +437,17 @@ function renderAdminCard(n) {
 function showToken(id, token) {
   document.getElementById('tokenDisplay').textContent = token;
   document.getElementById('tokenModal').classList.add('open');
+}
+
+async function nodeActionAll(nodeId, action) {
+  var label = action === 'start' ? 'Start' : action === 'stop' ? 'Stop' : 'Restart';
+  if (!confirm(label + ' all servers on this node?')) return;
+  try {
+    var r = await API.post('/nodes/' + nodeId + '/action-all', { action: action });
+    var msg = label + ' sent to ' + r.sent + ' server' + (r.sent !== 1 ? 's' : '') + '.';
+    if (r.errors && r.errors.length) msg += '\nFailed: ' + r.errors.map(function(e) { return e.name + ' (' + e.error + ')'; }).join(', ');
+    alert(msg);
+  } catch(e) { alert(e.message); }
 }
 
 async function resetToken(id) {
