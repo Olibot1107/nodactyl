@@ -196,7 +196,7 @@ async function main() {
       return res.json({ name, display: 'browser' });
     }
     const logo = db.prepare("SELECT value FROM settings WHERE key = 'panel_logo'").get()?.value || '';
-    const iconUrl = (logo.startsWith('http') || logo.startsWith('/') || logo.startsWith('data:'))
+    const iconUrl = (logo.startsWith('http') || logo.startsWith('/'))
       ? logo : '/favicon.svg';
     res.json({
       name,
