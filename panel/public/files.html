@@ -724,10 +724,12 @@ function buildShell() {
             <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1">
               <button class="btn btn-ghost btn-sm mobile-back-btn" onclick="mobileBackToFiles()" style="flex-shrink:0;white-space:nowrap">← Files</button>
               <div class="editor-file-meta" style="min-width:0">
-                <div class="editor-filename" id="editorFilename">No file open</div>
+                <div style="display:flex;align-items:center;gap:6px;min-width:0">
+                  <div class="editor-filename" id="editorFilename">No file open</div>
+                  <div id="colabPresence" style="display:flex;align-items:center;gap:3px;flex-shrink:0"></div>
+                </div>
                 <div class="editor-subline" id="editorSubline">Select a file from the explorer</div>
               </div>
-              <div id="colabPresence" style="display:flex;align-items:center;gap:3px;flex-shrink:0"></div>
             </div>
             <div class="flex-center gap-2" style="flex-shrink:0">
               <button class="btn btn-ghost btn-sm" id="downloadBtn" onclick="downloadOpenFile()" disabled title="Download">${UI.download}</button>
@@ -2125,14 +2127,24 @@ function renderColabPresence() {
   const me = getUser();
   const others = (colabPresence || []).filter(u => u.id !== me?.id);
   if (!others.length) { el.innerHTML = ''; return; }
-  el.innerHTML = others.slice(0, 6).map(u => {
+  const shown = others.slice(0, 3);
+  const avatars = shown.map(u => {
     const color = userColor(u.id);
     const initial = (u.username?.[0] || '?').toUpperCase();
     const inner = u.avatar
       ? `<img src="${esc(u.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" alt="">`
       : initial;
-    return `<div title="${esc(u.username)} is editing" style="width:22px;height:22px;border-radius:50%;background:${color}20;border:1.5px solid ${color};color:${color};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;overflow:hidden;cursor:default;flex-shrink:0">${inner}</div>`;
-  }).join('') + (others.length > 6 ? `<span style="font-size:11px;color:var(--text-muted)">+${others.length - 6}</span>` : '');
+    return `<div title="${esc(u.username)} is editing" style="width:18px;height:18px;border-radius:50%;background:${color}20;border:1.5px solid ${color};color:${color};display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;overflow:hidden;cursor:default;flex-shrink:0">${inner}</div>`;
+  }).join('');
+  let label;
+  if (others.length === 1) {
+    label = esc(others[0].username);
+  } else if (others.length === 2) {
+    label = `${esc(others[0].username)}, ${esc(others[1].username)}`;
+  } else {
+    label = `${esc(others[0].username)} +${others.length - 1}`;
+  }
+  el.innerHTML = avatars + `<span style="font-size:10.5px;color:var(--text-muted);white-space:nowrap;margin-left:2px">${label}</span>`;
 }
 
 init();
