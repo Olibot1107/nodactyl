@@ -275,7 +275,9 @@ async function main() {
   });
 
   // ── Daemon WebSocket endpoint ────────────────────────────────────────────────
-  const daemonWss = new WebSocket.Server({ noServer: true });
+  // maxPayload: 0 = no limit — only authenticated daemons reach this endpoint,
+  // and server exports can legitimately be several GB of base64-encoded tar data.
+  const daemonWss = new WebSocket.Server({ noServer: true, maxPayload: 0 });
 
   httpServer.on('upgrade', (req, socket, head) => {
     if (req.url === '/daemon') {

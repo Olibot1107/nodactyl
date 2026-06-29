@@ -1248,6 +1248,22 @@ tbody tr:hover td { background: rgba(255,255,255,.015); color: var(--text); }
   .console-wrap { height: calc(100vh - 240px); min-height: 200px; }
 }
 
+/* ── Console header buttons: wrap onto a scrollable second row on small screens ── */
+@media (max-width: 640px) {
+  .console-card .card-header {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .console-header-actions {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+  .console-header-actions::-webkit-scrollbar { display: none; }
+  .console-header-actions .btn { flex-shrink: 0; white-space: nowrap; }
+}
+
 @media (max-width: 480px) {
   .grid-stats { grid-template-columns: repeat(2, 1fr); }
   .grid-2, .grid-3 { grid-template-columns: 1fr; }

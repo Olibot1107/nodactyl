@@ -7,6 +7,23 @@ const { spawnSync } = require('child_process');
 const docker = require('./docker');
 const hostfs = require('./hostfs');
 
+// ── Logger ────────────────────────────────────────────────────────────────────
+const USE_COLOR = process.stdout.isTTY !== false;
+const C = USE_COLOR ? {
+  reset: '\x1b[0m', dim: '\x1b[2m',
+  green: '\x1b[32m', yellow: '\x1b[33m', red: '\x1b[31m',
+  cyan: '\x1b[36m', blue: '\x1b[34m', magenta: '\x1b[35m', white: '\x1b[37m',
+} : Object.fromEntries(['reset','dim','green','yellow','red','cyan','blue','magenta','white'].map(k=>[k,'']));
+
+function ts() { return new Date().toTimeString().slice(0, 8); }
+const log = {
+  info:    (scope, msg) => console.log(`${C.dim}${ts()}${C.reset} ${C.cyan}[${scope}]${C.reset} ${msg}`),
+  success: (scope, msg) => console.log(`${C.dim}${ts()}${C.reset} ${C.green}[${scope}]${C.reset} ${msg}`),
+  warn:    (scope, msg) => console.warn(`${C.dim}${ts()}${C.reset} ${C.yellow}[${scope}]${C.reset} ${msg}`),
+  error:   (scope, msg) => console.error(`${C.dim}${ts()}${C.reset} ${C.red}[${scope}]${C.reset} ${msg}`),
+  server:  (id, msg) => console.log(`${C.dim}${ts()}${C.reset} ${C.magenta}[${id.slice(0,8)}]${C.reset} ${msg}`),
+};
+
 // ── Config ────────────────────────────────────────────────────────────────────
 const configPath = nodePath.join(__dirname, '..', 'config.json');
 if (!fs.existsSync(configPath)) {
@@ -26,11 +43,13 @@ if (!panelUrl || !token) {
   process.exit(1);
 }
 
+// Startup banner
+console.log(`\n${C.cyan}  Nodactyl Daemon${C.reset}  ${C.dim}→ ${panelUrl}${C.reset}\n`);
 if (dataPath) {
   fs.mkdirSync(dataPath, { recursive: true });
-  console.log(`[daemon] Data path: ${dataPath}${hostDataPath !== dataPath ? ` (host bind path: ${hostDataPath})` : ''}`);
+  log.info('daemon', `Data path: ${dataPath}${hostDataPath !== dataPath ? ` (host bind: ${hostDataPath})` : ''}`);
 } else {
-  console.log('[daemon] No dataPath configured — file operations will use Docker archive fallback');
+  log.warn('daemon', 'No dataPath configured — file ops will use Docker archive fallback');
 }
 
 const DAEMON_WS = panelUrl.replace(/^http/, 'ws') + '/daemon';
@@ -92,37 +111,44 @@ let ownNodeId = null; // set on auth-result; used to ignore Docker events from o
 // always attaches to the real live container, not whatever stale ID the panel DB has.
 const activeContainers = new Map(); // serverId → containerId
 let ws;
-let reconnectDelay = 3000;
+let heartbeatInterval = null; // tracked so we can clear it on disconnect (prevents interval leaks)
+let reconnectAttempt = 0;
 
 // ── Connect ───────────────────────────────────────────────────────────────────
 function connect() {
-  console.log(`[daemon] Connecting to ${DAEMON_WS} ...`);
+  log.info('daemon', `Connecting to ${DAEMON_WS}…`);
   ws = new WebSocket(DAEMON_WS);
 
   ws.on('open', () => {
-    reconnectDelay = 3000;
-    console.log('[daemon] Connected — authenticating...');
+    reconnectAttempt = 0;
+    log.success('daemon', 'Connected — authenticating…');
     send({ type: 'auth', token });
 
-    const beat = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) send({ type: 'heartbeat' });
-      else clearInterval(beat);
+    // Clear any previous interval to avoid accumulating multiple timers across reconnects
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    heartbeatInterval = setInterval(() => {
+      if (ws?.readyState === WebSocket.OPEN) send({ type: 'heartbeat' });
     }, 15000);
   });
 
   ws.on('message', (raw) => {
     let msg;
-    try { msg = JSON.parse(raw); } catch { console.error('[daemon] Received non-JSON message, ignoring'); return; }
+    try { msg = JSON.parse(raw); } catch { log.warn('daemon', 'Received non-JSON message, ignoring'); return; }
     handleMessage(msg);
   });
 
   ws.on('close', (code) => {
-    console.log(`[daemon] Disconnected (${code}) — reconnecting in ${reconnectDelay / 1000}s`);
-    setTimeout(connect, reconnectDelay);
-    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+    if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+    reconnectAttempt++;
+    // Exponential backoff (3 s → 30 s) + random jitter to avoid thundering herd
+    const base = Math.min(3000 * Math.pow(1.5, reconnectAttempt - 1), 30000);
+    const jitter = Math.floor(Math.random() * 2000);
+    const delay = Math.round(base + jitter);
+    log.warn('daemon', `Disconnected (${code}) — reconnecting in ${(delay / 1000).toFixed(1)}s (attempt ${reconnectAttempt})`);
+    setTimeout(connect, delay);
   });
 
-  ws.on('error', (err) => console.error('[daemon] WS error:', err.message));
+  ws.on('error', (err) => log.error('daemon', `WS error: ${err.message}`));
 }
 
 function send(msg) {
@@ -196,9 +222,9 @@ async function syncContainerStates() {
 
     const serverIds = list.map(c => c.Labels?.['nodactyl.server-id']).filter(Boolean);
     send({ type: 'containers-synced', serverIds });
-    console.log(`[daemon] Synced ${list.length} container state(s) to panel`);
+    log.success('daemon', `Synced ${list.length} container state(s) to panel`);
   } catch (err) {
-    console.error('[daemon] Container state sync failed:', err.message);
+    log.error('daemon', `Container state sync failed: ${err.message}`);
   }
 }
 
@@ -208,15 +234,15 @@ async function handleMessage(msg) {
     case 'auth-result': {
       if (msg.success) {
         ownNodeId = msg.nodeId;
-        console.log(`[daemon] Authenticated as node "${msg.name}" (${ownNodeId})`);
+        log.success('daemon', `Authenticated as node "${msg.name}" (${ownNodeId})`);
         syncContainerStates();
-      } else { console.error('[daemon] Auth failed:', msg.error); process.exit(1); }
+      } else { log.error('daemon', `Auth failed: ${msg.error}`); process.exit(1); }
       break;
     }
 
     case 'install-server': {
       const { requestId, serverId, image, portMappings, envVars, memoryLimit, cpuLimit, startupCommand, installScript } = msg;
-      console.log(`[server:${serverId.slice(0, 8)}] Installing — pulling ${image}...`);
+      log.server(serverId, `Installing — pulling ${image}…`);
 
       // Create persistent data directory before pulling image
       const binds = [];
@@ -225,7 +251,7 @@ async function handleMessage(msg) {
         fs.mkdirSync(dir, { recursive: true });
         const hostDir = nodePath.join(hostDataPath, serverId);
         binds.push(`${hostDir}:/home/container`);
-        console.log(`[server:${serverId.slice(0, 8)}] Data dir: ${dir} (bind: ${hostDir})`);
+        log.server(serverId, `Data dir: ${dir} (bind: ${hostDir})`);
       }
 
       try {
@@ -233,11 +259,11 @@ async function handleMessage(msg) {
         await docker.removeSavedImage(serverId);
 
         await docker.pullImage(image);
-        console.log(`[server:${serverId.slice(0, 8)}] Image pulled`);
+        log.server(serverId, 'Image pulled');
 
         // Run install script in a temporary container if provided
         if (installScript && installScript.trim()) {
-          console.log(`[server:${serverId.slice(0, 8)}] Running install script...`);
+          log.server(serverId, 'Running install script…');
           send({ type: 'log', serverId, line: '\r\n\x1b[33m[Nodactyl] Running install script...\x1b[0m\r\n' });
 
           const effectiveInstallScript = applyPlaceholders(installScript, portMappings, envVars);
@@ -278,7 +304,7 @@ async function handleMessage(msg) {
           if (exitCode !== 0) {
             try { await installContainer.remove({ force: true }); } catch {}
             send({ type: 'log', serverId, line: `\r\n\x1b[31m[Nodactyl] Install script failed (exit ${exitCode}).\x1b[0m\r\n` });
-            console.error(`[server:${serverId.slice(0, 8)}] Install script failed (exit ${exitCode})`);
+            log.error(serverId, `Install script failed (exit ${exitCode})`);
             respond(requestId, {}, new Error(`Install script failed (exit ${exitCode})`));
             send({ type: 'server-status', serverId, status: 'error' });
             break;
@@ -290,14 +316,14 @@ async function handleMessage(msg) {
           send({ type: 'log', serverId, line: '\r\n\x1b[33m[Nodactyl] Saving install state...\x1b[0m\r\n' });
           try {
             await docker.saveContainerState(installContainer.id, serverId);
-            console.log(`[server:${serverId.slice(0, 8)}] Install state saved`);
+            log.server(serverId, 'Install state saved');
           } catch (err) {
-            console.warn(`[server:${serverId.slice(0, 8)}] Install state commit failed:`, err.message);
+            log.warn(serverId, `Install state commit failed: ${err.message}`);
           }
           try { await installContainer.remove({ force: true }); } catch {}
 
           send({ type: 'log', serverId, line: '\r\n\x1b[32m[Nodactyl] Install complete. Setting up server container...\x1b[0m\r\n' });
-          console.log(`[server:${serverId.slice(0, 8)}] Install script done ✓`);
+          log.server(serverId, 'Install script done ✓');
         }
 
         // Use the committed install state if available, otherwise fall back to the base image.
@@ -310,9 +336,9 @@ async function handleMessage(msg) {
         });
         respond(requestId, { containerId: container.id });
         send({ type: 'server-status', serverId, status: 'stopped' });
-        console.log(`[server:${serverId.slice(0, 8)}] Installed ✓`);
+        log.server(serverId, 'Installed ✓');
       } catch (err) {
-        console.error(`[server:${serverId.slice(0, 8)}] Install failed:`, err.message);
+        log.error(serverId, `Install failed: ${err.message}`);
         respond(requestId, {}, err);
         send({ type: 'server-status', serverId, status: 'error' });
       }
@@ -349,16 +375,16 @@ async function handleMessage(msg) {
           if (hasRunBefore) {
             try {
               await docker.saveContainerState(activeContainerId, serverId);
-              console.log(`[server:${serverId.slice(0, 8)}] Container state saved`);
+              log.server(serverId, 'Container state saved');
             } catch (err) {
-              console.warn(`[server:${serverId.slice(0, 8)}] State save failed (will use existing saved image or base image):`, err.message);
+              log.warn(serverId, `State save failed (will use existing or base image): ${err.message}`);
             }
           }
 
           try { await docker.containerAction(activeContainerId, 'remove'); } catch {}
 
           const savedImage = await docker.getSavedImage(serverId);
-          if (savedImage) console.log(`[server:${serverId.slice(0, 8)}] Starting from saved state`);
+          if (savedImage) log.server(serverId, 'Starting from saved state');
           const imageToUse = savedImage || serverConfig.image;
 
           const allEnvVars = serverConfig.envVars || [];
@@ -406,7 +432,7 @@ async function handleMessage(msg) {
         const dir = serverDataDir(serverId);
         if (fs.existsSync(dir)) {
           fs.rmSync(dir, { recursive: true, force: true });
-          console.log(`[server:${serverId.slice(0, 8)}] Data dir deleted: ${dir}`);
+          log.server(serverId, `Data dir deleted: ${dir}`);
         }
       }
       respond(requestId, {});
@@ -472,7 +498,7 @@ async function handleMessage(msg) {
         stream.on('error', (err) => {
           const cur = activeLogStreams.get(serverId);
           if (cur?.containerId === containerId) activeLogStreams.delete(serverId);
-          console.warn(`[server:${serverId.slice(0, 8)}] Log stream error:`, err.message);
+          log.warn(serverId, `Log stream error: ${err.message}`);
         });
       } catch (err) {
         send({ type: 'log', serverId, line: `[Error: ${err.message}]\n` });
@@ -767,7 +793,7 @@ async function handleMessage(msg) {
           const destFull = hostfs.safePath(dataDir, hostDest);
           if (!fs.existsSync(archiveFull)) throw new Error('Archive not found');
           fs.mkdirSync(destFull, { recursive: true });
-          console.log(`[server:${serverId.slice(0,8)}] Extracting ${nodePath.basename(archiveFull)}`);
+          log.server(serverId, `Extracting ${nodePath.basename(archiveFull)}`);
 
           let output;
           if (low.endsWith('.zip')) {
@@ -824,7 +850,7 @@ async function handleMessage(msg) {
           respond(requestId, { output: lines.join('').trim() || 'Extraction complete.' });
         }
       } catch (err) {
-        console.error(`[daemon] extract-archive error:`, err.message);
+        log.error('daemon', `extract-archive error: ${err.message}`);
         respond(requestId, {}, err);
       }
       break;
@@ -852,7 +878,7 @@ async function handleMessage(msg) {
       if (result.status !== 0) { respond(requestId, {}, new Error(output)); break; }
       respond(requestId, { output });
       // Exit after response is sent — process manager (Docker restart policy, PM2 etc.) restarts with new code
-      console.log('[daemon] Update pulled — restarting...');
+      log.success('daemon', 'Update pulled — restarting…');
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -899,7 +925,7 @@ async function handleMessage(msg) {
         else if (strategy === 'merge') { /* default git pull merge */ }
         else pullArgs.push('--ff-only');
         if (authedUrl) pullArgs.push(authedUrl);
-        console.log(`[server:${pullServerId.slice(0,8)}] Git pull (${strategy || 'ff-only'}) in ${targetFull}`);
+        log.server(pullServerId, `Git pull (${strategy || 'ff-only'}) in ${targetFull}`);
         const result = spawnSync('git', pullArgs, {
           timeout: 270000, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: 'echo' },
         });
@@ -936,7 +962,7 @@ async function handleMessage(msg) {
         else if (mode === 'hard') resetArgs.push('--hard');
         else resetArgs.push('--mixed');
         resetArgs.push(commit || 'HEAD~1');
-        console.log(`[server:${resetServerId.slice(0,8)}] Git reset --${mode || 'mixed'} ${commit || 'HEAD~1'} in ${targetFull}`);
+        log.server(resetServerId, `Git reset --${mode || 'mixed'} ${commit || 'HEAD~1'} in ${targetFull}`);
         const result = spawnSync('git', resetArgs, {
           timeout: 30000, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
         });
@@ -982,7 +1008,7 @@ async function handleMessage(msg) {
         const expDir = serverDataDir(expServerId);
         if (fs.existsSync(expDir)) {
           try {
-            console.log(`[server:${expServerId.slice(0,8)}] Exporting data dir...`);
+            log.server(expServerId, 'Exporting data dir…');
             const result = spawnSync('tar', ['-czf', '-', '-C', expDir, '.'], {
               maxBuffer: 2 * 1024 * 1024 * 1024,
               timeout: 300000,
@@ -993,7 +1019,7 @@ async function handleMessage(msg) {
               break;
             }
             fileData = result.stdout.toString('base64');
-            console.log(`[server:${expServerId.slice(0,8)}] Data dir exported (${result.stdout.length} bytes compressed)`);
+            log.server(expServerId, `Data dir exported (${result.stdout.length} bytes compressed)`);
           } catch (err) {
             respond(requestId, {}, err);
             break;
@@ -1004,9 +1030,9 @@ async function handleMessage(msg) {
       // Export the saved Docker image so the full container filesystem is preserved
       try {
         imageData = await docker.exportSavedImage(expServerId);
-        if (imageData) console.log(`[server:${expServerId.slice(0,8)}] Saved container image exported`);
+        if (imageData) log.server(expServerId, 'Saved container image exported');
       } catch (err) {
-        console.warn(`[server:${expServerId.slice(0,8)}] Image export failed (continuing without it):`, err.message);
+        log.warn(expServerId, `Image export failed (continuing without it): ${err.message}`);
       }
 
       if (!fileData && !imageData) {
@@ -1025,7 +1051,7 @@ async function handleMessage(msg) {
         const impDir = serverDataDir(impServerId);
         fs.mkdirSync(impDir, { recursive: true });
         try {
-          console.log(`[server:${impServerId.slice(0,8)}] Importing data dir...`);
+          log.server(impServerId, 'Importing data dir…');
           const buf = Buffer.from(data, 'base64');
           const result = spawnSync('tar', ['-xzf', '-', '-C', impDir], {
             input: buf,
@@ -1037,7 +1063,7 @@ async function handleMessage(msg) {
             respond(requestId, {}, new Error((result.stderr?.toString() || 'tar import failed').trim()));
             break;
           }
-          console.log(`[server:${impServerId.slice(0,8)}] Data dir imported`);
+          log.server(impServerId, 'Data dir imported');
         } catch (err) {
           respond(requestId, {}, err);
           break;
@@ -1048,9 +1074,9 @@ async function handleMessage(msg) {
       if (imageData && impServerId) {
         try {
           await docker.importSavedImage(impServerId, imageData);
-          console.log(`[server:${impServerId.slice(0,8)}] Saved container image imported`);
+          log.server(impServerId, 'Saved container image imported');
         } catch (err) {
-          console.warn(`[server:${impServerId.slice(0,8)}] Image import failed (server will use base image on next start):`, err.message);
+          log.warn(impServerId, `Image import failed (will use base image on next start): ${err.message}`);
         }
       }
 
@@ -1062,7 +1088,7 @@ async function handleMessage(msg) {
     case 'reset-saved-state': {
       const { requestId, serverId } = msg;
       await docker.removeSavedImage(serverId);
-      console.log(`[server:${serverId.slice(0, 8)}] Saved state cleared — next start will use base image`);
+      log.server(serverId, 'Saved state cleared — next start will use base image');
       respond(requestId, {});
       break;
     }
@@ -1107,14 +1133,14 @@ async function handleMessage(msg) {
 
         const safeUrl = url.replace(/\/\/[^@]*@/, '//');
         if (isGitRepo) {
-          console.log(`[server:${serverId.slice(0,8)}] Git pull in ${targetFull}`);
+          log.server(serverId, `Git pull in ${targetFull}`);
           const pullArgs = ['-C', targetFull, 'pull', '--ff-only'];
           if (url !== safeUrl) pullArgs.push(url); // re-auth via URL for already-cloned private repos
           result = spawnSync('git', pullArgs, {
             timeout: 270000, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: 'echo' },
           });
         } else {
-          console.log(`[server:${serverId.slice(0,8)}] Git clone ${safeUrl} → ${targetFull}`);
+          log.server(serverId, `Git clone ${safeUrl} → ${targetFull}`);
           const args = ['clone', '--depth', '1'];
           if (branch) args.push('--branch', branch);
           args.push(url, targetFull);
@@ -1182,7 +1208,7 @@ async function watchDockerEvents() {
             const staleEntry = activeLogStreams.get(serverId);
             if (staleEntry) { try { staleEntry.stream.destroy(); } catch {} activeLogStreams.delete(serverId); }
             pendingLogSubs.delete(serverId);
-            console.log(`[server:${serverId.slice(0, 8)}] Container started — notifying panel`);
+            log.server(serverId, 'Container started — notifying panel');
             send({ type: 'server-status', serverId, status: 'running', containerId: ev.id });
           } else {
             const rawExit = ev.Actor?.Attributes?.exitCode ?? ev.Actor?.Attributes?.ExitCode;
@@ -1190,7 +1216,7 @@ async function watchDockerEvents() {
             // 0=clean, 130=SIGINT, 137=SIGKILL (docker stop timeout), 143=SIGTERM (docker stop)
             const normalExits = new Set([0, 130, 137, 143]);
             const status = !isNaN(exitCode) && !normalExits.has(exitCode) ? 'error' : 'stopped';
-            console.log(`[server:${serverId.slice(0, 8)}] Container exited (code ${rawExit ?? '?'}) — notifying panel (${status})`);
+            log.server(serverId, `Container exited (code ${rawExit ?? '?'}) → ${status}`);
             send({ type: 'server-status', serverId, status });
             const dieEntry = activeLogStreams.get(serverId);
             if (dieEntry) { try { dieEntry.stream.destroy(); } catch {} activeLogStreams.delete(serverId); }
@@ -1200,15 +1226,15 @@ async function watchDockerEvents() {
     });
 
     stream.on('error', err => {
-      console.error('[daemon] Docker events error:', err.message);
+      log.error('daemon', `Docker events error: ${err.message}`);
       setTimeout(watchDockerEvents, 5000);
     });
     stream.on('end', () => {
-      console.warn('[daemon] Docker events stream ended — restarting');
+      log.warn('daemon', 'Docker events stream ended — restarting');
       setTimeout(watchDockerEvents, 3000);
     });
   } catch (err) {
-    console.error('[daemon] Docker events watch failed:', err.message);
+    log.error('daemon', `Docker events watch failed: ${err.message}`);
     setTimeout(watchDockerEvents, 5000);
   }
 }

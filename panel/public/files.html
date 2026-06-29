@@ -25,6 +25,18 @@
     .status-btn { cursor:pointer; border-radius:3px; padding:0 3px; }
     .status-btn:hover { color:var(--text); background:rgba(255,255,255,.06); }
 
+    /* ── Editor tab bar ─────────────────────────────────────────── */
+    .editor-tabs { display:none; flex-shrink:0; background:var(--bg); border-bottom:1px solid var(--border); overflow-x:auto; }
+    .editor-tabs::-webkit-scrollbar { height:0; }
+    .editor-tab { display:inline-flex; align-items:center; gap:4px; padding:0 10px 0 12px; height:35px; font-size:12.5px; border:none; background:none; color:var(--text-muted); cursor:pointer; border-right:1px solid var(--border); border-bottom:2px solid transparent; white-space:nowrap; flex-shrink:0; transition:color .12s,background .12s; user-select:none; }
+    .editor-tab:hover { color:var(--text); background:rgba(255,255,255,.04); }
+    .editor-tab.active { color:var(--text); background:var(--bg2); border-bottom-color:var(--primary); }
+    .tab-dot { width:6px; height:6px; border-radius:50%; background:var(--warning,#f59e0b); flex-shrink:0; }
+    .tab-name { max-width:130px; overflow:hidden; text-overflow:ellipsis; font-size:12.5px; }
+    .tab-close { width:16px; height:16px; display:inline-flex; align-items:center; justify-content:center; border-radius:3px; font-size:15px; color:var(--text-dim); flex-shrink:0; line-height:1; margin-left:2px; }
+    .tab-close:hover { color:var(--text); background:rgba(255,255,255,.14); }
+    .file-row.open-other { background:rgba(99,102,241,.04); }
+
     /* ── Mobile file manager ─────────────────────────────── */
     .mobile-back-btn { display: none; }
 
@@ -376,11 +388,22 @@ const HOME = '/home/container';
 
 let server = null;
 let currentPath = HOME;
-let openFile = null;
+let openFile = null;       // path of file in active Monaco tab (null when previewing image/binary)
+let modified = false;      // dirty state of active Monaco tab
 let cachedDirFiles = [];
 let fileSearchQuery = '';
-let modified = false;
 let ctxTarget = null;
+
+// ── Tab state ─────────────────────────────────────────────────────────────────
+const MAX_TABS = 2;
+// Each tab: { path, modified, model (Monaco ITextModel), viewState }
+let tabs = [];
+let activeTabIdx = -1;
+let emptyModel = null;   // reusable empty Monaco model shown when no tab is active
+
+// Preview state (image / binary — doesn't replace a Monaco tab)
+let previewFile = null;  // path being previewed
+let previewMode = null;  // 'image' | 'binary' | null
 let newItemType = 'file';
 let renameTarget = null;
 let moveTarget = null;
@@ -514,8 +537,10 @@ function base64ToBlob(b64, mimeType) {
 
 // ── Image viewer ─────────────────────────────────────────────────────────────
 async function openImageViewer(filePath) {
+  previewFile = filePath;
+  previewMode = 'image';
+  // openFile remains the active Monaco tab path (or null) — don't clobber it
   setStatusState('Loading...');
-  setActiveRow(filePath);
   const fname = filePath.split('/').filter(Boolean).pop();
   const relPath = filePath.startsWith(HOME + '/') ? '~/' + filePath.slice(HOME.length + 1) : filePath;
   document.getElementById('editorFilename').textContent = fname;
@@ -534,11 +559,11 @@ async function openImageViewer(filePath) {
     const mime = imgMimeType(fname);
     document.getElementById('imageViewerImg').src = `data:${mime};base64,${b64}`;
     document.getElementById('imageViewer').classList.add('open');
-    openFile = filePath;
-    modified = false;
+    renderTabs(); // re-render so active tab loses highlight (previewMode is now set)
     mobileOpenEditor();
     setStatusState('Ready');
   } catch (e) {
+    previewFile = null; previewMode = null;
     setStatusState('Error: ' + e.message);
     document.getElementById('editorSubline').textContent = e.message;
   }
@@ -547,10 +572,9 @@ async function openImageViewer(filePath) {
 
 // ── Binary viewer ─────────────────────────────────────────────────────────────
 function openBinaryViewer(filePath, fname) {
-  if (modified && openFile && !confirm('You have unsaved changes. Discard them?')) return;
-  openFile = filePath;
-  modified = false;
-  setActiveRow(filePath);
+  previewFile = filePath;
+  previewMode = 'binary';
+  // openFile remains the active Monaco tab path — don't clobber it
   const relPath = filePath.startsWith(HOME + '/') ? '~/' + filePath.slice(HOME.length + 1) : filePath;
   document.getElementById('editorFilename').textContent = fname;
   document.getElementById('editorFilename').classList.remove('modified');
@@ -568,6 +592,7 @@ function openBinaryViewer(filePath, fname) {
   document.getElementById('statusLang').textContent = 'binary';
   setStatusState('Ready');
   updateStatusBar();
+  renderTabs();
   mobileOpenEditor();
 }
 
@@ -618,12 +643,15 @@ async function init() {
       bracketPairColorization: { enabled: true },
       guides: { bracketPairs: true },
     });
+    emptyModel = monaco.editor.createModel('', 'plaintext');
     monacoEditor.onDidChangeCursorPosition(() => updateStatusBar());
     monacoEditor.onDidChangeModelContent(() => {
-      if (!openFile) return;
+      if (!openFile || activeTabIdx < 0 || previewMode) return;
       modified = true;
+      if (tabs[activeTabIdx]) tabs[activeTabIdx].modified = true;
       document.getElementById('editorFilename').classList.add('modified');
       document.getElementById('saveBtn').disabled = false;
+      renderTabs();
       updateDirtyIndicator();
       updateStatusBar();
       if (!applyingRemote && fileSocket?.connected) {
@@ -720,6 +748,7 @@ function buildShell() {
         </aside>
 
         <main class="editor-pane">
+          <div class="editor-tabs" id="editorTabBar"></div>
           <div class="editor-toolbar">
             <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1">
               <button class="btn btn-ghost btn-sm mobile-back-btn" onclick="mobileBackToFiles()" style="flex-shrink:0;white-space:nowrap">← Files</button>
@@ -920,49 +949,85 @@ function renderFileList(files, dirPath) {
 
 // ── Editor ────────────────────────────────────────────────────────────────────
 async function openFileForEdit(filePath) {
-  if (modified && openFile && !confirm('You have unsaved changes. Discard them?')) return;
   const fname = filePath.split('/').filter(Boolean).pop();
 
-  if (isImageFile(fname)) { openFile = null; modified = false; return openImageViewer(filePath); }
-
+  if (isImageFile(fname)) { return openImageViewer(filePath); }
   if (isBinaryFile(fname)) { return openBinaryViewer(filePath, fname); }
 
-  setActiveRow(filePath);
-  setStatusState('Loading...');
+  // Already open in a tab → just switch to it
+  const existingIdx = findTabByPath(filePath);
+  if (existingIdx >= 0) { switchToTab(existingIdx); return; }
 
-  // Close image/binary viewers if open
-  document.getElementById('imageViewer').classList.remove('open');
-  const _bvEdit = document.getElementById('binaryViewer');
-  if (_bvEdit) _bvEdit.style.display = 'none';
+  // Determine which slot to use
+  let targetIdx;
+  if (tabs.length < MAX_TABS) {
+    targetIdx = tabs.length;
+    tabs.push({ path: filePath, modified: false, model: null, viewState: null });
+  } else {
+    // Replace the non-active tab
+    targetIdx = activeTabIdx === 0 ? 1 : 0;
+    const victim = tabs[targetIdx];
+    if (victim.modified) {
+      const vname = victim.path.split('/').filter(Boolean).pop();
+      if (!confirm(`"${vname}" has unsaved changes. Discard them?`)) { tabs.pop(); return; }
+    }
+    if (victim.model) { victim.model.dispose(); victim.model = null; }
+    tabs[targetIdx] = { path: filePath, modified: false, model: null, viewState: null };
+  }
+
+  // Close any active preview
+  if (previewMode) {
+    previewFile = null; previewMode = null;
+    document.getElementById('imageViewer').classList.remove('open');
+    document.getElementById('imageViewerImg').src = '';
+    const bvEd = document.getElementById('binaryViewer');
+    if (bvEd) bvEd.style.display = 'none';
+  }
+
+  // Save viewState of the tab we're leaving
+  if (activeTabIdx >= 0 && activeTabIdx !== targetIdx && monacoReady && monacoEditor && tabs[activeTabIdx]) {
+    tabs[activeTabIdx].viewState = monacoEditor.saveViewState();
+  }
+
+  // Leave old collab room if switching tabs
+  if (activeTabIdx !== targetIdx) {
+    clearTimeout(changeDebounceTimer);
+    if (fileSocket?.connected && openFile) fileSocket.emit('file:leave', {});
+    colabPresence = []; renderColabPresence();
+  }
+
+  setStatusState('Loading...');
 
   let waited = 0;
   while (!monacoReady) {
     await new Promise(r => setTimeout(r, 100));
-    if ((waited += 100) > 15000) { setStatusState('Editor failed to load'); return; }
+    if ((waited += 100) > 15000) { setStatusState('Editor failed to load'); tabs.splice(targetIdx, 1); return; }
   }
 
   try {
     const { content } = await API.get(`/servers/${serverId}/files/read?path=${encodeURIComponent(filePath)}`);
+
+    const lang = detectLanguage(fname);
+    const model = monaco.editor.createModel(content, lang);
+    tabs[targetIdx].model = model;
+    tabs[targetIdx].modified = false;
+
+    activeTabIdx = targetIdx;
     openFile = filePath;
     modified = false;
 
-    const lang = detectLanguage(fname);
     const relPath = filePath.startsWith(HOME + '/') ? '~/' + filePath.slice(HOME.length + 1) : filePath;
-
     document.getElementById('editorFilename').textContent = fname;
     document.getElementById('editorFilename').classList.remove('modified');
     document.getElementById('editorSubline').textContent = relPath;
     document.getElementById('editorEmpty').style.display = 'none';
+    document.getElementById('editorArea').classList.add('open');
+    document.getElementById('imageViewer').classList.remove('open');
+    const bvEd2 = document.getElementById('binaryViewer');
+    if (bvEd2) bvEd2.style.display = 'none';
 
-    const area = document.getElementById('editorArea');
-    area.classList.add('open');
-
-    monaco.editor.setModelLanguage(monacoEditor.getModel(), lang);
-    monacoEditor.setValue(content);
-    modified = false; // setValue fires onDidChangeModelContent synchronously, so reset here
-    updateDirtyIndicator();
+    monacoEditor.setModel(model);
     monacoEditor.setScrollPosition({ scrollTop: 0 });
-    // Force Monaco to recalculate its size now the div is visible
     requestAnimationFrame(() => { monacoEditor.layout(); monacoEditor.focus(); });
     mobileOpenEditor();
 
@@ -973,15 +1038,20 @@ async function openFileForEdit(filePath) {
     document.getElementById('statusLang').textContent = lang !== 'plaintext' ? lang : '';
     setStatusState('Ready');
     updateStatusBar();
+    setActiveRow(filePath);
+    renderTabs();
     joinFileRoom(filePath);
   } catch (e) {
+    // Remove the slot we optimistically created if load failed
+    if (tabs[targetIdx] && !tabs[targetIdx].model) tabs.splice(targetIdx, 1);
+    if (activeTabIdx >= tabs.length) activeTabIdx = tabs.length - 1;
     setStatusState('Error');
     document.getElementById('editorSubline').textContent = e.message;
   }
 }
 
 async function saveFile() {
-  if (!openFile || !monacoReady) return;
+  if (!openFile || !monacoReady || activeTabIdx < 0 || previewMode) return;
   const btn = document.getElementById('saveBtn');
   btn.innerHTML = '<span class="spinner"></span>';
   btn.disabled = true;
@@ -989,7 +1059,9 @@ async function saveFile() {
   try {
     await API.put(`/servers/${serverId}/files/write`, { path: openFile, content: monacoEditor.getValue() });
     modified = false;
+    if (tabs[activeTabIdx]) tabs[activeTabIdx].modified = false;
     document.getElementById('editorFilename').classList.remove('modified');
+    renderTabs();
     updateDirtyIndicator();
     setStatusState('Saved');
     setTimeout(() => { if (!modified) setStatusState('Ready'); }, 1500);
@@ -1002,38 +1074,34 @@ async function saveFile() {
 }
 
 function closeFile() {
+  // If previewing image/binary, close preview and restore the active Monaco tab (if any)
+  if (previewMode) {
+    previewFile = null; previewMode = null;
+    document.getElementById('imageViewer').classList.remove('open');
+    document.getElementById('imageViewerImg').src = '';
+    const bvCl = document.getElementById('binaryViewer');
+    if (bvCl) bvCl.style.display = 'none';
+    if (activeTabIdx >= 0 && tabs[activeTabIdx]) {
+      switchToTab(activeTabIdx);
+    } else {
+      resetEditor();
+    }
+    return;
+  }
+  if (activeTabIdx < 0) return;
   if (modified && !confirm('You have unsaved changes. Discard them?')) return;
-  leaveFileRoom();
-  mobileBackToFiles();
-  openFile = null;
-  modified = false;
-  updateDirtyIndicator();
-  setActiveRow(null);
-  document.getElementById('editorFilename').textContent = 'No file open';
-  document.getElementById('editorFilename').classList.remove('modified');
-  document.getElementById('editorSubline').textContent = 'Select a file from the explorer';
-  document.getElementById('editorEmpty').style.display = 'flex';
-  document.getElementById('editorArea').classList.remove('open');
-  document.getElementById('imageViewer').classList.remove('open');
-  document.getElementById('imageViewerImg').src = '';
-  document.getElementById('binaryViewer').style.display = 'none';
-  document.getElementById('saveBtn').disabled = true;
-  document.getElementById('closeBtn').disabled = true;
-  document.getElementById('downloadBtn').disabled = true;
-  if (canShare()) document.getElementById('shareFileBtn').disabled = true;
-  document.getElementById('statusLang').textContent = '';
-  if (monacoReady) monacoEditor.setValue('');
-  updateStatusBar();
+  closeTabAtIdx(activeTabIdx);
 }
 
 async function downloadOpenFile() {
-  if (!openFile) return;
-  const fname = openFile.split('/').filter(Boolean).pop();
-  if (isBinaryFile(fname)) {
-    await downloadFileBinary(openFile, fname);
+  const filePath = openFile || previewFile;
+  if (!filePath) return;
+  const fname = filePath.split('/').filter(Boolean).pop();
+  if (isBinaryFile(fname) || isImageFile(fname)) {
+    await downloadFileBinary(filePath, fname);
   } else {
-    const content = (monacoReady && monacoEditor) ? monacoEditor.getValue()
-      : (await API.get(`/servers/${serverId}/files/read?path=${encodeURIComponent(openFile)}`)).content;
+    const content = (monacoReady && monacoEditor && openFile) ? monacoEditor.getValue()
+      : (await API.get(`/servers/${serverId}/files/read?path=${encodeURIComponent(filePath)}`)).content;
     const blob = new Blob([content]);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1339,7 +1407,8 @@ async function submitRename() {
   const newPath = joinPath(parentPath(renameTarget.path), newName);
   try {
     await API.post(`/servers/${serverId}/files/rename`, { oldPath: renameTarget.path, newPath });
-    if (openFile === renameTarget.path) closeFile();
+    const riIdx = findTabByPath(renameTarget.path);
+    if (riIdx >= 0) closeTabAtIdx(riIdx);
     closeModal('renameModal');
     await listDir(currentPath);
   } catch (e) {
@@ -1373,7 +1442,8 @@ async function submitMove() {
   btn.disabled = true;
   try {
     await API.post(`/servers/${serverId}/files/rename`, { oldPath: moveTarget.path, newPath: dest });
-    if (openFile === moveTarget.path) closeFile();
+    const miIdx = findTabByPath(moveTarget.path);
+    if (miIdx >= 0) closeTabAtIdx(miIdx);
     closeModal('moveModal');
     await listDir(currentPath);
   } catch (e) {
@@ -1390,7 +1460,10 @@ async function confirmDelete({ path, isDir, name }) {
   setStatusState('Deleting...');
   try {
     await API.delete(`/servers/${serverId}/files?path=${encodeURIComponent(path)}`);
-    if (openFile === path || (isDir && openFile?.startsWith(path + '/'))) closeFile();
+    // Close any tabs pointing at the deleted path (highest index first to avoid shift bugs)
+    tabs.map((t, i) => i).reverse().forEach(i => {
+      if (tabs[i].path === path || (isDir && tabs[i].path.startsWith(path + '/'))) closeTabAtIdx(i);
+    });
     await listDir(currentPath);
     setStatusState('Ready');
   } catch (e) {
@@ -1431,9 +1504,20 @@ async function extractArchive(archivePath, name) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
-function setActiveRow(filePath) {
+function setActiveRow(activeFilePath) {
+  const allOpenPaths = new Set(tabs.map(t => t.path));
   document.querySelectorAll('[data-file-path]').forEach(el => {
-    el.classList.toggle('active', !!filePath && el.dataset.filePath === filePath);
+    const p = el.dataset.filePath;
+    if (p === activeFilePath && !previewMode) {
+      el.classList.add('active');
+      el.classList.remove('open-other');
+    } else if (allOpenPaths.has(p)) {
+      el.classList.remove('active');
+      el.classList.add('open-other');
+    } else {
+      el.classList.remove('active');
+      el.classList.remove('open-other');
+    }
   });
 }
 
@@ -1542,6 +1626,151 @@ function formatBytes(size) {
   if (n < 1024) return `${n}B`;
   if (n < 1048576) return `${(n / 1024).toFixed(1)}K`;
   return `${(n / 1048576).toFixed(1)}M`;
+}
+
+// ── Tab management ────────────────────────────────────────────────────────────
+function findTabByPath(path) {
+  return tabs.findIndex(t => t.path === path);
+}
+
+function renderTabs() {
+  const bar = document.getElementById('editorTabBar');
+  if (!bar) return;
+  if (!tabs.length) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  bar.innerHTML = tabs.map((t, i) => {
+    const fname = t.path.split('/').filter(Boolean).pop();
+    const isActive = i === activeTabIdx && !previewMode;
+    return `<button class="editor-tab${isActive ? ' active' : ''}" onclick="switchToTab(${i})" title="${esc(t.path)}">
+      ${t.modified ? '<span class="tab-dot"></span>' : ''}
+      <span class="tab-name">${esc(fname)}</span>
+      <span class="tab-close" onclick="closeTabAt(event,${i})" title="Close tab">\xd7</span>
+    </button>`;
+  }).join('');
+}
+
+function switchToTab(idx) {
+  if (idx === activeTabIdx && !previewMode) return;
+
+  // Exit preview mode
+  if (previewMode) {
+    previewFile = null; previewMode = null;
+    document.getElementById('imageViewer').classList.remove('open');
+    document.getElementById('imageViewerImg').src = '';
+    const bvs = document.getElementById('binaryViewer');
+    if (bvs) bvs.style.display = 'none';
+  }
+
+  // Save viewState of current active tab
+  if (activeTabIdx >= 0 && tabs[activeTabIdx] && monacoReady && monacoEditor) {
+    tabs[activeTabIdx].viewState = monacoEditor.saveViewState();
+  }
+
+  // Leave old collab room
+  clearTimeout(changeDebounceTimer);
+  if (fileSocket?.connected && openFile) fileSocket.emit('file:leave', {});
+  colabPresence = []; renderColabPresence();
+
+  activeTabIdx = idx;
+  const tab = tabs[idx];
+  openFile = tab.path;
+  modified = tab.modified;
+
+  if (tab.model && monacoEditor) {
+    monacoEditor.setModel(tab.model);
+    if (tab.viewState) monacoEditor.restoreViewState(tab.viewState);
+  }
+
+  const fname = tab.path.split('/').filter(Boolean).pop();
+  const lang = detectLanguage(fname);
+  const relPath = tab.path.startsWith(HOME + '/') ? '~/' + tab.path.slice(HOME.length + 1) : tab.path;
+
+  document.getElementById('editorFilename').textContent = fname;
+  document.getElementById('editorFilename').classList.toggle('modified', modified);
+  document.getElementById('editorSubline').textContent = relPath;
+  document.getElementById('editorEmpty').style.display = 'none';
+  document.getElementById('editorArea').classList.add('open');
+  document.getElementById('saveBtn').disabled = !modified;
+  document.getElementById('closeBtn').disabled = false;
+  document.getElementById('downloadBtn').disabled = false;
+  if (canShare()) document.getElementById('shareFileBtn').disabled = false;
+  document.getElementById('statusLang').textContent = lang !== 'plaintext' ? lang : '';
+
+  setActiveRow(openFile);
+  renderTabs();
+  updateStatusBar();
+  setStatusState('Ready');
+  requestAnimationFrame(() => { monacoEditor?.layout(); monacoEditor?.focus(); });
+  mobileOpenEditor();
+  joinFileRoom(openFile);
+}
+
+function closeTabAtIdx(idx) {
+  if (idx < 0 || idx >= tabs.length) return;
+  const tab = tabs[idx];
+  const oldModel = tab.model;
+  const wasActive = idx === activeTabIdx;
+
+  if (wasActive) {
+    clearTimeout(changeDebounceTimer);
+    if (fileSocket?.connected && openFile) fileSocket.emit('file:leave', {});
+    colabPresence = []; renderColabPresence();
+  }
+
+  tabs.splice(idx, 1);
+
+  if (!tabs.length) {
+    activeTabIdx = -1; openFile = null; modified = false;
+    resetEditor();
+    if (oldModel) oldModel.dispose();
+    return;
+  }
+
+  let newActiveIdx = activeTabIdx;
+  if (idx < activeTabIdx) newActiveIdx = activeTabIdx - 1;
+  else if (idx === activeTabIdx) newActiveIdx = Math.max(0, idx - 1);
+
+  if (wasActive) {
+    activeTabIdx = -1; // force switchToTab to not bail early
+    switchToTab(newActiveIdx);
+  } else {
+    activeTabIdx = newActiveIdx;
+    setActiveRow(openFile);
+    renderTabs();
+  }
+
+  if (oldModel) oldModel.dispose();
+}
+
+function closeTabAt(e, idx) {
+  e.stopPropagation();
+  const tab = tabs[idx];
+  const fname = tab.path.split('/').filter(Boolean).pop();
+  if (tab.modified && !confirm(`"${fname}" has unsaved changes. Discard them?`)) return;
+  closeTabAtIdx(idx);
+}
+
+function resetEditor() {
+  mobileBackToFiles();
+  setActiveRow(null);
+  document.getElementById('editorFilename').textContent = 'No file open';
+  document.getElementById('editorFilename').classList.remove('modified');
+  document.getElementById('editorSubline').textContent = 'Select a file from the explorer';
+  document.getElementById('editorEmpty').style.display = 'flex';
+  document.getElementById('editorArea').classList.remove('open');
+  document.getElementById('imageViewer').classList.remove('open');
+  document.getElementById('imageViewerImg').src = '';
+  const bvr = document.getElementById('binaryViewer');
+  if (bvr) bvr.style.display = 'none';
+  document.getElementById('saveBtn').disabled = true;
+  document.getElementById('closeBtn').disabled = true;
+  document.getElementById('downloadBtn').disabled = true;
+  if (canShare()) document.getElementById('shareFileBtn').disabled = true;
+  document.getElementById('statusLang').textContent = '';
+  document.getElementById('colabPresence').innerHTML = '';
+  if (monacoReady && monacoEditor && emptyModel) monacoEditor.setModel(emptyModel);
+  renderTabs();
+  updateStatusBar();
 }
 
 // ── Git unified modal ─────────────────────────────────────────────────────────
@@ -1703,10 +1932,12 @@ async function submitGitReset() {
 
 function updateDirtyIndicator() {
   document.querySelectorAll('.file-row.dirty').forEach(el => el.classList.remove('dirty'));
-  if (modified && openFile) {
-    document.querySelectorAll('[data-file-path]').forEach(el => {
-      if (el.dataset.filePath === openFile) el.classList.add('dirty');
-    });
+  for (const tab of tabs) {
+    if (tab.modified && tab.path) {
+      document.querySelectorAll('[data-file-path]').forEach(el => {
+        if (el.dataset.filePath === tab.path) el.classList.add('dirty');
+      });
+    }
   }
 }
 
@@ -1771,7 +2002,9 @@ async function bulkDelete() {
   for (const { path } of selectedItems.values()) {
     try {
       await API.delete(`/servers/${serverId}/files?path=${encodeURIComponent(path)}`);
-      if (openFile === path || (openFile && openFile.startsWith(path + '/'))) closeFile();
+      tabs.map((t, i) => i).reverse().forEach(i => {
+        if (tabs[i].path === path || tabs[i].path.startsWith(path + '/')) closeTabAtIdx(i);
+      });
     } catch (e) {
       errors.push(`${path}: ${e.message}`);
     }
@@ -1807,7 +2040,8 @@ async function submitBulkMove() {
     if (newPath === path) continue;
     try {
       await API.post(`/servers/${serverId}/files/rename`, { oldPath: path, newPath });
-      if (openFile === path) closeFile();
+      const bmIdx = findTabByPath(path);
+      if (bmIdx >= 0) closeTabAtIdx(bmIdx);
     } catch (e) {
       errors.push(`${name}: ${e.message}`);
     }
@@ -2068,7 +2302,7 @@ async function openFileRedactView(sid, label) {
 }
 
 window.addEventListener('beforeunload', e => {
-  if (modified) { e.preventDefault(); e.returnValue = ''; }
+  if (tabs.some(t => t.modified)) { e.preventDefault(); e.returnValue = ''; }
 });
 
 // ── Collaborative editing ─────────────────────────────────────────────────────
@@ -2076,8 +2310,8 @@ function connectFileSocket() {
   fileSocket = io({ auth: { token: getToken() } });
 
   fileSocket.on('connect', () => {
-    // Rejoin after reconnect if a file is already open
-    if (openFile) fileSocket.emit('file:join', { serverId, filePath: openFile });
+    // Rejoin active Monaco tab after reconnect
+    if (openFile && !previewMode) fileSocket.emit('file:join', { serverId, filePath: openFile });
   });
 
   fileSocket.on('file:presence', ({ users }) => {
