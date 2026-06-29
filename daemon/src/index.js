@@ -1037,9 +1037,32 @@ async function handleMessage(msg) {
 
       if (!fileData && !imageData) {
         respond(requestId, { data: null, reason: 'no-datapath' });
-      } else {
-        respond(requestId, { data: fileData, imageData });
+        break;
       }
+
+      // Send in 5 MB base64 chunks so progress is visible on the panel end
+      const CHUNK_SIZE = 5 * 1024 * 1024;
+
+      if (fileData) {
+        const total = Math.ceil(fileData.length / CHUNK_SIZE);
+        log.server(expServerId, `Sending data dir in ${total} chunk(s)…`);
+        for (let i = 0; i < total; i++) {
+          send({ type: 'export-chunk', requestId, part: 'files', index: i, total,
+            chunk: fileData.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE) });
+        }
+      }
+
+      if (imageData) {
+        const total = Math.ceil(imageData.length / CHUNK_SIZE);
+        log.server(expServerId, `Sending container image in ${total} chunk(s)…`);
+        for (let i = 0; i < total; i++) {
+          send({ type: 'export-chunk', requestId, part: 'image', index: i, total,
+            chunk: imageData.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE) });
+        }
+      }
+
+      send({ type: 'export-done', requestId });
+      log.server(expServerId, 'All chunks sent');
       break;
     }
 

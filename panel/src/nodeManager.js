@@ -44,6 +44,7 @@ class NodeManager {
   constructor() {
     this.connections = new Map();   // nodeId → { ws, nodeData }
     this.pending = new Map();       // requestId → { resolve, reject, timer, nodeId }
+    this.exportBuffers = new Map(); // requestId → { files: [], image: [] }
     this.logListeners = new Map();  // serverId → Set<socket.io socket>
     this.lastHeartbeat = new Map(); // nodeId → Date.now() timestamp
     this.io = null;
@@ -235,6 +236,32 @@ class NodeManager {
             log.warn('server', `Reset stuck installing server ${server.id.slice(0, 8)} to error — no container found on node after reconnect`);
           }
         }
+        break;
+      }
+
+      case 'export-chunk': {
+        const { requestId: chunkReqId, part, index, total, chunk } = msg;
+        if (!this.exportBuffers.has(chunkReqId)) {
+          this.exportBuffers.set(chunkReqId, { files: [], image: [] });
+        }
+        this.exportBuffers.get(chunkReqId)[part === 'files' ? 'files' : 'image'][index] = chunk;
+        const sizeMB = (chunk.length / 1024 / 1024).toFixed(1);
+        log.info('transfer', `Export chunk ${index + 1}/${total} [${part}] — ${sizeMB} MB`);
+        break;
+      }
+
+      case 'export-done': {
+        const { requestId: doneReqId } = msg;
+        const buf = this.exportBuffers.get(doneReqId);
+        this.exportBuffers.delete(doneReqId);
+        const pending = this.pending.get(doneReqId);
+        if (!pending) break;
+        clearTimeout(pending.timer);
+        this.pending.delete(doneReqId);
+        const data      = buf?.files?.length  ? buf.files.join('')  : null;
+        const imageData = buf?.image?.length  ? buf.image.join('')  : null;
+        log.ok('transfer', `Export complete — files: ${data ? (data.length / 1024 / 1024).toFixed(1) + ' MB' : 'none'}, image: ${imageData ? (imageData.length / 1024 / 1024).toFixed(1) + ' MB' : 'none'}`);
+        pending.resolve({ data, imageData });
         break;
       }
 
