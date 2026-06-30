@@ -121,13 +121,6 @@
   function showApproveUI(username) {
     const panelName = document.getElementById('brandName').textContent;
     setBody(`
-      <div class="approve-icon">
-        <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-          <rect x="3" y="14" width="7" height="7" rx="1"/>
-          <path d="M14 14h2v2h-2zm4 0h3v3h-3zm-4 4h3v3h-3zm4 2h3v2h-3z"/>
-        </svg>
-      </div>
       <div class="approve-title">Authorize Login</div>
       <div class="approve-sub">
         Signed in as <strong>${username}</strong>. Allow a new session to log in to <strong>${panelName}</strong>?
