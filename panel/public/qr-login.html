@@ -35,8 +35,17 @@
     }
     .approve-brand {
       display: flex; align-items: center; justify-content: center;
-      gap: 10px; margin-bottom: 24px;
+      gap: 9px; margin-bottom: 24px;
     }
+    .approve-logo {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: var(--primary);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 800; color: #fff;
+      overflow: hidden; flex-shrink: 0;
+    }
+    .approve-logo img { width: 100%; height: 100%; object-fit: cover; }
+    .approve-brand-name { font-size: 15px; font-weight: 700; color: var(--text); }
     .approve-title { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
     .approve-sub { font-size: 14px; color: var(--text-muted); line-height: 1.55; margin-bottom: 24px; }
     .approve-sub strong { color: var(--text); }
@@ -49,8 +58,8 @@
 <body>
 <div class="approve-card" id="card">
   <div class="approve-brand">
-    <div class="logo-icon" id="brandLogo" style="overflow:hidden">N</div>
-    <div id="brandName" style="font-weight:700;font-size:18px">Nodactyl</div>
+    <div class="approve-logo" id="brandLogo">N</div>
+    <div class="approve-brand-name" id="brandName">Nodactyl</div>
   </div>
 
   <div id="cardBody">
@@ -72,7 +81,7 @@
     if (s.panel_logo) {
       const el = document.getElementById('brandLogo');
       if (s.panel_logo.startsWith('http') || s.panel_logo.startsWith('/') || s.panel_logo.startsWith('data:')) {
-        el.innerHTML = `<img src="${s.panel_logo}" style="width:100%;height:100%;object-fit:cover;border-radius:9px" alt="">`;
+        el.innerHTML = `<img src="${s.panel_logo}" alt="">`;
       } else {
         el.textContent = s.panel_logo;
       }
