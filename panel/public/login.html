@@ -321,6 +321,11 @@
     if (s.github_enabled  === '1') { document.getElementById('githubSection').style.display  = ''; showOauth = true; }
     if (showOauth) { document.getElementById('oauthSection').style.display = ''; document.getElementById('oauthSection').dataset.visible = '1'; }
     if (s.passkeys_enabled !== '0' && window.PublicKeyCredential) document.getElementById('passkeySection').style.display = '';
+    // QR: only on non-touch desktop AND if admin hasn't disabled it
+    if (s.qr_login_enabled !== '0' && !('ontouchstart' in window) && window.matchMedia('(min-width: 768px)').matches) {
+      document.getElementById('qrSection').style.display = '';
+      window._qrSectionVisible = true;
+    }
   }).catch(() => {});
 
   function loginWithDiscord() {
@@ -444,11 +449,6 @@
 
   // --- QR Login ---
   let _qrToken = null, _qrPoll = null, _qrCountdown = null, _qrExpiresAt = 0;
-
-  // Only show QR option on devices likely to be desktops (not touchscreens)
-  if (!('ontouchstart' in window) && window.matchMedia('(min-width: 768px)').matches) {
-    document.getElementById('qrSection').style.display = '';
-  }
 
   async function showQrLogin() {
     document.getElementById('loginForm').style.display = 'none';

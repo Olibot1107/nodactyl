@@ -183,6 +183,21 @@
       return;
     }
 
+    // Check if QR login is enabled on this panel
+    const pub = await fetch('/api/settings/public').then(r => r.json()).catch(() => ({}));
+    if (pub.qr_login_enabled === '0') {
+      setBody(`
+        <div class="approve-icon" style="background:rgba(239,68,68,.1);color:#ef4444">
+          <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="9"/><path d="m15 9-6 6m0-6 6 6"/>
+          </svg>
+        </div>
+        <div class="approve-title">QR Login Disabled</div>
+        <div class="approve-sub">The admin has disabled QR code login on this panel.</div>
+      `);
+      return;
+    }
+
     const headers = {};
     if (_authToken) headers['Authorization'] = 'Bearer ' + _authToken;
 

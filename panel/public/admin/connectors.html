@@ -168,12 +168,19 @@ function passkeyBadge() {
     ? `<span style="display:inline-flex;align-items:center;font-size:11px;font-weight:600;color:#4ade80"><span class="status-dot ok"></span>Enabled</span>`
     : `<span style="display:inline-flex;align-items:center;font-size:11px;font-weight:600;color:var(--text-dim)"><span class="status-dot off"></span>Disabled</span>`;
 }
+function qrBadge() {
+  const on = settings.qr_login_enabled !== '0';
+  return on
+    ? `<span style="display:inline-flex;align-items:center;font-size:11px;font-weight:600;color:#4ade80"><span class="status-dot ok"></span>Enabled</span>`
+    : `<span style="display:inline-flex;align-items:center;font-size:11px;font-weight:600;color:var(--text-dim)"><span class="status-dot off"></span>Disabled</span>`;
+}
 
 function render() {
   const discordEnabled = settings.discord_enabled === '1';
   const githubEnabled  = settings.github_enabled  === '1';
-  const totpEnabled    = settings.totp_enabled    !== '0';
+  const totpEnabled     = settings.totp_enabled     !== '0';
   const passkeysEnabled = settings.passkeys_enabled !== '0';
+  const qrEnabled       = settings.qr_login_enabled !== '0';
   const discordCb = esc(callbackUrl('discord'));
   const githubCb  = esc(callbackUrl('github'));
 
@@ -364,6 +371,39 @@ function render() {
       </div>
     </div>
 
+    <div class="connector-admin-card">
+      <div class="connector-admin-header">
+        <div class="connector-service-icon" style="background:#0ea5e9">
+          <svg width="22" height="22" fill="none" stroke="white" stroke-width="1.8" viewBox="0 0 24 24">
+            <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/>
+            <path d="M14 14h2v2h-2zm4 0h3v3h-3zm-4 4h3v3h-3zm4 2h3v2h-3z"/>
+          </svg>
+        </div>
+        <div class="connector-header-info">
+          <div class="connector-header-name">QR Code Login</div>
+          <div class="connector-header-sub">Scan a QR code on desktop to log in from mobile</div>
+        </div>
+        ${qrBadge()}
+      </div>
+      <div class="connector-admin-body">
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Allow QR code login</div>
+            <div class="toggle-sub">When off, the QR option is hidden from the login page and all QR sessions are rejected</div>
+          </div>
+          <label class="toggle-switch orange">
+            <input type="checkbox" id="qr_login_enabled" ${qrEnabled ? 'checked' : ''}>
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);line-height:1.7;margin-bottom:18px">
+          Shows a QR code on the desktop login page. Scan it with a phone that's already logged in to approve the login — no password needed on the new device.
+        </div>
+        <button class="btn btn-primary" id="qrSaveBtn" onclick="saveQrLogin()">Save</button>
+      </div>
+    </div>
+
     </div>`;
 }
 
@@ -463,6 +503,17 @@ async function savePasskeys() {
     settings = await API.get('/settings');
     render();
     showOk('Passkeys setting saved.');
+  } catch (e) { showErr(e.message); } finally { btn.innerHTML = 'Save'; btn.disabled = false; }
+}
+
+async function saveQrLogin() {
+  const btn = document.getElementById('qrSaveBtn');
+  btn.innerHTML = '<span class="spinner"></span> Saving…'; btn.disabled = true;
+  try {
+    await API.patch('/settings', { qr_login_enabled: document.getElementById('qr_login_enabled').checked ? '1' : '0' });
+    settings = await API.get('/settings');
+    render();
+    showOk('QR login setting saved.');
   } catch (e) { showErr(e.message); } finally { btn.innerHTML = 'Save'; btn.disabled = false; }
 }
 

@@ -251,6 +251,8 @@ const qrCreateLimiter = rateLimit({
 });
 
 router.post('/qr/create', qrCreateLimiter, (req, res) => {
+  const qrSetting = db.prepare("SELECT value FROM settings WHERE key = 'qr_login_enabled'").get()?.value;
+  if (qrSetting === '0') return res.status(403).json({ error: 'QR code login is disabled on this panel' });
   const token = uuidv4();
   qrSessions.set(token, { userId: null, status: 'pending', createdAt: Date.now() });
   res.json({ token, expiresIn: 180 });
