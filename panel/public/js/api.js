@@ -12,98 +12,66 @@ if ('serviceWorker' in navigator) {
   const CSS = `
     #pwa-card {
       position: fixed;
-      bottom: 20px;
-      right: 20px;
+      bottom: 20px; right: 20px;
       z-index: 9999;
-      width: 320px;
+      width: 290px;
       max-width: calc(100vw - 32px);
-      background: #13141a;
-      border: 1px solid rgba(249,115,22,.4);
-      border-radius: 16px;
-      box-shadow: 0 16px 48px rgba(0,0,0,.7), 0 0 0 1px rgba(249,115,22,.06), inset 0 1px 0 rgba(255,255,255,.04);
-      padding: 20px;
+      background: #16171d;
+      border: 1px solid rgba(255,255,255,.09);
+      border-radius: 14px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.55);
+      padding: 15px 16px;
       font-family: 'Inter', system-ui, sans-serif;
       transform: translateY(calc(100% + 28px));
       opacity: 0;
-      transition: transform .4s cubic-bezier(.34,1.56,.64,1), opacity .3s ease;
+      transition: transform .3s cubic-bezier(.34,1.3,.64,1), opacity .2s ease;
     }
-    #pwa-card.show {
-      transform: translateY(0);
-      opacity: 1;
-    }
+    #pwa-card.show { transform: translateY(0); opacity: 1; }
     #pwa-card-close {
-      position: absolute;
-      top: 12px; right: 12px;
-      background: rgba(255,255,255,.06);
-      border: none; border-radius: 50%;
-      width: 26px; height: 26px;
+      position: absolute; top: 10px; right: 10px;
+      background: none; border: none; border-radius: 4px;
+      width: 22px; height: 22px;
       display: flex; align-items: center; justify-content: center;
-      cursor: pointer; color: #9597b0; font-size: 13px;
-      transition: background .15s, color .15s;
+      cursor: pointer; color: #555; transition: color .15s;
     }
-    #pwa-card-close:hover { background: rgba(255,255,255,.12); color: #f1f2f6; }
-    #pwa-card-head {
-      display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
-    }
+    #pwa-card-close:hover { color: #aaa; }
+    #pwa-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 11px; }
     #pwa-card-logo {
-      width: 48px; height: 48px; border-radius: 12px; overflow: hidden; flex-shrink: 0;
+      width: 38px; height: 38px; border-radius: 9px; overflow: hidden; flex-shrink: 0;
       background: rgba(249,115,22,.12);
-      display: flex; align-items: center; justify-content: center;
+      display: flex; align-items: center; justify-content: center; font-size: 18px;
     }
     #pwa-card-logo img { width: 100%; height: 100%; object-fit: cover; }
-    #pwa-card-name { font-size: 15px; font-weight: 700; color: #f1f2f6; line-height: 1.2; }
-    #pwa-card-tagline { font-size: 11.5px; color: #9597b0; margin-top: 3px; }
-    #pwa-card-perks {
-      display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px;
-    }
-    .pwa-perk {
-      font-size: 10.5px; font-weight: 600;
-      background: rgba(255,255,255,.05);
-      border: 1px solid rgba(255,255,255,.08);
-      border-radius: 99px; padding: 3px 9px;
-      color: #9597b0;
-    }
-    #pwa-card-actions { display: flex; gap: 8px; }
+    #pwa-card-name { font-size: 14px; font-weight: 700; color: #e8e9f0; }
+    #pwa-card-tagline { font-size: 11.5px; color: #5a5c70; margin-top: 2px; }
+    #pwa-card-actions { display: flex; gap: 7px; }
     #pwa-card-install {
-      flex: 1;
-      background: #f97316;
-      color: #fff;
-      border: none; border-radius: 9px;
-      padding: 9px 0;
-      font-size: 13px; font-weight: 700;
-      cursor: pointer;
-      transition: background .15s, transform .1s, box-shadow .15s;
-      box-shadow: 0 4px 12px rgba(249,115,22,.35);
+      flex: 1; background: #f97316; color: #fff;
+      border: none; border-radius: 8px; padding: 8px 0;
+      font-size: 12.5px; font-weight: 600; cursor: pointer;
+      transition: background .15s;
     }
-    #pwa-card-install:hover  { background: #ea6c09; box-shadow: 0 4px 18px rgba(249,115,22,.5); }
-    #pwa-card-install:active { transform: scale(.97); }
+    #pwa-card-install:hover { background: #ea6c09; }
     #pwa-card-later {
-      background: rgba(255,255,255,.06);
-      color: #9597b0;
-      border: 1px solid rgba(255,255,255,.08);
-      border-radius: 9px;
-      padding: 9px 14px;
-      font-size: 13px; font-weight: 600;
-      cursor: pointer;
+      background: rgba(255,255,255,.05); color: #6b7280;
+      border: 1px solid rgba(255,255,255,.07); border-radius: 8px;
+      padding: 8px 12px; font-size: 12.5px; font-weight: 500; cursor: pointer;
       transition: background .15s, color .15s;
     }
-    #pwa-card-later:hover { background: rgba(255,255,255,.1); color: #f1f2f6; }
-    #pwa-ios-steps {
-      display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;
-    }
+    #pwa-card-later:hover { background: rgba(255,255,255,.09); color: #d1d5db; }
+    #pwa-ios-steps { display: flex; flex-direction: column; gap: 9px; margin-bottom: 13px; }
     .pwa-ios-step {
-      display: flex; align-items: center; gap: 10px;
-      font-size: 12px; color: #9597b0;
+      display: flex; align-items: flex-start; gap: 9px;
+      font-size: 12px; color: #6b7280; line-height: 1.45;
     }
     .pwa-ios-step-num {
-      width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
-      background: rgba(249,115,22,.15); border: 1px solid rgba(249,115,22,.3);
+      width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; margin-top: 1px;
+      background: rgba(249,115,22,.1); border: 1px solid rgba(249,115,22,.22);
       display: flex; align-items: center; justify-content: center;
-      font-size: 10px; font-weight: 700; color: #f97316;
+      font-size: 9px; font-weight: 700; color: #f97316;
     }
     @media (max-width: 400px) {
-      #pwa-card { bottom: 0; right: 0; width: 100%; max-width: 100%; border-radius: 20px 20px 0 0; }
-      #pwa-card.show { transform: translateY(0); }
+      #pwa-card { bottom: 0; right: 0; width: 100%; max-width: 100%; border-radius: 16px 16px 0 0; }
     }
   `;
 
@@ -142,12 +110,14 @@ if ('serviceWorker' in navigator) {
     const card = document.createElement('div');
     card.id = 'pwa-card';
     card.innerHTML = `
-      <button id="pwa-card-close" title="Close">✕</button>
+      <button id="pwa-card-close" title="Dismiss">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 1l10 10M11 1L1 11"/></svg>
+      </button>
       <div id="pwa-card-head">
-        <div id="pwa-card-logo"><img src="/favicon.svg" onerror="this.parentElement.textContent='⚡'"></div>
+        <div id="pwa-card-logo"><img src="/favicon.svg" onerror="this.parentElement.textContent='N'"></div>
         <div>
           <div id="pwa-card-name">${name}</div>
-          <div id="pwa-card-tagline">Make ${name} a app not a website</div>
+          <div id="pwa-card-tagline">Add to your home screen</div>
         </div>
       </div>
       ${bodyHtml}
@@ -165,7 +135,7 @@ if ('serviceWorker' in navigator) {
     setTimeout(() => {
       buildCard(
         `<div id="pwa-card-actions">
-          <button id="pwa-card-install">Install App</button>
+          <button id="pwa-card-install">Add to home screen</button>
           <button id="pwa-card-later">Not now</button>
         </div>`,
         card => {
