@@ -1,6 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const QRCode = require('qrcode');
 const rateLimit = require('express-rate-limit');
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../db');
@@ -231,6 +232,76 @@ router.delete('/me', requireAuth, async (req, res) => {
   db.prepare('DELETE FROM users WHERE id = ?').run(req.user.id);
 
   res.clearCookie('token');
+  res.json({ ok: true });
+});
+
+// --- QR Login ---
+const qrSessions = new Map(); // token → { userId, status: 'pending'|'approved', createdAt }
+
+setInterval(() => {
+  const cutoff = Date.now() - 180000;
+  for (const [t, s] of qrSessions) if (s.createdAt < cutoff) qrSessions.delete(t);
+}, 30000).unref();
+
+const qrCreateLimiter = rateLimit({
+  windowMs: 60 * 1000, max: 10,
+  standardHeaders: true, legacyHeaders: false,
+  skip: () => isTest,
+  message: { error: 'Too many QR requests.' },
+});
+
+router.post('/qr/create', qrCreateLimiter, (req, res) => {
+  const token = uuidv4();
+  qrSessions.set(token, { userId: null, status: 'pending', createdAt: Date.now() });
+  res.json({ token, expiresIn: 180 });
+});
+
+router.get('/qr/image/:token', async (req, res) => {
+  const session = qrSessions.get(req.params.token);
+  if (!session || Date.now() - session.createdAt > 180000) return res.status(404).send('Not found');
+  const approvalUrl = `${req.protocol}://${req.get('host')}/qr-login?token=${req.params.token}`;
+  try {
+    const svg = await QRCode.toString(approvalUrl, {
+      type: 'svg', width: 240, margin: 2,
+      color: { dark: '#000000', light: '#ffffff' },
+    });
+    res.set('Content-Type', 'image/svg+xml').set('Cache-Control', 'no-store').send(svg);
+  } catch { res.status(500).send('Error'); }
+});
+
+router.get('/qr/status/:token', (req, res) => {
+  const session = qrSessions.get(req.params.token);
+  if (!session || Date.now() - session.createdAt > 180000) {
+    qrSessions.delete(req.params.token);
+    return res.json({ status: 'expired' });
+  }
+  if (session.status !== 'approved') return res.json({ status: session.status });
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(session.userId);
+  qrSessions.delete(req.params.token);
+  if (!user || user.suspended) return res.json({ status: 'expired' });
+
+  const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+  log.ok('auth', `QR login approved for "${user.username}"`);
+  audit(user.id, null, 'auth.qr_login', {}, req);
+  res.json({ status: 'approved', token, user: userWithRank(user) });
+});
+
+router.post('/qr/approve/:token', requireAuth, (req, res) => {
+  const session = qrSessions.get(req.params.token);
+  if (!session || Date.now() - session.createdAt > 180000) {
+    qrSessions.delete(req.params.token);
+    return res.status(410).json({ error: 'QR code has expired' });
+  }
+  if (session.status !== 'pending') return res.status(409).json({ error: 'Already processed' });
+  session.userId = req.user.id;
+  session.status = 'approved';
+  log.ok('auth', `QR session approved by "${req.user.username}" from ${ip(req)}`);
+  res.json({ ok: true });
+});
+
+router.post('/qr/deny/:token', requireAuth, (req, res) => {
+  qrSessions.delete(req.params.token);
   res.json({ ok: true });
 });
 

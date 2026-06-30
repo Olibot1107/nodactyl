@@ -121,6 +121,17 @@
       width: 100%; display: flex; align-items: center; justify-content: center;
       gap: 8px; padding: 9px; margin-top: 8px;
     }
+    .qr-img-wrap {
+      background: #fff;
+      border-radius: 14px;
+      padding: 14px;
+      display: inline-block;
+      box-shadow: 0 0 0 1px var(--border);
+      margin-bottom: 16px;
+    }
+    .qr-img-wrap img { display: block; width: 196px; height: 196px; }
+    .qr-timer { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+    .qr-status { font-size: 13px; color: var(--text-dim); margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -205,6 +216,16 @@
         </button>
       </div>
 
+      <!-- QR login view (replaces form while active) -->
+      <div id="qrView" style="display:none;text-align:center;padding:8px 0">
+        <div class="qr-img-wrap">
+          <img id="qrImg" src="" alt="QR Code" width="196" height="196">
+        </div>
+        <p class="qr-status" id="qrStatus">Generating…</p>
+        <p class="qr-timer" id="qrTimer"></p>
+        <button onclick="exitQrView()" class="btn btn-ghost w-full" style="justify-content:center;padding:7px;margin-top:14px">Back</button>
+      </div>
+
       <div id="oauthSection" style="display:none">
         <div class="auth-divider"></div>
         <div id="discordSection" style="display:none">
@@ -219,6 +240,18 @@
             Continue with GitHub
           </button>
         </div>
+      </div>
+
+      <div id="qrSection" style="display:none">
+        <div class="auth-divider"></div>
+        <button onclick="showQrLogin()" class="btn btn-ghost passkey-btn" id="qrTriggerBtn">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/>
+            <path d="M14 14h2v2h-2zm4 0h3v3h-3zm-4 4h3v3h-3zm4 2h3v2h-3z"/>
+          </svg>
+          Sign in with QR Code
+        </button>
       </div>
 
       <div class="auth-footer">
@@ -408,6 +441,77 @@
   }
 
   document.getElementById('totpCode').addEventListener('keydown', e => { if (e.key === 'Enter') submitTotp(); });
+
+  // --- QR Login ---
+  let _qrToken = null, _qrPoll = null, _qrCountdown = null, _qrExpiresAt = 0;
+
+  // Only show QR option on devices likely to be desktops (not touchscreens)
+  if (!('ontouchstart' in window) && window.matchMedia('(min-width: 768px)').matches) {
+    document.getElementById('qrSection').style.display = '';
+  }
+
+  async function showQrLogin() {
+    document.getElementById('loginForm').style.display = 'none';
+    document.getElementById('mfaStep').style.display = 'none';
+    document.getElementById('passkeySection').style.display = 'none';
+    document.getElementById('oauthSection').style.display = 'none';
+    document.getElementById('qrSection').style.display = 'none';
+    document.getElementById('qrView').style.display = '';
+    document.getElementById('qrStatus').textContent = 'Generating…';
+    document.getElementById('qrTimer').textContent = '';
+    document.getElementById('qrImg').src = '';
+    await _startQr();
+  }
+
+  async function _startQr() {
+    clearInterval(_qrPoll);
+    clearInterval(_qrCountdown);
+    try {
+      const res = await fetch('/api/auth/qr/create', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      _qrToken = data.token;
+      _qrExpiresAt = Date.now() + data.expiresIn * 1000;
+      document.getElementById('qrImg').src = `/api/auth/qr/image/${_qrToken}`;
+      document.getElementById('qrStatus').textContent = 'Scan with your phone to log in';
+
+      _qrCountdown = setInterval(() => {
+        const secs = Math.max(0, Math.ceil((_qrExpiresAt - Date.now()) / 1000));
+        const m = Math.floor(secs / 60), s = secs % 60;
+        document.getElementById('qrTimer').textContent = `Expires in ${m}:${String(s).padStart(2, '0')}`;
+        if (secs === 0) { document.getElementById('qrStatus').textContent = 'Refreshing…'; _startQr(); }
+      }, 1000);
+
+      _qrPoll = setInterval(async () => {
+        if (!_qrToken) return;
+        try {
+          const r = await fetch(`/api/auth/qr/status/${_qrToken}`);
+          const d = await r.json();
+          if (d.status === 'approved') {
+            clearInterval(_qrPoll); clearInterval(_qrCountdown);
+            document.getElementById('qrStatus').textContent = 'Approved! Redirecting…';
+            localStorage.setItem('token', d.token);
+            localStorage.setItem('user', JSON.stringify(d.user));
+            window.location.href = '/dashboard';
+          } else if (d.status === 'expired') {
+            clearInterval(_qrPoll);
+          }
+        } catch {}
+      }, 2000);
+    } catch (e) {
+      document.getElementById('qrStatus').textContent = 'Failed to create QR code — ' + e.message;
+    }
+  }
+
+  function exitQrView() {
+    clearInterval(_qrPoll); clearInterval(_qrCountdown);
+    _qrToken = null;
+    document.getElementById('qrView').style.display = 'none';
+    document.getElementById('loginForm').style.display = '';
+    document.getElementById('qrSection').style.display = '';
+    if (window.PublicKeyCredential) document.getElementById('passkeySection').style.display = '';
+    if (document.getElementById('oauthSection').dataset.visible === '1') document.getElementById('oauthSection').style.display = '';
+  }
 
   document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();

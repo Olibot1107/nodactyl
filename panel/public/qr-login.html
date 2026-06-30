@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Approve Login</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#f97316">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .approve-card {
+      max-width: 360px;
+      width: 100%;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px 28px;
+      text-align: center;
+    }
+    .approve-icon {
+      width: 56px; height: 56px;
+      border-radius: 14px;
+      background: rgba(249,115,22,.12);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 20px;
+      color: #f97316;
+    }
+    .approve-brand {
+      display: flex; align-items: center; justify-content: center;
+      gap: 10px; margin-bottom: 24px;
+    }
+    .approve-title { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+    .approve-sub { font-size: 14px; color: var(--text-muted); line-height: 1.55; margin-bottom: 24px; }
+    .approve-sub strong { color: var(--text); }
+    .btn-row { display: flex; gap: 10px; }
+    .btn-row .btn { flex: 1; justify-content: center; padding: 10px; }
+    .approve-done { font-size: 15px; font-weight: 600; color: #22c55e; }
+    .approve-denied { font-size: 15px; font-weight: 600; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+<div class="approve-card" id="card">
+  <div class="approve-brand">
+    <div class="logo-icon" id="brandLogo" style="overflow:hidden">N</div>
+    <div id="brandName" style="font-weight:700;font-size:18px">Nodactyl</div>
+  </div>
+
+  <div id="cardBody">
+    <div style="text-align:center;padding:20px 0">
+      <span class="spinner" style="width:24px;height:24px"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+  const _token = new URLSearchParams(window.location.search).get('token');
+  const _authToken = localStorage.getItem('token');
+
+  fetch('/api/settings/public').then(r => r.json()).then(s => {
+    if (s.panel_name) {
+      document.getElementById('brandName').textContent = s.panel_name;
+      document.title = 'Approve Login — ' + s.panel_name;
+    }
+    if (s.panel_logo) {
+      const el = document.getElementById('brandLogo');
+      if (s.panel_logo.startsWith('http') || s.panel_logo.startsWith('/') || s.panel_logo.startsWith('data:')) {
+        el.innerHTML = `<img src="${s.panel_logo}" style="width:100%;height:100%;object-fit:cover;border-radius:9px" alt="">`;
+      } else {
+        el.textContent = s.panel_logo;
+      }
+    }
+  }).catch(() => {});
+
+  function setBody(html) {
+    document.getElementById('cardBody').innerHTML = html;
+  }
+
+  function showNotLoggedIn() {
+    setBody(`
+      <div class="approve-icon">
+        <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <circle cx="12" cy="8" r="4"/><path d="M4 20v-1a8 8 0 0 1 16 0v1"/>
+        </svg>
+      </div>
+      <div class="approve-title">Sign In Required</div>
+      <div class="approve-sub">You need to be logged in to approve this login request.</div>
+      <a href="/login" class="btn btn-primary w-full" style="justify-content:center;padding:10px;text-decoration:none">Log In</a>
+    `);
+  }
+
+  function showExpired() {
+    setBody(`
+      <div class="approve-icon" style="background:rgba(239,68,68,.1);color:#ef4444">
+        <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>
+        </svg>
+      </div>
+      <div class="approve-title">QR Code Expired</div>
+      <div class="approve-sub">This QR code is no longer valid. Ask the other device to show a new QR code.</div>
+      <button onclick="window.close()" class="btn btn-ghost w-full" style="justify-content:center;padding:9px">Close</button>
+    `);
+  }
+
+  function showApproveUI(username) {
+    const panelName = document.getElementById('brandName').textContent;
+    setBody(`
+      <div class="approve-icon">
+        <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/>
+          <path d="M14 14h2v2h-2zm4 0h3v3h-3zm-4 4h3v3h-3zm4 2h3v2h-3z"/>
+        </svg>
+      </div>
+      <div class="approve-title">Authorize Login</div>
+      <div class="approve-sub">
+        Signed in as <strong>${username}</strong>. Allow a new session to log in to <strong>${panelName}</strong>?
+      </div>
+      <div class="btn-row">
+        <button onclick="denyQr()" class="btn btn-ghost" id="denyBtn">Deny</button>
+        <button onclick="approveQr()" class="btn btn-primary" id="approveBtn">Approve</button>
+      </div>
+    `);
+  }
+
+  async function approveQr() {
+    const btn = document.getElementById('approveBtn');
+    const deny = document.getElementById('denyBtn');
+    btn.disabled = deny.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>';
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (_authToken) headers['Authorization'] = 'Bearer ' + _authToken;
+      const res = await fetch(`/api/auth/qr/approve/${_token}`, { method: 'POST', headers, credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      setBody(`
+        <div class="approve-icon" style="background:rgba(34,197,94,.1);color:#22c55e">
+          <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M20 6 9 17l-5-5"/>
+          </svg>
+        </div>
+        <div class="approve-title">Login Approved</div>
+        <div class="approve-sub">The other device is now logged in. You can close this page.</div>
+        <button onclick="window.close()" class="btn btn-ghost w-full" style="justify-content:center;padding:9px">Close</button>
+      `);
+    } catch (e) {
+      btn.disabled = deny.disabled = false;
+      btn.innerHTML = 'Approve';
+      const err = document.createElement('p');
+      err.style.cssText = 'color:#ef4444;font-size:13px;margin-top:10px';
+      err.textContent = e.message;
+      document.querySelector('.btn-row').after(err);
+    }
+  }
+
+  async function denyQr() {
+    const headers = {};
+    if (_authToken) headers['Authorization'] = 'Bearer ' + _authToken;
+    await fetch(`/api/auth/qr/deny/${_token}`, { method: 'POST', headers, credentials: 'include' }).catch(() => {});
+    setBody(`
+      <div class="approve-icon" style="background:rgba(107,114,128,.1);color:var(--text-muted)">
+        <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9"/><path d="m15 9-6 6m0-6 6 6"/>
+        </svg>
+      </div>
+      <div class="approve-title">Login Denied</div>
+      <div class="approve-sub">The login request was rejected.</div>
+      <button onclick="window.close()" class="btn btn-ghost w-full" style="justify-content:center;padding:9px">Close</button>
+    `);
+  }
+
+  async function init() {
+    if (!_token) {
+      setBody(`<div class="approve-title">Invalid Link</div><div class="approve-sub">No QR token found in this URL.</div>`);
+      return;
+    }
+
+    const headers = {};
+    if (_authToken) headers['Authorization'] = 'Bearer ' + _authToken;
+
+    const me = await fetch('/api/auth/me', { headers, credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null);
+
+    if (!me) { showNotLoggedIn(); return; }
+
+    // Verify the QR session is still valid before showing the approve UI
+    const statusRes = await fetch(`/api/auth/qr/status/${_token}`).catch(() => null);
+    const status = statusRes ? await statusRes.json().catch(() => null) : null;
+    if (!status || status.status === 'expired') { showExpired(); return; }
+
+    showApproveUI(me.username);
+  }
+
+  init();
+</script>
+</body>
+</html>

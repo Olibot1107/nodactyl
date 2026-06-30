@@ -135,6 +135,7 @@ async function main() {
   const pub = (f) => path.join(__dirname, '..', 'public', f);
   app.get('/', (req, res) => res.redirect('/login'));
   app.get('/login', (req, res) => res.sendFile(pub('login.html')));
+  app.get('/qr-login', (req, res) => res.sendFile(pub('qr-login.html')));
   app.get('/register', (req, res) => res.sendFile(pub('register.html')));
   app.get('/dashboard', (req, res) => res.sendFile(pub('dashboard.html')));
   app.get('/nodes', (req, res) => res.sendFile(pub('nodes.html')));
